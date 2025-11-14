@@ -15,8 +15,8 @@ DTYPE = 'int16'      # 16-bit PCM
 
 # OpenAI API Configuration
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-OPENAI_REALTIME_ENDPOINT = 'wss://api.openai.com/v1/realtime?intent=transcription'
-OPENAI_MODEL = 'gpt-4o-transcribe'
+OPENAI_REALTIME_ENDPOINT = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01'
+OPENAI_MODEL = 'gpt-4o-realtime-preview-2024-10-01'
 
 # WebSocket Headers
 WEBSOCKET_HEADERS = {

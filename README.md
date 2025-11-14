@@ -57,76 +57,18 @@ OPENAI_API_KEY=your_actual_api_key_here
 
 Get your API key from: https://platform.openai.com/api-keys
 
-## Testing
-
-### 1. Test Audio Capture (No API Key Needed)
-
-Test that your microphone is working and audio is being captured correctly:
+## Usage
 
 ```bash
+# Activate virtual environment
 source venv/bin/activate
-python3 transcribe.py
+
+# Test WebSocket connection to OpenAI (requires API key)
+python3 transcribe.py websocket
+
+# Test audio capture from microphone (no API key needed)
+python3 transcribe.py audio
 ```
-
-**Expected output:**
-```
-=== Audio Capture Test ===
-
-Initializing audio stream...
-  Sample rate: 24000 Hz
-  Channels: 1 (mono)
-  Buffer size: 1024 frames
-  Data type: int16
-Audio stream started
-
-Capturing audio for 5 seconds...
-(Speak into your microphone or make some noise)
-
-Captured 10 chunks, 20,480 bytes
-Captured 20 chunks, 40,960 bytes
-Captured 30 chunks, 61,440 bytes
-...
-
-=== Test Complete ===
-Total chunks: 117
-Total bytes: 239,616
-Expected bytes per chunk: 2048
-Audio format verified: 24000Hz, 1 channel(s), 16-bit PCM
-```
-
-### 2. Verify Audio is Actually Working
-
-To confirm audio is being captured correctly, save a recording and play it back:
-
-```bash
-python3 test_save_audio.py
-```
-
-This will:
-1. Record 5 seconds of audio
-2. Save it to `test_recording.wav`
-3. Tell you how to play it back
-
-**Play back the recording:**
-```bash
-# macOS
-afplay test_recording.wav
-
-# Linux/Raspberry Pi
-aplay test_recording.wav
-```
-
-**✅ If you hear your voice clearly, the audio capture is working perfectly!**
-
-### 3. Check Available Audio Devices
-
-To see what audio devices are available:
-
-```bash
-python3 test_audio.py
-```
-
-This will list all audio input/output devices and show the default microphone.
 
 ## Raspberry Pi Setup
 
@@ -167,7 +109,10 @@ Audio and API settings are in `config.py`:
 - **Channels**: Mono (1 channel)
 - **Format**: 16-bit PCM
 - **Model**: gpt-4o-transcribe
-- **Endpoint**: wss://api.openai.com/v1/realtime?intent=transcription
+- **Endpoint**: wss://api.openai.com/v1/realtime
+- **Authentication**: Ephemeral token (obtained from `/v1/realtime/transcription_sessions`)
+- **VAD**: Server-side Voice Activity Detection
+- **Noise Reduction**: Near-field (optimized for close-talking microphones)
 
 ## Project Structure
 
@@ -188,40 +133,33 @@ pi-transcription/
 
 ## Implementation Status
 
-- ✅ **Phase 1**: Project Setup
-- ✅ **Phase 2**: Configuration
-- ✅ **Phase 3**: Audio Capture
-- ⏳ **Phase 4**: WebSocket Client (Coming next)
-- ⏳ **Phase 5**: Integration
-- ⏳ **Phase 6**: Error Handling
+- ✅ **Phase 1**: Project Setup - Virtual environment, dependencies, .env configuration
+- ✅ **Phase 2**: Configuration - Audio settings, API configuration, session config
+- ✅ **Phase 3**: Audio Capture - USB microphone input, sounddevice integration, async queue
+- ✅ **Phase 4**: WebSocket Client - Ephemeral token auth, WebSocket connection, event handling
+- ⏳ **Phase 5**: Integration - Bridge audio capture with WebSocket streaming
+- ⏳ **Phase 6**: Error Handling - Graceful shutdown, reconnection logic
 
 ## Troubleshooting
 
-### ModuleNotFoundError
-
-Make sure you've activated the virtual environment:
+**Virtual environment not activated:**
 ```bash
 source venv/bin/activate
 ```
 
-### No Audio Devices Found
+**WebSocket connection errors:**
+- Check API key in `.env` file
+- Verify internet connection
+- Ensure Realtime API access
 
-On Raspberry Pi, ensure your USB microphone is plugged in and recognized:
+**No audio devices found:**
 ```bash
+# List microphones (Raspberry Pi)
 arecord -l
 ```
 
-### Permission Errors on macOS
-
-If you get permission errors for microphone access, go to:
-**System Settings → Privacy & Security → Microphone** and grant permission to Terminal/iTerm.
-
-### Audio Queue Full Warning
-
-This means your system can't process audio fast enough. Try:
-- Increasing buffer size in `config.py`
-- Closing other applications
-- On Raspberry Pi: Set CPU governor to performance mode
+**Microphone permission (macOS):**
+System Settings → Privacy & Security → Microphone
 
 ## License
 
