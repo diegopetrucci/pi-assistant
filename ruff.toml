@@ -5,6 +5,7 @@ exclude = [
     "venv",
     "__pycache__",
     "test_recording.wav",
+    "scripts",
 ]
 
 [lint]

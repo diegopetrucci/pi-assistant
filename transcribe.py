@@ -5,6 +5,7 @@ Streams audio from USB microphone to OpenAI's Realtime API
 
 import asyncio
 import sys
+from functools import partial
 
 import numpy as np
 
@@ -13,10 +14,10 @@ from config import (
     AUTO_STOP_ENABLED,
     AUTO_STOP_MAX_SILENCE_SECONDS,
     AUTO_STOP_SILENCE_THRESHOLD,
-    BUFFER_SIZE,
     CHANNELS,
     SAMPLE_RATE,
 )
+from transcription_tests import test_audio_capture, test_websocket_client
 from websocket_client import WebSocketClient
 
 
@@ -213,113 +214,15 @@ async def run_transcription():
         print("✓ Shutdown complete\n")
 
 
-async def test_audio_capture():
-    """Test function to verify audio capture is working"""
-    print("\n=== Audio Capture Test ===\n")
-
-    # Create audio capture instance
-    capture = AudioCapture()
-
-    # Get current event loop
-    loop = asyncio.get_running_loop()
-
-    # Start audio stream
-    capture.start_stream(loop)
-
-    print("\nCapturing audio for 5 seconds...")
-    print("(Speak into your microphone or make some noise)\n")
-
-    chunk_count = 0
-    total_bytes = 0
-
-    try:
-        # Capture for 5 seconds
-        start_time = loop.time()
-        print(f"Start time: {start_time}")
-        while loop.time() - start_time < 5.0:
-            # Get audio chunk with timeout
-            try:
-                audio_data = await asyncio.wait_for(capture.get_audio_chunk(), timeout=1.0)
-                chunk_count += 1
-                total_bytes += len(audio_data)
-
-                # Show progress every 10 chunks
-                if chunk_count % 10 == 0:
-                    print(f"Captured {chunk_count} chunks, {total_bytes:,} bytes")
-            except asyncio.TimeoutError:
-                print("Warning: No audio data received (timeout)")
-                break
-
-    except KeyboardInterrupt:
-        print("\nTest interrupted")
-
-    finally:
-        # Stop stream
-        capture.stop_stream()
-
-        print("\n=== Test Complete ===")
-        print(f"Total chunks: {chunk_count}")
-        print(f"Total bytes: {total_bytes:,}")
-        print(f"Expected bytes per chunk: {BUFFER_SIZE * CHANNELS * 2}")  # 2 bytes per int16 sample
-        print(f"Audio format verified: {SAMPLE_RATE}Hz, {CHANNELS} channel(s), 16-bit PCM")
-
-
-async def test_websocket_client():
-    """Test function to verify WebSocket client connection and configuration"""
-    print("\n=== WebSocket Client Test ===\n")
-
-    # Create WebSocket client instance
-    ws_client = WebSocketClient()
-
-    try:
-        # Connect to OpenAI
-        await ws_client.connect()
-
-        print("\n✓ Connection successful")
-        print("✓ Session configuration sent")
-        print("\nListening for events for 5 seconds...")
-        print("(The server may send acknowledgment or other events)\n")
-
-        # Listen for events for 5 seconds
-        event_count = 0
-        try:
-            async for event in ws_client.receive_events():
-                event_count += 1
-                handle_transcription_event(event)
-
-                # Break after 5 seconds or 10 events (whichever comes first)
-                if event_count >= 10:
-                    break
-
-        except asyncio.TimeoutError:
-            print("No events received (timeout)")
-
-        print("\n=== Test Complete ===")
-        print(f"Total events received: {event_count}")
-
-    except KeyboardInterrupt:
-        print("\nTest interrupted")
-
-    except Exception as e:
-        print(f"Test failed: {e}", file=sys.stderr)
-        raise
-
-    finally:
-        # Close WebSocket connection
-        await ws_client.close()
-
-
 def main():
     """Main entry point"""
-    import sys
 
-    # Determine which mode to run based on command-line argument
     if len(sys.argv) > 1:
         mode = sys.argv[1]
         if mode == "test-audio":
             run_func = test_audio_capture
         elif mode == "test-websocket":
-            run_func = test_websocket_client
+            run_func = partial(test_websocket_client, handle_transcription_event)
         else:
             print("Usage: python3 transcribe.py [test-audio|test-websocket]")
             print("  (no arguments): Run full real-time transcription")
@@ -327,7 +230,6 @@ def main():
             print("  test-websocket: Test WebSocket connection only")
             sys.exit(1)
     else:
-        # Default to full transcription
         run_func = run_transcription
 
     try:
