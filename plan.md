@@ -31,19 +31,25 @@ Real-time speech-to-text transcription system for Raspberry Pi 5 that streams au
 Sent immediately after WebSocket connection is established:
 ```json
 {
-  "type": "session.update",
-  "session": {
-    "modalities": ["text", "audio"],
+  "type": "transcription_session.update",
+  "input_audio_format": "pcm16",
+  "input_audio_transcription": {
     "model": "gpt-4o-transcribe",
-    "turn_detection": {
-      "type": "server_vad"
-    },
-    "input_audio_format": "pcm16",
-    "output_audio_format": "pcm16",
-    "input_audio_transcription": {
-      "model": "whisper-1"
-    }
-  }
+    "prompt": "",
+    "language": ""
+  },
+  "turn_detection": {
+    "type": "server_vad",
+    "threshold": 0.5,
+    "prefix_padding_ms": 300,
+    "silence_duration_ms": 500
+  },
+  "input_audio_noise_reduction": {
+    "type": "near_field"
+  },
+  "include": [
+    "item.input_audio_transcription.logprobs"
+  ]
 }
 ```
 
@@ -153,14 +159,14 @@ numpy>=1.24.0              # Audio data processing
 
 2. **WebSocket Client**
    - Connect to OpenAI Realtime API (websockets library handles keep-alive)
-   - Send session configuration with server-side VAD enabled (use defaults)
+   - Send transcription session configuration with server-side VAD enabled
    - Stream base64-encoded audio chunks
    - Receive and parse transcription events
 
 3. **Event Handlers**
-   - Handle `conversation.item.created` events
-   - Handle `response.audio_transcript.delta` events
-   - Handle `response.audio_transcript.done` events
+   - Handle `conversation.item.input_audio_transcription.delta` events (partial transcripts)
+   - Handle `conversation.item.input_audio_transcription.completed` events (final transcripts)
+   - Handle `input_audio_buffer.committed` events (VAD detected speech)
    - Print transcriptions to terminal in real-time
 
 4. **Error Handling**
@@ -196,7 +202,7 @@ numpy>=1.24.0              # Audio data processing
 
 ### Phase 4: WebSocket Client
 1. Implement WebSocket connection to OpenAI
-2. Send session configuration with default server-side VAD
+2. Send transcription session configuration with server-side VAD
 3. Create audio streaming function
 4. Handle WebSocket events
 
