@@ -3,6 +3,15 @@
 ## Project Overview
 Real-time speech-to-text transcription system for Raspberry Pi 5 that streams audio from a USB microphone to OpenAI's Realtime API and displays transcribed text in the terminal.
 
+## Implementation Status
+- ✅ **Phase 1**: Project Setup (repo structure, dependencies, .env scaffolding)
+- ✅ **Phase 2**: Configuration (audio constants, API endpoint/model, env loading)
+- ✅ **Phase 3**: Audio Capture (sounddevice integration, async queue, validation)
+- ✅ **Phase 4**: WebSocket Client (API key auth, session config, event handling)
+- ✅ **Phase 5**: Integration (audio streaming + websocket bridge, CLI modes)
+- 🟡 **Phase 6**: Error Handling (basic logging complete; resiliency/retries pending)
+- 🟡 **Phase 7**: Code Quality Tools (Ruff + pre-commit installed; future tuning TBD)
+
 ## Technical Specifications
 
 ### Hardware
@@ -36,7 +45,7 @@ Sent immediately after WebSocket connection is established:
   "input_audio_transcription": {
     "model": "gpt-4o-transcribe",
     "prompt": "",
-    "language": ""
+    "language": "en"
   },
   "turn_detection": {
     "type": "server_vad",

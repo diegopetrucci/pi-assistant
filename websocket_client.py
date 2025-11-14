@@ -2,16 +2,18 @@
 WebSocket client module for real-time speech-to-text transcription
 Handles WebSocket connection to OpenAI Realtime API
 """
+
+import asyncio
 import base64
 import json
 import sys
+
 import websockets
-import aiohttp
+
 from config import (
     OPENAI_REALTIME_ENDPOINT,
-    WEBSOCKET_HEADERS,
     SESSION_CONFIG,
-    OPENAI_API_KEY
+    WEBSOCKET_HEADERS,
 )
 
 
@@ -21,90 +23,71 @@ class WebSocketClient:
     def __init__(self):
         self.websocket = None
         self.connected = False
-        self.ephemeral_token = None
 
-    async def get_ephemeral_token(self):
+    async def connect(self):
         """
-        Get ephemeral token from OpenAI for WebSocket authentication
-
-        Returns:
-            str: Ephemeral token (client_secret) for WebSocket connection
+        Establish WebSocket connection to OpenAI Realtime API using API key
         """
-        print('Requesting ephemeral token...')
-
-        url = 'https://api.openai.com/v1/realtime/transcription_sessions'
-        headers = {
-            'Authorization': f'Bearer {OPENAI_API_KEY}',
-            'Content-Type': 'application/json'
-        }
-
-        # Empty payload - the endpoint may not require any body
-        payload = {}
-
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=payload) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        raise Exception(f'Failed to get ephemeral token: {response.status} - {error_text}')
-
-                    data = await response.json()
-                    self.ephemeral_token = data.get('client_secret', {}).get('value')
-
-                    if not self.ephemeral_token:
-                        raise Exception('No client_secret in response')
-
-                    print('✓ Ephemeral token obtained')
-                    return self.ephemeral_token
-
-        except Exception as e:
-            print(f'Error getting ephemeral token: {e}', file=sys.stderr)
-            raise
-
-    async def connect(self, use_ephemeral_token=True):
-        """
-        Establish WebSocket connection to OpenAI Realtime API
-
-        Args:
-            use_ephemeral_token: If True, get ephemeral token first (recommended for transcription)
-        """
-        # Get ephemeral token if requested
-        if use_ephemeral_token:
-            await self.get_ephemeral_token()
-            # Use ephemeral token for WebSocket connection
-            headers = {
-                'Authorization': f'Bearer {self.ephemeral_token}',
-                'OpenAI-Beta': 'realtime=v1'
-            }
-            # Use base endpoint without model parameter when using ephemeral token
-            endpoint = 'wss://api.openai.com/v1/realtime'
-        else:
-            # Use API key directly
-            headers = WEBSOCKET_HEADERS
-            endpoint = OPENAI_REALTIME_ENDPOINT
-
-        print('Connecting to OpenAI Realtime API...')
-        print(f'  Endpoint: {endpoint}')
-        print(f'  Auth method: {"Ephemeral token" if use_ephemeral_token else "API key"}')
+        print("Connecting to OpenAI Realtime API...")
+        print(f"  Endpoint: {OPENAI_REALTIME_ENDPOINT}")
+        print("  Auth method: API key")
 
         try:
             # Connect with required headers
             self.websocket = await websockets.connect(
-                endpoint,
-                additional_headers=headers
+                OPENAI_REALTIME_ENDPOINT, additional_headers=WEBSOCKET_HEADERS
             )
             self.connected = True
-            print('✓ Connected to OpenAI Realtime API')
+            print("✓ Connected to OpenAI Realtime API")
 
-            # Send session configuration immediately after connection
-            # (skip if using ephemeral token - config already set server-side)
-            if not use_ephemeral_token:
-                await self.send_session_config()
-            else:
-                print('  (Session config already set via ephemeral token)')
+            # Wait for initial session.created event (with timeout)
+            try:
+                await asyncio.wait_for(self.wait_for_session_created(), timeout=10.0)
+                print("  (Initial session created)")
+            except asyncio.TimeoutError:
+                print("  [WARNING] No session.created event received after 10s")
+                print("  [INFO] Trying to send session.update anyway...")
+
+            await self.send_session_config()
 
         except Exception as e:
-            print(f'Error connecting to OpenAI: {e}', file=sys.stderr)
+            print(f"Error connecting to OpenAI: {e}", file=sys.stderr)
+            raise
+
+    async def wait_for_session_created(self):
+        """
+        Wait for and capture the transcription_session.created event
+
+        Returns:
+            dict: The event from the server
+        """
+        print("Waiting for transcription_session.created event...")
+
+        try:
+            async for message in self.websocket:
+                event = json.loads(message)
+                event_type = event.get("type")
+
+                # Debug: print what we received
+                print(f"[DEBUG] Received event type: {event_type}")
+
+                # Handle both transcription_session.created and error events
+                if event_type == "transcription_session.created":
+                    print("✓ Transcription session created")
+                    return event
+                elif event_type == "error":
+                    error = event.get("error", {})
+                    print(
+                        f"[ERROR] Server error: {error.get('message', 'Unknown error')}",
+                        file=sys.stderr,
+                    )
+                    # Don't raise - continue listening for more events
+                else:
+                    # Print the full event for debugging
+                    print(f"[DEBUG] Full event: {json.dumps(event, indent=2)}")
+
+        except Exception as e:
+            print(f"Error waiting for session: {e}", file=sys.stderr)
             raise
 
     async def send_session_config(self):
@@ -112,18 +95,23 @@ class WebSocketClient:
         Send transcription session configuration to OpenAI
         Configures audio format, model, VAD, and noise reduction
         """
-        print('Sending session configuration...')
-        print(f'  Model: {SESSION_CONFIG["input_audio_transcription"]["model"]}')
-        print(f'  VAD: {SESSION_CONFIG["turn_detection"]["type"]}')
-        print(f'  Noise reduction: {SESSION_CONFIG["input_audio_noise_reduction"]["type"]}')
+        transcription = SESSION_CONFIG["input_audio_transcription"]
+        vad = SESSION_CONFIG["turn_detection"]
+        noise_reduction = SESSION_CONFIG["input_audio_noise_reduction"]
+
+        print("Sending session configuration...")
+        print(f"  Model: {transcription['model']}")
+        print(f"  VAD: {vad['type']}")
+        print(f"  Noise reduction: {noise_reduction['type']}")
 
         try:
-            config_json = json.dumps(SESSION_CONFIG)
-            await self.websocket.send(config_json)
-            print('Session configuration sent')
+            # Send the session update event with required session wrapper
+            session_update = {"type": "transcription_session.update", "session": SESSION_CONFIG}
+            await self.websocket.send(json.dumps(session_update))
+            print("✓ Session configuration sent")
 
         except Exception as e:
-            print(f'Error sending session config: {e}', file=sys.stderr)
+            print(f"Error sending session config: {e}", file=sys.stderr)
             raise
 
     async def send_audio_chunk(self, audio_bytes):
@@ -134,16 +122,13 @@ class WebSocketClient:
             audio_bytes: Raw PCM16 audio data as bytes
         """
         if not self.connected or not self.websocket:
-            raise RuntimeError('WebSocket not connected')
+            raise RuntimeError("WebSocket not connected")
 
         # Encode audio to base64
-        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+        audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
 
         # Create audio append message
-        message = {
-            "type": "input_audio_buffer.append",
-            "audio": audio_base64
-        }
+        message = {"type": "input_audio_buffer.append", "audio": audio_base64}
 
         # Send to OpenAI
         await self.websocket.send(json.dumps(message))
@@ -156,7 +141,7 @@ class WebSocketClient:
             dict: Parsed JSON event from server
         """
         if not self.connected or not self.websocket:
-            raise RuntimeError('WebSocket not connected')
+            raise RuntimeError("WebSocket not connected")
 
         try:
             async for message in self.websocket:
@@ -165,11 +150,11 @@ class WebSocketClient:
                 yield event
 
         except websockets.exceptions.ConnectionClosed:
-            print('WebSocket connection closed by server')
+            print("WebSocket connection closed by server")
             self.connected = False
 
         except Exception as e:
-            print(f'Error receiving events: {e}', file=sys.stderr)
+            print(f"Error receiving events: {e}", file=sys.stderr)
             raise
 
     async def close(self):
@@ -177,4 +162,4 @@ class WebSocketClient:
         if self.websocket:
             await self.websocket.close()
             self.connected = False
-            print('WebSocket connection closed')
+            print("WebSocket connection closed")

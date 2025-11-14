@@ -1,15 +1,18 @@
 """
 Test script that saves captured audio to a WAV file so you can verify it's working
 """
+
 import asyncio
-import wave
 import sys
+import wave
+
+from config import CHANNELS, SAMPLE_RATE
 from transcribe import AudioCapture
-from config import SAMPLE_RATE, CHANNELS
+
 
 async def test_and_save_audio():
     """Capture audio and save to WAV file for verification"""
-    print('\n=== Audio Capture & Save Test ===\n')
+    print("\n=== Audio Capture & Save Test ===\n")
 
     # Create audio capture instance
     capture = AudioCapture()
@@ -20,7 +23,7 @@ async def test_and_save_audio():
     # Start audio stream
     capture.start_stream(loop)
 
-    print('Recording for 5 seconds...')
+    print("Recording for 5 seconds...")
     print('Speak into your microphone: "Testing, one, two, three"\n')
 
     audio_chunks = []
@@ -31,55 +34,54 @@ async def test_and_save_audio():
         start_time = loop.time()
         while loop.time() - start_time < 5.0:
             try:
-                audio_data = await asyncio.wait_for(
-                    capture.get_audio_chunk(),
-                    timeout=1.0
-                )
+                audio_data = await asyncio.wait_for(capture.get_audio_chunk(), timeout=1.0)
                 audio_chunks.append(audio_data)
                 chunk_count += 1
 
                 # Show progress
                 if chunk_count % 20 == 0:
                     elapsed = loop.time() - start_time
-                    print(f'Recording... {elapsed:.1f}s')
+                    print(f"Recording... {elapsed:.1f}s")
 
             except asyncio.TimeoutError:
-                print('Error: No audio data received')
+                print("Error: No audio data received")
                 break
 
     except KeyboardInterrupt:
-        print('\nRecording interrupted')
+        print("\nRecording interrupted")
 
     finally:
         capture.stop_stream()
 
     # Save to WAV file
     if audio_chunks:
-        output_file = 'test_recording.wav'
-        print(f'\nSaving {chunk_count} chunks to {output_file}...')
+        output_file = "test_recording.wav"
+        print(f"\nSaving {chunk_count} chunks to {output_file}...")
 
-        with wave.open(output_file, 'wb') as wav_file:
+        with wave.open(output_file, "wb") as wav_file:
             wav_file.setnchannels(CHANNELS)
             wav_file.setsampwidth(2)  # 2 bytes for int16
             wav_file.setframerate(SAMPLE_RATE)
-            wav_file.writeframes(b''.join(audio_chunks))
+            wav_file.writeframes(b"".join(audio_chunks))
 
-        print(f'✅ Saved successfully!')
-        print(f'\nTo verify the recording, play it back:')
-        print(f'  afplay {output_file}  (macOS)')
-        print(f'  aplay {output_file}   (Linux/Raspberry Pi)')
-        print(f'\nIf you hear your voice, the audio capture is working correctly!')
+        print("✅ Saved successfully!")
+        print("\nTo verify the recording, play it back:")
+        print(f"  afplay {output_file}  (macOS)")
+        print(f"  aplay {output_file}   (Linux/Raspberry Pi)")
+        print("\nIf you hear your voice, the audio capture is working correctly!")
     else:
-        print('❌ No audio captured')
+        print("❌ No audio captured")
+
 
 def main():
     try:
         asyncio.run(test_and_save_audio())
     except KeyboardInterrupt:
-        print('\nTest cancelled')
+        print("\nTest cancelled")
     except Exception as e:
-        print(f'Error: {e}', file=sys.stderr)
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

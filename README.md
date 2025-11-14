@@ -72,11 +72,14 @@ Get your API key from: https://platform.openai.com/api-keys
 # Activate virtual environment
 source venv/bin/activate
 
+# Run full transcription pipeline (default mode)
+python3 transcribe.py
+
 # Test WebSocket connection to OpenAI (requires API key)
-python3 transcribe.py websocket
+python3 transcribe.py test-websocket
 
 # Test audio capture from microphone (no API key needed)
-python3 transcribe.py audio
+python3 transcribe.py test-audio
 ```
 
 ## Code Quality
@@ -136,7 +139,7 @@ Audio and API settings are in `config.py`:
 - **Format**: 16-bit PCM
 - **Model**: gpt-4o-transcribe
 - **Endpoint**: wss://api.openai.com/v1/realtime
-- **Authentication**: Ephemeral token (obtained from `/v1/realtime/transcription_sessions`)
+- **Authentication**: Direct API key (Authorization header)
 - **VAD**: Server-side Voice Activity Detection
 - **Noise Reduction**: Near-field (optimized for close-talking microphones)
 
@@ -165,9 +168,9 @@ pi-transcription/
 - ✅ **Phase 1**: Project Setup - Virtual environment, dependencies, .env configuration
 - ✅ **Phase 2**: Configuration - Audio settings, API configuration, session config
 - ✅ **Phase 3**: Audio Capture - USB microphone input, sounddevice integration, async queue
-- ✅ **Phase 4**: WebSocket Client - Ephemeral token auth, WebSocket connection, event handling
-- ⏳ **Phase 5**: Integration - Bridge audio capture with WebSocket streaming
-- ⏳ **Phase 6**: Error Handling - Graceful shutdown, reconnection logic
+- ✅ **Phase 4**: WebSocket Client - API key auth, connection management, event handling
+- ✅ **Phase 5**: Integration - Audio capture bridged with WebSocket streaming
+- ⏳ **Phase 6**: Error Handling - Graceful shutdown and resiliency improvements
 
 ## Troubleshooting
 
