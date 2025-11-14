@@ -107,16 +107,25 @@ pi-transcription/
 ├── requirements.txt         # Python dependencies
 ├── config.py                # Configuration settings
 ├── transcribe.py            # Main application
+├── .pre-commit-config.yaml  # Pre-commit hooks configuration
+├── ruff.toml                # Ruff formatter/linter configuration
 └── plan.md                  # This file
 ```
 
 ## Dependencies
 
+### Runtime Dependencies
 ```
 sounddevice>=0.4.6          # Audio capture (simpler API, good for Pi 5)
 websockets>=12.0            # WebSocket client for direct API communication
 python-dotenv>=1.0.0       # Environment variable management
 numpy>=1.24.0              # Audio data processing
+```
+
+### Development Dependencies
+```
+ruff>=0.1.0                # Fast Python linter and formatter
+pre-commit>=3.0.0          # Git pre-commit hook framework
 ```
 
 ## Architecture
@@ -217,6 +226,23 @@ numpy>=1.24.0              # Audio data processing
 2. Handle audio buffer errors
 3. Add graceful shutdown handler (Ctrl+C)
 
+### Phase 7: Code Quality Tools
+1. Set up ruff configuration (`ruff.toml`):
+   - Configure line length (88 or 100)
+   - Set Python version target
+   - Enable desired linting rules
+   - Configure formatting options
+2. Create `.pre-commit-config.yaml`:
+   - Add ruff formatter hook
+   - Add ruff linter hook
+   - Configure to run on commit
+3. Install and initialize pre-commit:
+   - `pip install pre-commit`
+   - `pre-commit install`
+4. Run initial formatting:
+   - `ruff format .`
+   - `ruff check --fix .`
+
 ## Key Technical Considerations
 
 ### Latency Budget
@@ -311,6 +337,15 @@ WebSocket connection closed
 - Local audio preprocessing (noise reduction)
 - Web interface for remote monitoring
 - Integration with larger software system (as mentioned in requirements)
+
+### Project Modernization (End Goal)
+- **Migrate to uv**: Replace pip with uv for faster, more reliable dependency management
+- **Switch to pyproject.toml**: Migrate from requirements.txt to modern pyproject.toml format
+  - Move all dependencies to `[project.dependencies]`
+  - Move dev dependencies to `[project.optional-dependencies]`
+  - Add project metadata (name, version, description, authors)
+  - Configure ruff in `[tool.ruff]` section
+  - Benefits: Single source of truth, better tooling support, modern Python packaging standard
 
 ## Success Criteria
 - [ ] Successfully captures audio from USB microphone
