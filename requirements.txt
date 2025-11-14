@@ -2,4 +2,3 @@ sounddevice>=0.4.6          # Audio capture (simpler API, good for Pi 5)
 websockets>=12.0            # WebSocket client for direct API communication
 python-dotenv>=1.0.0        # Environment variable management
 numpy>=1.24.0               # Audio data processing
-aiohttp>=3.9.0              # HTTP client for ephemeral token requests

@@ -41,6 +41,15 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+#### (Optional) Development Tools
+
+```bash
+pip install -r requirements-dev.txt
+pre-commit install
+```
+
+This installs the Ruff formatter/linter, pre-commit framework, and registers the Git hook locally.
+
 ### 4. Configure API Key
 
 Create a `.env` file with your OpenAI API key:
@@ -69,6 +78,23 @@ python3 transcribe.py websocket
 # Test audio capture from microphone (no API key needed)
 python3 transcribe.py audio
 ```
+
+## Code Quality
+
+Ruff is configured via `ruff.toml` to handle both formatting and linting.
+
+```bash
+# Format the codebase
+ruff format .
+
+# Run lint checks (apply autofixes when possible)
+ruff check --fix .
+
+# Run the Git hook suite manually
+pre-commit run --all-files
+```
+
+These commands automatically exclude generated artifacts such as `venv/` and `test_recording.wav`.
 
 ## Raspberry Pi Setup
 
@@ -121,8 +147,11 @@ pi-transcription/
 ├── .env                  # API key (create from .env.example)
 ├── .env.example          # Template for .env
 ├── .gitignore           # Git ignore rules
+├── .pre-commit-config.yaml # Pre-commit hooks (Ruff)
 ├── README.md            # This file
 ├── requirements.txt     # Python dependencies
+├── requirements-dev.txt # Development dependencies (Ruff)
+├── ruff.toml            # Ruff formatter/linter configuration
 ├── config.py            # Configuration settings
 ├── transcribe.py        # Main application with audio capture
 ├── test_audio.py        # Audio device listing utility
