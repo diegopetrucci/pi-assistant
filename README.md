@@ -7,6 +7,7 @@ Real-time speech-to-text transcription system for Raspberry Pi 5 that streams au
 - Real-time audio capture from USB microphone
 - Streams to OpenAI Realtime API for transcription
 - Server-side Voice Activity Detection (VAD)
+- Optional auto-stop logging after sustained silence
 - Optimized for Raspberry Pi 5
 - 24kHz, mono, 16-bit PCM audio
 
@@ -142,6 +143,8 @@ Audio and API settings are in `config.py`:
 - **Authentication**: Direct API key (Authorization header)
 - **VAD**: Server-side Voice Activity Detection
 - **Noise Reduction**: Near-field (optimized for close-talking microphones)
+- **Auto-stop**: Enable/disable, adjust silence threshold, and tweak timeout via
+  `AUTO_STOP_*` settings (emits `[TURN]` logs when a pause ends)
 
 ## Project Structure
 

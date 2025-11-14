@@ -39,6 +39,11 @@ SESSION_CONFIG = {
     "include": ["item.input_audio_transcription.logprobs"],
 }
 
+# Auto-stop Configuration
+AUTO_STOP_ENABLED = True
+AUTO_STOP_SILENCE_THRESHOLD = 500  # RMS amplitude (0-32767 for int16)
+AUTO_STOP_MAX_SILENCE_SECONDS = 2.0  # Stop after this much silence (post speech)
+
 # Queue Configuration
 AUDIO_QUEUE_MAX_SIZE = 100  # Limit queue size to prevent memory buildup
 

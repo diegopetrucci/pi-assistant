@@ -6,9 +6,39 @@ Streams audio from USB microphone to OpenAI's Realtime API
 import asyncio
 import sys
 
+import numpy as np
+
 from audio_capture import AudioCapture
-from config import BUFFER_SIZE, CHANNELS, SAMPLE_RATE
+from config import (
+    AUTO_STOP_ENABLED,
+    AUTO_STOP_MAX_SILENCE_SECONDS,
+    AUTO_STOP_SILENCE_THRESHOLD,
+    BUFFER_SIZE,
+    CHANNELS,
+    SAMPLE_RATE,
+)
 from websocket_client import WebSocketClient
+
+
+def calculate_rms(audio_bytes):
+    """Compute the root-mean-square amplitude for a PCM16 chunk.
+
+    The incoming `audio_bytes` represent signed 16-bit mono samples, so the
+    resulting RMS value is in the 0-32767 range and offers a simple proxy for
+    perceived loudness. We convert to float before squaring to avoid overflow
+    and return 0.0 when the buffer is empty.
+    """
+
+    if not audio_bytes:
+        return 0.0
+
+    samples = np.frombuffer(audio_bytes, dtype=np.int16)
+    if samples.size == 0:
+        return 0.0
+
+    # Use float32 to avoid overflow while squaring
+    float_samples = samples.astype(np.float32)
+    return float(np.sqrt(np.mean(float_samples**2)))
 
 
 def handle_transcription_event(event):
@@ -66,6 +96,8 @@ async def stream_audio_to_websocket(audio_capture, ws_client):
     """
     print("[INFO] Starting audio streaming...")
     chunk_count = 0
+    silence_duration = 0.0
+    heard_speech = False
 
     try:
         while True:
@@ -76,6 +108,24 @@ async def stream_audio_to_websocket(audio_capture, ws_client):
             await ws_client.send_audio_chunk(audio_bytes)
 
             chunk_count += 1
+
+            if AUTO_STOP_ENABLED:
+                # Derive chunk duration from frames (2 bytes per int16 sample)
+                frames = len(audio_bytes) / (2 * CHANNELS)
+                chunk_duration = frames / SAMPLE_RATE if frames else 0.0
+                rms = calculate_rms(audio_bytes)
+
+                if rms >= AUTO_STOP_SILENCE_THRESHOLD:
+                    heard_speech = True
+                    silence_duration = 0.0
+                elif heard_speech:
+                    silence_duration += chunk_duration
+                    if silence_duration >= AUTO_STOP_MAX_SILENCE_SECONDS:
+                        print(
+                            f"[TURN] Stopped after {AUTO_STOP_MAX_SILENCE_SECONDS:.1f}s of silence"
+                        )
+                        heard_speech = False
+                        silence_duration = 0.0
 
             # Debug: Log every 100 chunks (~4 seconds at 24kHz with 1024 buffer)
             if chunk_count % 100 == 0:
