@@ -3,9 +3,11 @@ Real-time speech-to-text transcription system for Raspberry Pi 5
 Streams audio from USB microphone to OpenAI's Realtime API
 """
 
+import argparse
 import asyncio
 import sys
 from functools import partial
+from typing import Optional
 
 import numpy as np
 
@@ -15,9 +17,19 @@ from config import (
     AUTO_STOP_MAX_SILENCE_SECONDS,
     AUTO_STOP_SILENCE_THRESHOLD,
     CHANNELS,
+    FORCE_ALWAYS_ON,
+    PREROLL_DURATION_SECONDS,
     SAMPLE_RATE,
+    WAKE_WORD_CONSECUTIVE_FRAMES,
+    WAKE_WORD_EMBEDDING_MODEL_PATH,
+    WAKE_WORD_MELSPEC_MODEL_PATH,
+    WAKE_WORD_MODEL_FALLBACK_PATH,
+    WAKE_WORD_MODEL_PATH,
+    WAKE_WORD_SCORE_THRESHOLD,
+    WAKE_WORD_TARGET_SAMPLE_RATE,
 )
 from transcription_tests import test_audio_capture, test_websocket_client
+from wake_word import PreRollBuffer, StreamState, WakeWordDetection, WakeWordEngine
 from websocket_client import WebSocketClient
 
 # ANSI color codes for log labels
@@ -25,10 +37,26 @@ RESET = "\033[0m"
 COLOR_ORANGE = "\033[38;5;208m"
 COLOR_GREEN = "\033[32m"
 COLOR_YELLOW = "\033[33m"
+COLOR_BLUE = "\033[34m"
+COLOR_CYAN = "\033[36m"
 
 TURN_LOG_LABEL = f"{COLOR_ORANGE}[TURN]{RESET}"
 TRANSCRIPT_LOG_LABEL = f"{COLOR_GREEN}[TRANSCRIPT]{RESET}"
 VAD_LOG_LABEL = f"{COLOR_YELLOW}[VAD]{RESET}"
+STATE_LOG_LABEL = f"{COLOR_CYAN}[STATE]{RESET}"
+WAKE_LOG_LABEL = f"{COLOR_BLUE}[WAKE]{RESET}"
+
+
+def log_state_transition(previous: Optional[StreamState], new: StreamState, reason: str) -> None:
+    """Emit a consistent log for controller state changes."""
+
+    if previous == new:
+        return
+
+    if previous is None:
+        print(f"{STATE_LOG_LABEL} Entered {new.value.upper()} ({reason})")
+    else:
+        print(f"{STATE_LOG_LABEL} {previous.value.upper()} -> {new.value.upper()} ({reason})")
 
 
 def calculate_rms(audio_bytes):
@@ -97,31 +125,91 @@ def handle_transcription_event(event):
         print(f"[DEBUG] Received event: {event_type}")
 
 
-async def stream_audio_to_websocket(audio_capture, ws_client):
+async def run_audio_controller(audio_capture, ws_client, *, force_always_on: bool):
     """
-    Continuously read audio chunks from capture queue and stream to WebSocket
+    Multiplex audio between the wake-word detector and the OpenAI stream.
+    """
 
-    Args:
-        audio_capture: AudioCapture instance
-        ws_client: WebSocketClient instance
-    """
-    print("[INFO] Starting audio streaming...")
+    print("[INFO] Starting audio controller...")
+
+    wake_engine: Optional[WakeWordEngine] = None
+    if not force_always_on:
+        try:
+            wake_engine = WakeWordEngine(
+                WAKE_WORD_MODEL_PATH,
+                fallback_model_path=WAKE_WORD_MODEL_FALLBACK_PATH,
+                melspec_model_path=WAKE_WORD_MELSPEC_MODEL_PATH,
+                embedding_model_path=WAKE_WORD_EMBEDDING_MODEL_PATH,
+                source_sample_rate=SAMPLE_RATE,
+                target_sample_rate=WAKE_WORD_TARGET_SAMPLE_RATE,
+                threshold=WAKE_WORD_SCORE_THRESHOLD,
+                consecutive_required=WAKE_WORD_CONSECUTIVE_FRAMES,
+            )
+        except RuntimeError as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            raise
+
+    pre_roll = PreRollBuffer(PREROLL_DURATION_SECONDS, SAMPLE_RATE)
+    state = StreamState.STREAMING if force_always_on else StreamState.LISTENING
+    initial_reason = "wake-word override" if force_always_on else "awaiting wake phrase"
+    log_state_transition(None, state, initial_reason)
+    if force_always_on:
+        print(f"{WAKE_LOG_LABEL} Wake-word override active; streaming immediately")
+
     chunk_count = 0
     silence_duration = 0.0
     heard_speech = False
+    retrigger_budget = 0
 
     try:
         while True:
-            # Get audio chunk from queue
             audio_bytes = await audio_capture.get_audio_chunk()
-
-            # Send to OpenAI via WebSocket
-            await ws_client.send_audio_chunk(audio_bytes)
-
             chunk_count += 1
 
-            if AUTO_STOP_ENABLED:
-                # Derive chunk duration from frames (2 bytes per int16 sample)
+            if state == StreamState.LISTENING:
+                pre_roll.add(audio_bytes)
+
+            detection = WakeWordDetection()
+            if wake_engine:
+                detection = wake_engine.process_chunk(audio_bytes)
+                if detection.score >= WAKE_WORD_SCORE_THRESHOLD:
+                    print(
+                        f"{WAKE_LOG_LABEL} score={detection.score:.2f} "
+                        f"(threshold {WAKE_WORD_SCORE_THRESHOLD:.2f}) state={state.value}"
+                    )
+
+            skip_current_chunk = False
+            if wake_engine and detection.triggered:
+                if state == StreamState.LISTENING:
+                    previous_state = state
+                    state = StreamState.STREAMING
+                    log_state_transition(previous_state, state, "wake phrase detected")
+                    payload = pre_roll.flush()
+                    if payload:
+                        duration_ms = (len(payload) / (2 * CHANNELS)) / SAMPLE_RATE * 1000
+                        print(
+                            f"{WAKE_LOG_LABEL} Triggered -> streaming "
+                            f"(sent {duration_ms:.0f} ms of buffered audio)"
+                        )
+                        await ws_client.send_audio_chunk(payload)
+                        skip_current_chunk = True
+                    else:
+                        skip_current_chunk = False
+
+                    heard_speech = False
+                    silence_duration = 0.0
+                    retrigger_budget = 0
+                else:
+                    retrigger_budget += 1
+                    print(
+                        f"{WAKE_LOG_LABEL} Wake word retrigger detected during streaming "
+                        f"(count={retrigger_budget})"
+                    )
+
+            if state == StreamState.STREAMING and not skip_current_chunk:
+                await ws_client.send_audio_chunk(audio_bytes)
+
+            if AUTO_STOP_ENABLED and state == StreamState.STREAMING and not force_always_on:
                 frames = len(audio_bytes) / (2 * CHANNELS)
                 chunk_duration = frames / SAMPLE_RATE if frames else 0.0
                 rms = calculate_rms(audio_bytes)
@@ -132,22 +220,32 @@ async def stream_audio_to_websocket(audio_capture, ws_client):
                 elif heard_speech:
                     silence_duration += chunk_duration
                     if silence_duration >= AUTO_STOP_MAX_SILENCE_SECONDS:
-                        print(
-                            f"{TURN_LOG_LABEL} "
-                            f"Stopped after {AUTO_STOP_MAX_SILENCE_SECONDS:.1f}s of silence"
-                        )
-                        heard_speech = False
-                        silence_duration = 0.0
+                        if retrigger_budget == 0:
+                            previous_state = state
+                            state = StreamState.LISTENING
+                            log_state_transition(previous_state, state, "silence detected")
+                            pre_roll.clear()
+                            heard_speech = False
+                            silence_duration = 0.0
+                            retrigger_budget = 0
+                            if wake_engine:
+                                wake_engine.reset_detection()
+                        else:
+                            print(
+                                f"{TURN_LOG_LABEL} Silence detected but "
+                                f"{retrigger_budget} retrigger(s) observed; keeping stream open"
+                            )
+                            retrigger_budget = 0
+                            silence_duration = 0.0
 
-            # Debug: Log every 100 chunks (~4 seconds at 24kHz with 1024 buffer)
             if chunk_count % 100 == 0:
-                print(f"[DEBUG] Streamed {chunk_count} audio chunks")
+                print(f"[DEBUG] Processed {chunk_count} audio chunks (state={state.value})")
 
     except asyncio.CancelledError:
-        print(f"[INFO] Audio streaming stopped ({chunk_count} chunks sent)")
+        print(f"[INFO] Audio controller stopped ({chunk_count} chunks processed)")
         raise
     except Exception as e:
-        print(f"[ERROR] Audio streaming error: {e}", file=sys.stderr)
+        print(f"[ERROR] Audio controller error: {e}", file=sys.stderr)
         raise
 
 
@@ -174,7 +272,7 @@ async def receive_transcription_events(ws_client):
         raise
 
 
-async def run_transcription():
+async def run_transcription(force_always_on: bool = False):
     """
     Main integration function - runs real-time transcription
     Combines audio capture and WebSocket streaming
@@ -199,7 +297,9 @@ async def run_transcription():
         print("Listening... (Press Ctrl+C to stop)\n")
 
         # Create concurrent tasks for audio streaming and event receiving
-        audio_task = asyncio.create_task(stream_audio_to_websocket(audio_capture, ws_client))
+        audio_task = asyncio.create_task(
+            run_audio_controller(audio_capture, ws_client, force_always_on=force_always_on)
+        )
         event_task = asyncio.create_task(receive_transcription_events(ws_client))
 
         # Wait for both tasks (they run until cancelled)
@@ -225,23 +325,47 @@ async def run_transcription():
         print("✓ Shutdown complete\n")
 
 
+def parse_args():
+    """Parse CLI arguments."""
+
+    parser = argparse.ArgumentParser(
+        description="OpenAI transcription client with wake-word gating."
+    )
+    parser.add_argument(
+        "mode",
+        nargs="?",
+        choices=["run", "test-audio", "test-websocket"],
+        default="run",
+        help="Select an execution mode (default: run)",
+    )
+    parser.set_defaults(force_always_on=None)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--force-always-on",
+        action="store_true",
+        dest="force_always_on",
+        help="Bypass wake-word gating and stream audio continuously.",
+    )
+    group.add_argument(
+        "--no-force-always-on",
+        action="store_false",
+        dest="force_always_on",
+        help="Explicitly disable the wake-word override even if the env var is set.",
+    )
+    return parser.parse_args()
+
+
 def main():
     """Main entry point"""
 
-    if len(sys.argv) > 1:
-        mode = sys.argv[1]
-        if mode == "test-audio":
-            run_func = test_audio_capture
-        elif mode == "test-websocket":
-            run_func = partial(test_websocket_client, handle_transcription_event)
-        else:
-            print("Usage: python3 transcribe.py [test-audio|test-websocket]")
-            print("  (no arguments): Run full real-time transcription")
-            print("  test-audio: Test audio capture only")
-            print("  test-websocket: Test WebSocket connection only")
-            sys.exit(1)
+    args = parse_args()
+    if args.mode == "test-audio":
+        run_func = test_audio_capture
+    elif args.mode == "test-websocket":
+        run_func = partial(test_websocket_client, handle_transcription_event)
     else:
-        run_func = run_transcription
+        force_flag = FORCE_ALWAYS_ON if args.force_always_on is None else args.force_always_on
+        run_func = partial(run_transcription, force_always_on=force_flag)
 
     try:
         asyncio.run(run_func())
