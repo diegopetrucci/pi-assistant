@@ -4,7 +4,7 @@ Test script to verify audio setup and list available devices
 
 import sounddevice as sd
 
-from config import BUFFER_SIZE, CHANNELS, DTYPE, SAMPLE_RATE
+from pi_transcription.config import BUFFER_SIZE, CHANNELS, DTYPE, SAMPLE_RATE
 
 print("=== Audio Device Test ===\n")
 

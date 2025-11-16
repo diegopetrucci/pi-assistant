@@ -10,7 +10,7 @@ import sys
 
 import websockets
 
-from config import (
+from pi_transcription.config import (
     OPENAI_REALTIME_ENDPOINT,
     SESSION_CONFIG,
     WEBSOCKET_HEADERS,

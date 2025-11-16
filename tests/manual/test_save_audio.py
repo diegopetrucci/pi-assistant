@@ -6,8 +6,8 @@ import asyncio
 import sys
 import wave
 
-from config import CHANNELS, SAMPLE_RATE
-from start import AudioCapture
+from pi_transcription.audio import AudioCapture
+from pi_transcription.config import CHANNELS, SAMPLE_RATE
 
 
 async def test_and_save_audio():

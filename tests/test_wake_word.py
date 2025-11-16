@@ -2,8 +2,8 @@ import unittest
 import wave
 from pathlib import Path
 
-import wake_word
-from config import (
+from pi_transcription import wake_word
+from pi_transcription.config import (
     BUFFER_SIZE,
     SAMPLE_RATE,
     WAKE_WORD_CONSECUTIVE_FRAMES,
@@ -14,7 +14,7 @@ from config import (
     WAKE_WORD_SCORE_THRESHOLD,
     WAKE_WORD_TARGET_SAMPLE_RATE,
 )
-from wake_word import WakeWordEngine
+from pi_transcription.wake_word import WakeWordEngine
 
 FIXTURE_PATH = Path("tests/hey_jarvis.wav")
 OPENWAKEWORD_AVAILABLE = wake_word.Model is not None

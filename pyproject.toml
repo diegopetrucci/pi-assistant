@@ -17,6 +17,9 @@ dependencies = [
     "openwakeword>=0.6.0",
 ]
 
+[project.scripts]
+pi-transcription = "pi_transcription.cli.app:main"
+
 [dependency-groups]
 dev = [
     "ruff>=0.14.5",
@@ -24,12 +27,7 @@ dev = [
 ]
 
 [tool.setuptools]
-py-modules = [
-    "audio_capture",
-    "config",
-    "start",
-    "test_audio",
-    "test_save_audio",
-    "transcription_tests",
-    "websocket_client",
-]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

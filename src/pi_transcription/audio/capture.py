@@ -8,7 +8,13 @@ import sys
 
 import sounddevice as sd
 
-from config import AUDIO_QUEUE_MAX_SIZE, BUFFER_SIZE, CHANNELS, DTYPE, SAMPLE_RATE
+from pi_transcription.config import (
+    AUDIO_QUEUE_MAX_SIZE,
+    BUFFER_SIZE,
+    CHANNELS,
+    DTYPE,
+    SAMPLE_RATE,
+)
 
 
 class AudioCapture:

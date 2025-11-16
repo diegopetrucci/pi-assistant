@@ -6,13 +6,9 @@ transcription loop.
 import asyncio
 import sys
 
-from audio_capture import AudioCapture
-from config import (
-    BUFFER_SIZE,
-    CHANNELS,
-    SAMPLE_RATE,
-)
-from websocket_client import WebSocketClient
+from pi_transcription.audio import AudioCapture
+from pi_transcription.config import BUFFER_SIZE, CHANNELS, SAMPLE_RATE
+from pi_transcription.network import WebSocketClient
 
 
 async def test_audio_capture():
@@ -101,5 +97,6 @@ async def test_websocket_client(event_handler=None):
 
 if __name__ == "__main__":
     print(
-        "Run individual tests via `python start.py test-audio` or `python start.py test-websocket`."
+        "Run individual tests via `pi-transcription test-audio` or "
+        "`pi-transcription test-websocket`."
     )
