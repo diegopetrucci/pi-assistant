@@ -226,7 +226,7 @@ async def run_audio_controller(
                         wake_engine.reset_detection()
                     if stream_resampler:
                         stream_resampler.reset()
-                    await transcript_buffer.clear_current_turn()
+                    await transcript_buffer.clear_current_turn("manual stop command")
                 continue
 
             detection = WakeWordDetection()

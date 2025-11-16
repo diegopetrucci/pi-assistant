@@ -94,7 +94,7 @@ async def receive_transcription_events(
                 transcript = event.get("transcript", "")
                 item_id = event.get("item_id")
                 if await maybe_stop_playback(transcript, speech_player):
-                    await transcript_buffer.clear_current_turn()
+                    await transcript_buffer.clear_current_turn("assistant stop command")
                     stop_signal.set()
                     continue
                 await transcript_buffer.append_transcript(item_id, transcript)
