@@ -14,3 +14,4 @@ Required:
 Maybe:
 - [ ] Option to reduce debug logs
 - [ ] Add speaker diarization
+- [ ] Auto-detect microphone sample rate support and adjust capture/session config when defaults fail (avoid manual SAMPLE_RATE exports)
