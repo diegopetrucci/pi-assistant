@@ -20,6 +20,16 @@ from config import (
 from transcription_tests import test_audio_capture, test_websocket_client
 from websocket_client import WebSocketClient
 
+# ANSI color codes for log labels
+RESET = "\033[0m"
+COLOR_ORANGE = "\033[38;5;208m"
+COLOR_GREEN = "\033[32m"
+COLOR_YELLOW = "\033[33m"
+
+TURN_LOG_LABEL = f"{COLOR_ORANGE}[TURN]{RESET}"
+TRANSCRIPT_LOG_LABEL = f"{COLOR_GREEN}[TRANSCRIPT]{RESET}"
+VAD_LOG_LABEL = f"{COLOR_YELLOW}[VAD]{RESET}"
+
 
 def calculate_rms(audio_bytes):
     """Compute the root-mean-square amplitude for a PCM16 chunk.
@@ -59,12 +69,12 @@ def handle_transcription_event(event):
     elif event_type == "conversation.item.input_audio_transcription.completed":
         # Final transcription
         transcript = event.get("transcript", "")
-        print(f"\n[TRANSCRIPT] {transcript}")
+        print(f"\n{TRANSCRIPT_LOG_LABEL} {transcript}")
 
     elif event_type == "input_audio_buffer.committed":
         # VAD detected speech
         item_id = event.get("item_id", "")
-        print(f"[VAD] Speech detected (item: {item_id})")
+        print(f"{VAD_LOG_LABEL} Speech detected (item: {item_id})")
 
     elif event_type == "error":
         # Error from API
@@ -123,7 +133,8 @@ async def stream_audio_to_websocket(audio_capture, ws_client):
                     silence_duration += chunk_duration
                     if silence_duration >= AUTO_STOP_MAX_SILENCE_SECONDS:
                         print(
-                            f"[TURN] Stopped after {AUTO_STOP_MAX_SILENCE_SECONDS:.1f}s of silence"
+                            f"{TURN_LOG_LABEL} "
+                            f"Stopped after {AUTO_STOP_MAX_SILENCE_SECONDS:.1f}s of silence"
                         )
                         heard_speech = False
                         silence_duration = 0.0
