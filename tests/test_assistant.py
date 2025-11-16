@@ -303,6 +303,53 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
 
         mock_print.assert_called_once()
 
+    async def test_verify_responses_audio_support_success(self):
+        client = FakeOpenAIClient({"output": []})
+        responder = LLMResponder(
+            client=client,
+            enable_tts=True,
+            use_responses_audio=True,
+        )
+
+        supported = await responder.verify_responses_audio_support()
+
+        self.assertTrue(supported)
+        self.assertTrue(responder.responses_audio_supported)
+        self.assertEqual(len(client.calls), 1)
+        self.assertIn("extra_body", client.calls[0])
+
+    async def test_verify_responses_audio_support_handles_audio_errors(self):
+        client = FakeOpenAIClient({"output": []})
+        responder = LLMResponder(
+            client=client,
+            enable_tts=True,
+            use_responses_audio=True,
+        )
+        client.error_to_raise = DummyBadRequest(
+            message="Unknown parameter audio",
+            body={"error": {"param": "audio"}},
+        )
+
+        supported = await responder.verify_responses_audio_support()
+
+        self.assertFalse(supported)
+        self.assertFalse(responder.responses_audio_supported)
+        self.assertEqual(len(client.calls), 1)
+
+    async def test_verify_responses_audio_support_propagates_other_errors(self):
+        client = FakeOpenAIClient({"output": []})
+        responder = LLMResponder(
+            client=client,
+            enable_tts=True,
+            use_responses_audio=True,
+        )
+        client.error_to_raise = DummyBadRequest(message="rate limited")
+
+        with pytest.raises(DummyBadRequest):
+            await responder.verify_responses_audio_support()
+
+        self.assertEqual(len(client.calls), 1)
+
     def test_extract_modalities_combines_text_and_audio_chunks(self):
         payload = {
             "output": [

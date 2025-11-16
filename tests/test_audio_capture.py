@@ -111,3 +111,130 @@ def test_callback_warns_when_queue_full(monkeypatch):
     capture.callback(audio_chunk, frames=4, time_info=None, status=None)
 
     assert "Audio queue full" in stderr.getvalue()
+
+
+def test_callback_logs_status(monkeypatch):
+    capture = AudioCapture()
+    capture.loop = type("Loop", (), {"call_soon_threadsafe": lambda self, cb, *args: cb(*args)})()
+
+    class Queue:
+        def put_nowait(self, _):
+            pass
+
+    capture.audio_queue = Queue()
+    audio_chunk = np.zeros((4,), dtype=np.int16)
+
+    stderr = io.StringIO()
+    monkeypatch.setattr(capture_module.sys, "stderr", stderr)
+
+    capture.callback(audio_chunk, frames=4, time_info=None, status="OVERFLOW")
+
+    assert "Audio callback status: OVERFLOW" in stderr.getvalue()
+
+
+def test_parse_device_override_whitespace():
+    assert AudioCapture._parse_device_override("   ") is None
+    assert AudioCapture._parse_device_override("\n\t 3 ") == 3
+
+
+def test_select_input_device_raises_when_no_options(monkeypatch):
+    monkeypatch.setattr(capture_module, "AUDIO_INPUT_DEVICE", None)
+    monkeypatch.setattr(capture_module.sd, "default", SimpleNamespace(device=(-1, -1)))
+
+    def fail_query(*args, **kwargs):
+        raise RuntimeError("no devices")
+
+    monkeypatch.setattr(capture_module.sd, "query_devices", fail_query)
+
+    capture = AudioCapture()
+
+    with pytest.raises(RuntimeError):
+        capture._select_input_device()
+
+
+def test_select_input_device_invalid_override(monkeypatch):
+    monkeypatch.setattr(capture_module, "AUDIO_INPUT_DEVICE", "42")
+
+    def fail_query(device):
+        raise ValueError("unknown device")
+
+    monkeypatch.setattr(capture_module.sd, "query_devices", fail_query)
+
+    capture = AudioCapture()
+
+    with pytest.raises(RuntimeError, match="AUDIO_INPUT_DEVICE"):
+        capture._select_input_device()
+
+
+def test_first_available_input_device_query_failure(monkeypatch):
+    def fail_query():
+        raise ValueError("portaudio error")
+
+    monkeypatch.setattr(capture_module.sd, "query_devices", fail_query)
+
+    capture = AudioCapture()
+
+    with pytest.raises(RuntimeError):
+        capture._first_available_input_device()
+
+
+def test_stop_stream_handles_none():
+    capture = AudioCapture()
+
+    # Should not raise
+    capture.stop_stream()
+
+
+class _DummyStream:
+    def __init__(self):
+        self.started = False
+        self.stopped = False
+        self.closed = False
+
+    def start(self):
+        self.started = True
+
+    def stop(self):
+        self.stopped = True
+
+    def close(self):
+        self.closed = True
+
+
+def test_start_stream_initialization_failure(monkeypatch):
+    capture = AudioCapture()
+    monkeypatch.setattr(capture, "_select_input_device", lambda: 1)
+
+    def fail_input_stream(*args, **kwargs):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(capture_module.sd, "InputStream", fail_input_stream)
+
+    loop = asyncio.new_event_loop()
+    try:
+        with pytest.raises(RuntimeError, match="Unable to initialize audio input stream"):
+            capture.start_stream(loop=loop)
+    finally:
+        loop.close()
+
+
+def test_start_and_stop_stream_success(monkeypatch):
+    capture = AudioCapture()
+    dummy_stream = _DummyStream()
+
+    monkeypatch.setattr(capture, "_select_input_device", lambda: 0)
+    monkeypatch.setattr(capture_module.sd, "InputStream", lambda **kwargs: dummy_stream)
+
+    loop = asyncio.new_event_loop()
+    try:
+        capture.start_stream(loop=loop)
+    finally:
+        loop.close()
+
+    assert capture.stream is dummy_stream
+    assert dummy_stream.started is True
+
+    capture.stop_stream()
+
+    assert dummy_stream.stopped is True
+    assert dummy_stream.closed is True
