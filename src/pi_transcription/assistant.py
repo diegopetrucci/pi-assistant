@@ -169,9 +169,18 @@ class LLMResponder:
         extra_body = self._build_audio_extra_body()
         response = await self._send_response_request(request_kwargs, extra_body)
 
-        text, audio_bytes, audio_format, sample_rate = self._extract_modalities(
+        text, audio_bytes, audio_format, sample_rate, chunk_count = self._extract_modalities(
             response, default_sample_rate=self._tts_sample_rate
         )
+        if self._enable_tts:
+            if audio_bytes:
+                print(
+                    f"[ASSISTANT] Received {chunk_count} audio chunk(s) "
+                    f"({len(audio_bytes)} bytes @ {sample_rate or 'unknown'} Hz, "
+                    f"format={audio_format or 'unknown'})"
+                )
+            else:
+                print("[ASSISTANT] No audio chunks returned; using text-only reply.")
         if self._enable_tts and audio_bytes is None and text:
             fallback_audio, fallback_rate = await self._synthesize_audio(text)
             if fallback_audio:
@@ -294,7 +303,7 @@ class LLMResponder:
     @staticmethod
     def _extract_modalities(
         response, default_sample_rate: Optional[int] = None
-    ) -> tuple[Optional[str], Optional[bytes], Optional[str], Optional[int]]:
+    ) -> tuple[Optional[str], Optional[bytes], Optional[str], Optional[int], int]:
         """Pull text and audio payloads out of a Responses API payload."""
 
         if hasattr(response, "model_dump"):
@@ -304,9 +313,10 @@ class LLMResponder:
 
         output = data.get("output", []) if isinstance(data, dict) else []
         fragments: list[str] = []
-        audio_bytes: Optional[bytes] = None
+        audio_chunks: list[bytes] = []
         audio_format: Optional[str] = None
         audio_sample_rate: Optional[int] = default_sample_rate
+        audio_chunk_count = 0
 
         for block in output:
             for content in block.get("content", []):
@@ -315,22 +325,25 @@ class LLMResponder:
                     text = content.get("text", "").strip()
                     if text:
                         fragments.append(text)
-                elif content_type == "output_audio" and audio_bytes is None:
+                elif content_type == "output_audio":
                     audio_blob = content.get("audio", {})
                     b64_data = audio_blob.get("data")
                     if not b64_data:
                         continue
                     try:
-                        audio_bytes = base64.b64decode(b64_data)
+                        decoded = base64.b64decode(b64_data)
                     except (ValueError, TypeError):  # pragma: no cover - invalid payload
-                        audio_bytes = None
                         continue
-                    audio_format = audio_blob.get("format", audio_format)
-                    audio_sample_rate = audio_blob.get("sample_rate") or audio_sample_rate
+                    if decoded:
+                        audio_chunks.append(decoded)
+                        audio_format = audio_blob.get("format", audio_format)
+                        audio_sample_rate = audio_blob.get("sample_rate") or audio_sample_rate
+                        audio_chunk_count += 1
 
         combined = "\n".join(fragments).strip()
         text_output = combined or None
-        return text_output, audio_bytes, audio_format, audio_sample_rate
+        audio_output = b"".join(audio_chunks) if audio_chunks else None
+        return text_output, audio_output, audio_format, audio_sample_rate, audio_chunk_count
 
 
 __all__ = ["LLMReply", "LLMResponder", "TurnTranscriptAggregator"]
