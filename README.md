@@ -70,7 +70,17 @@ uv python pin 3.11
 
 This stores the interpreter under `.uv/python/...` and records the version in `.python-version`. Commit `.python-version`, keep `.uv/` ignored, and every `uv` command you run here (including `uv sync`) will automatically use that local 3.11 build so packages like `tflite-runtime` install cleanly. To switch later, run `uv python pin <other-version>` or remove `.python-version`.
 
-### 4. Configure API Key
+### 4. Install PortAudio (Raspberry Pi)
+
+`sounddevice` depends on the PortAudio shared libraries, which Raspberry Pi OS does not install by default. Run the helper script once per Pi to pull in the required packages:
+
+```bash
+./scripts/install-portaudio-deps.sh
+```
+
+The script performs an `apt-get update` and installs `libportaudio2`, `libportaudiocpp0`, and `portaudio19-dev` using `sudo`. If you're on a distro without `apt-get`, install the equivalent PortAudio development packages via your package manager before running `uv run pi-transcription`.
+
+### 5. Configure API Key
 
 Create a `.env` file with your OpenAI API key:
 
