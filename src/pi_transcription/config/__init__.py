@@ -65,6 +65,9 @@ def _env_path(name: str, default: str) -> Path:
 # Audio Configuration
 _AUDIO = _DEFAULTS["audio"]
 SAMPLE_RATE = _env_int("SAMPLE_RATE", _AUDIO["sample_rate"])
+STREAM_SAMPLE_RATE = _env_int(
+    "STREAM_SAMPLE_RATE", _AUDIO.get("stream_sample_rate", _AUDIO["sample_rate"])
+)
 BUFFER_SIZE = _env_int("BUFFER_SIZE", _AUDIO["buffer_size"])
 CHANNELS = _env_int("CHANNELS", _AUDIO["channels"])
 DTYPE = os.getenv("DTYPE", _AUDIO["dtype"])

@@ -10,6 +10,7 @@ import numpy as np
 
 from pi_transcription.assistant import LLMResponder, TurnTranscriptAggregator
 from pi_transcription.audio import SpeechPlayer
+from pi_transcription.audio.resampler import LinearResampler
 from pi_transcription.cli.logging_utils import (
     ASSISTANT_LOG_LABEL,
     CONTROL_LOG_LABEL,
@@ -25,6 +26,7 @@ from pi_transcription.config import (
     CHANNELS,
     PREROLL_DURATION_SECONDS,
     SAMPLE_RATE,
+    STREAM_SAMPLE_RATE,
     WAKE_WORD_CONSECUTIVE_FRAMES,
     WAKE_WORD_EMBEDDING_MODEL_PATH,
     WAKE_WORD_MELSPEC_MODEL_PATH,
@@ -144,6 +146,24 @@ async def run_audio_controller(
             raise
 
     pre_roll = PreRollBuffer(PREROLL_DURATION_SECONDS, SAMPLE_RATE)
+    stream_resampler: Optional[LinearResampler] = None
+    if SAMPLE_RATE != STREAM_SAMPLE_RATE:
+        stream_resampler = LinearResampler(SAMPLE_RATE, STREAM_SAMPLE_RATE)
+        print(
+            f"{CONTROL_LOG_LABEL} Resampling capture audio "
+            f"{SAMPLE_RATE} Hz -> {STREAM_SAMPLE_RATE} Hz for OpenAI."
+        )
+    else:
+        print(f"{CONTROL_LOG_LABEL} Streaming audio at {STREAM_SAMPLE_RATE} Hz.")
+
+    def _prepare_for_stream(chunk: bytes) -> bytes:
+        if not chunk:
+            return b""
+        if not stream_resampler:
+            return chunk
+        samples = stream_resampler.process(chunk)
+        return samples.tobytes() if samples.size else b""
+
     state = StreamState.STREAMING if force_always_on else StreamState.LISTENING
     initial_reason = "wake-word override" if force_always_on else "awaiting wake phrase"
     log_state_transition(None, state, initial_reason)
@@ -206,7 +226,9 @@ async def run_audio_controller(
                             f"{WAKE_LOG_LABEL} Triggered -> streaming "
                             f"(sent {duration_ms:.0f} ms of buffered audio)"
                         )
-                        await ws_client.send_audio_chunk(payload)
+                        resampled_payload = _prepare_for_stream(payload)
+                        if resampled_payload:
+                            await ws_client.send_audio_chunk(resampled_payload)
                         skip_current_chunk = True
                     else:
                         skip_current_chunk = False
@@ -222,7 +244,9 @@ async def run_audio_controller(
                     )
 
             if state == StreamState.STREAMING and not skip_current_chunk:
-                await ws_client.send_audio_chunk(audio_bytes)
+                stream_chunk = _prepare_for_stream(audio_bytes)
+                if stream_chunk:
+                    await ws_client.send_audio_chunk(stream_chunk)
 
             if AUTO_STOP_ENABLED and state == StreamState.STREAMING and not force_always_on:
                 frames = len(audio_bytes) / (2 * CHANNELS)

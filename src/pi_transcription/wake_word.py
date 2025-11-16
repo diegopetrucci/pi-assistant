@@ -11,7 +11,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
+from pi_transcription.audio.resampler import LinearResampler
 
 try:
     from openwakeword.model import Model
@@ -70,65 +70,6 @@ class PreRollBuffer:
         self._size = 0
 
 
-class _LinearResampler:
-    """Simple linear-interpolation resampler for mono PCM16 audio."""
-
-    def __init__(self, source_rate: int, target_rate: int):
-        self.source_rate = source_rate
-        self.target_rate = target_rate
-        self._step = source_rate / target_rate if target_rate else 1.0
-        self._buffer = np.array([], dtype=np.float32)
-        self._position = 0.0
-
-    def process(self, audio_bytes: bytes) -> np.ndarray:
-        """Return resampled PCM16 audio suitable for the detector."""
-
-        if self.source_rate == self.target_rate:
-            return np.frombuffer(audio_bytes, dtype=np.int16).copy()
-
-        if not audio_bytes:
-            return np.array([], dtype=np.int16)
-
-        samples = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32)
-        if self._buffer.size:
-            self._buffer = np.concatenate((self._buffer, samples))
-        else:
-            self._buffer = samples.copy()
-
-        outputs = []
-        pos = self._position
-        step = self._step
-        buf_len = self._buffer.size
-
-        # Need at least two samples for interpolation
-        while buf_len >= 2 and pos + 1 < buf_len:
-            idx = int(pos)
-            frac = pos - idx
-            next_idx = idx + 1
-            sample = self._buffer[idx] * (1.0 - frac) + self._buffer[next_idx] * frac
-            outputs.append(sample)
-            pos += step
-
-        consumed = int(pos)
-        if consumed > 0:
-            self._buffer = self._buffer[consumed:]
-            pos -= consumed
-
-        self._position = pos
-
-        if not outputs:
-            return np.array([], dtype=np.int16)
-
-        clipped = np.clip(np.array(outputs, dtype=np.float32), -32768, 32767)
-        return clipped.astype(np.int16)
-
-    def reset(self) -> None:
-        """Clear accumulated samples."""
-
-        self._buffer = np.array([], dtype=np.float32)
-        self._position = 0.0
-
-
 class WakeWordEngine:
     """Thin wrapper around openWakeWord with additional gating logic."""
 
@@ -153,7 +94,7 @@ class WakeWordEngine:
         self.threshold = threshold
         self.consecutive_required = max(1, consecutive_required)
         self._consecutive_hits = 0
-        self._resampler = _LinearResampler(source_sample_rate, target_sample_rate)
+        self._resampler = LinearResampler(source_sample_rate, target_sample_rate)
         self._model = self._load_model(
             model_path,
             fallback_model_path,

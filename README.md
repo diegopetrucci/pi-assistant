@@ -177,14 +177,21 @@ noise reduction, etc.), while the module exposes strongly typed constants and
 environment-variable overrides:
 
 - `OPENAI_API_KEY` (required), `OPENAI_MODEL`, `OPENAI_REALTIME_ENDPOINT`
-- Audio pipeline knobs: `SAMPLE_RATE`, `BUFFER_SIZE`, `CHANNELS`, `DTYPE`,
-  `PREROLL_DURATION_SECONDS`, `AUDIO_QUEUE_MAX_SIZE`, `AUDIO_INPUT_DEVICE`
+- Audio pipeline knobs: `SAMPLE_RATE`, `STREAM_SAMPLE_RATE`, `BUFFER_SIZE`,
+  `CHANNELS`, `DTYPE`, `PREROLL_DURATION_SECONDS`, `AUDIO_QUEUE_MAX_SIZE`,
+  `AUDIO_INPUT_DEVICE`
 - Auto-stop tuning: `AUTO_STOP_ENABLED`, `AUTO_STOP_SILENCE_THRESHOLD`,
   `AUTO_STOP_MAX_SILENCE_SECONDS`
 - Wake-word overrides (see below): `WAKE_WORD_*`, `FORCE_ALWAYS_ON`
 
 Update the TOML file for new defaults (which can be committed) and use env vars
 for per-device overrides.
+
+When a USB microphone only exposes 48 kHz (or any rate different from the
+OpenAI session’s 24 kHz expectation), set `SAMPLE_RATE` to the hardware-supported
+value and leave `STREAM_SAMPLE_RATE` at the default 24 kHz. The controller will
+resample buffered and live audio before sending it to OpenAI, so wake-word
+detection and transcription stay in sync.
 
 ### Wake Word Settings
 

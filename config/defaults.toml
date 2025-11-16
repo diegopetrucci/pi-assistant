@@ -1,5 +1,6 @@
 [audio]
 sample_rate = 24000
+stream_sample_rate = 24000
 buffer_size = 1024
 channels = 1
 dtype = "int16"
