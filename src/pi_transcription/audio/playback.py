@@ -10,11 +10,12 @@ import sounddevice as sd
 
 
 class SpeechPlayer:
-    """Serializes playback so assistant audio doesn't overlap itself."""
+    """Serializes playback so assistant audio doesn't overlap and allows stop commands."""
 
     def __init__(self, default_sample_rate: int = 24000):
         self._default_sample_rate = default_sample_rate
-        self._lock = asyncio.Lock()
+        self._play_lock = asyncio.Lock()
+        self._is_playing = asyncio.Event()
 
     async def play(self, audio_bytes: bytes, sample_rate: Optional[int] = None) -> None:
         """Play PCM16 audio without blocking the event loop."""
@@ -22,10 +23,22 @@ class SpeechPlayer:
         if not audio_bytes:
             return
 
-        async with self._lock:
-            await asyncio.to_thread(
-                self._play_blocking, audio_bytes, sample_rate or self._default_sample_rate
-            )
+        async with self._play_lock:
+            self._is_playing.set()
+            try:
+                await asyncio.to_thread(
+                    self._play_blocking, audio_bytes, sample_rate or self._default_sample_rate
+                )
+            finally:
+                self._is_playing.clear()
+
+    async def stop(self) -> bool:
+        """Stop any in-progress playback, returning True if something was interrupted."""
+
+        if not self._is_playing.is_set():
+            return False
+        await asyncio.to_thread(sd.stop)
+        return True
 
     @staticmethod
     def _play_blocking(audio_bytes: bytes, sample_rate: int) -> None:

@@ -1,0 +1,101 @@
+"""Event handling helpers for the CLI transcription app."""
+
+from __future__ import annotations
+
+import asyncio
+import re
+import sys
+
+from pi_transcription.assistant import TurnTranscriptAggregator
+from pi_transcription.audio import SpeechPlayer
+from pi_transcription.cli.logging_utils import (
+    CONTROL_LOG_LABEL,
+    TRANSCRIPT_LOG_LABEL,
+    VAD_LOG_LABEL,
+)
+from pi_transcription.network import WebSocketClient
+
+STOP_COMMANDS = ("hey jarvis stop", "jarvis stop")
+
+
+def handle_transcription_event(event: dict) -> None:
+    """Pretty-print OpenAI transcription events for debugging."""
+
+    event_type = event.get("type")
+
+    if event_type == "conversation.item.input_audio_transcription.delta":
+        delta = event.get("delta", "")
+        print(f"[PARTIAL] {delta}", end="", flush=True)
+
+    elif event_type == "conversation.item.input_audio_transcription.completed":
+        transcript = event.get("transcript", "")
+        print(f"\n{TRANSCRIPT_LOG_LABEL} {transcript}")
+
+    elif event_type == "input_audio_buffer.committed":
+        item_id = event.get("item_id", "")
+        print(f"{VAD_LOG_LABEL} Speech detected (item: {item_id})")
+
+    elif event_type == "error":
+        error = event.get("error", {})
+        error_type = error.get("type", "unknown")
+        error_message = error.get("message", "No message")
+        error_code = error.get("code", "unknown")
+        print(f"[ERROR] {error_type} ({error_code}): {error_message}", file=sys.stderr)
+
+    elif event_type == "transcription_session.created":
+        print("[INFO] Transcription session created")
+
+    elif event_type == "transcription_session.updated":
+        print("[INFO] Transcription session configuration updated")
+
+    else:
+        print(f"[DEBUG] Received event: {event_type}")
+
+
+def _normalize_command(text: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9 ]+", " ", text.lower())
+    return " ".join(cleaned.split())
+
+
+async def maybe_stop_playback(transcript: str, speech_player: SpeechPlayer) -> bool:
+    """Stop assistant playback if a stop command is detected in the transcript."""
+
+    normalized = _normalize_command(transcript)
+    if not normalized:
+        return False
+    if any(cmd in normalized for cmd in STOP_COMMANDS):
+        halted = await speech_player.stop()
+        if halted:
+            print(f"{CONTROL_LOG_LABEL} Stop command detected; halting assistant audio.")
+        return True
+    return False
+
+
+async def receive_transcription_events(
+    ws_client: WebSocketClient,
+    transcript_buffer: TurnTranscriptAggregator,
+    speech_player: SpeechPlayer,
+) -> None:
+    """Continuously receive and handle transcription events from WebSocket."""
+
+    print("[INFO] Starting event receiver...")
+    event_count = 0
+
+    try:
+        async for event in ws_client.receive_events():
+            event_count += 1
+            handle_transcription_event(event)
+            if event.get("type") == "conversation.item.input_audio_transcription.completed":
+                transcript = event.get("transcript", "")
+                item_id = event.get("item_id")
+                if await maybe_stop_playback(transcript, speech_player):
+                    await transcript_buffer.clear_current_turn()
+                    continue
+                await transcript_buffer.append_transcript(item_id, transcript)
+
+    except asyncio.CancelledError:
+        print(f"[INFO] Event receiver stopped ({event_count} events received)")
+        raise
+    except Exception as exc:
+        print(f"[ERROR] Event receiver error: {exc}", file=sys.stderr)
+        raise

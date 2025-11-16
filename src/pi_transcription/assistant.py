@@ -74,6 +74,13 @@ class TurnTranscriptAggregator:
             self._state = "idle"
             return transcript or None
 
+    async def clear_current_turn(self) -> None:
+        """Drop any buffered segments without ending the turn."""
+
+        async with self._lock:
+            self._segments.clear()
+            self._seen_items.clear()
+
 
 @dataclass
 class LLMReply:
