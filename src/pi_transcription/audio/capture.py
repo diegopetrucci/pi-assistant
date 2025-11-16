@@ -8,6 +8,7 @@ import sys
 
 import sounddevice as sd
 
+from pi_transcription.cli.logging_utils import verbose_print
 from pi_transcription.config import (
     AUDIO_INPUT_DEVICE,
     AUDIO_QUEUE_MAX_SIZE,
@@ -43,7 +44,9 @@ class AudioCapture:
 
         # Debug: Print first few callbacks
         if self.callback_count <= 3:
-            print(f"[DEBUG] Callback #{self.callback_count}: {len(indata)} frames", flush=True)
+            verbose_print(
+                f"[DEBUG] Callback #{self.callback_count}: {len(indata)} frames", flush=True
+            )
 
         if status:
             print(f"Audio callback status: {status}", file=sys.stderr)
@@ -67,15 +70,15 @@ class AudioCapture:
         """
         self.loop = loop
 
-        print("Initializing audio stream...")
-        print(f"  Sample rate: {SAMPLE_RATE} Hz")
-        print(f"  Channels: {CHANNELS} (mono)")
-        print(f"  Buffer size: {BUFFER_SIZE} frames")
-        print(f"  Data type: {DTYPE}")
+        verbose_print("Initializing audio stream...")
+        verbose_print(f"  Sample rate: {SAMPLE_RATE} Hz")
+        verbose_print(f"  Channels: {CHANNELS} (mono)")
+        verbose_print(f"  Buffer size: {BUFFER_SIZE} frames")
+        verbose_print(f"  Data type: {DTYPE}")
 
         device = self._select_input_device()
         self.input_device = device
-        print(f"  Input device: {self._describe_device(device)}")
+        verbose_print(f"  Input device: {self._describe_device(device)}")
 
         # Initialize sounddevice input stream
         try:
@@ -95,14 +98,14 @@ class AudioCapture:
             ) from exc
 
         self.stream.start()
-        print("Audio stream started")
+        verbose_print("Audio stream started")
 
     def stop_stream(self):
         """Stop and close the audio stream"""
         if self.stream:
             self.stream.stop()
             self.stream.close()
-            print("Audio stream closed")
+            verbose_print("Audio stream closed")
 
     async def get_audio_chunk(self):
         """

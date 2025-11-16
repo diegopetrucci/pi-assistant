@@ -18,6 +18,7 @@ from pi_transcription.cli.logging_utils import (
     TURN_LOG_LABEL,
     WAKE_LOG_LABEL,
     log_state_transition,
+    verbose_print,
 )
 from pi_transcription.config import (
     AUTO_STOP_ENABLED,
@@ -69,7 +70,7 @@ async def finalize_turn_and_respond(
     if not transcript:
         return
 
-    print(f"{TURN_LOG_LABEL} Sending transcript to assistant: {transcript}")
+    verbose_print(f"{TURN_LOG_LABEL} Sending transcript to assistant: {transcript}")
 
     try:
         reply = await assistant.generate_reply(transcript)
@@ -127,7 +128,7 @@ async def run_audio_controller(
 ) -> None:
     """Multiplex microphone audio between the wake-word detector and the OpenAI stream."""
 
-    print("[INFO] Starting audio controller...")
+    verbose_print("[INFO] Starting audio controller...")
 
     wake_engine: Optional[WakeWordEngine] = None
     if not force_always_on:
@@ -150,12 +151,12 @@ async def run_audio_controller(
     stream_resampler: Optional[LinearResampler] = None
     if SAMPLE_RATE != STREAM_SAMPLE_RATE:
         stream_resampler = LinearResampler(SAMPLE_RATE, STREAM_SAMPLE_RATE)
-        print(
+        verbose_print(
             f"{CONTROL_LOG_LABEL} Resampling capture audio "
             f"{SAMPLE_RATE} Hz -> {STREAM_SAMPLE_RATE} Hz for OpenAI."
         )
     else:
-        print(f"{CONTROL_LOG_LABEL} Streaming audio at {STREAM_SAMPLE_RATE} Hz.")
+        verbose_print(f"{CONTROL_LOG_LABEL} Streaming audio at {STREAM_SAMPLE_RATE} Hz.")
 
     def _prepare_for_stream(chunk: bytes) -> bytes:
         if not chunk:
@@ -169,7 +170,7 @@ async def run_audio_controller(
     initial_reason = "wake-word override" if force_always_on else "awaiting wake phrase"
     log_state_transition(None, state, initial_reason)
     if force_always_on:
-        print(f"{WAKE_LOG_LABEL} Wake-word override active; streaming immediately")
+        verbose_print(f"{WAKE_LOG_LABEL} Wake-word override active; streaming immediately")
 
     chunk_count = 0
     silence_duration = 0.0
@@ -214,7 +215,9 @@ async def run_audio_controller(
             if stop_signal.is_set():
                 stop_signal.clear()
                 if state == StreamState.STREAMING:
-                    print(f"{CONTROL_LOG_LABEL} Stop command received; returning to listening.")
+                    verbose_print(
+                        f"{CONTROL_LOG_LABEL} Stop command received; returning to listening."
+                    )
                     previous_state = state
                     state = StreamState.LISTENING
                     log_state_transition(previous_state, state, "stop command received")
@@ -233,7 +236,7 @@ async def run_audio_controller(
             if wake_engine:
                 detection = wake_engine.process_chunk(audio_bytes)
                 if detection.score >= WAKE_WORD_SCORE_THRESHOLD:
-                    print(
+                    verbose_print(
                         f"{WAKE_LOG_LABEL} score={detection.score:.2f} "
                         f"(threshold {WAKE_WORD_SCORE_THRESHOLD:.2f}) state={state.value}"
                     )
@@ -248,7 +251,7 @@ async def run_audio_controller(
                     payload = pre_roll.flush()
                     if payload:
                         duration_ms = (len(payload) / (2 * CHANNELS)) / SAMPLE_RATE * 1000
-                        print(
+                        verbose_print(
                             f"{WAKE_LOG_LABEL} Triggered -> streaming "
                             f"(sent {duration_ms:.0f} ms of buffered audio)"
                         )
@@ -288,7 +291,7 @@ async def run_audio_controller(
                         if retrigger_budget == 0:
                             _transition_stream_to_listening("silence detected")
                         else:
-                            print(
+                            verbose_print(
                                 f"{TURN_LOG_LABEL} Silence detected but "
                                 f"{retrigger_budget} retrigger(s) observed; keeping stream open"
                             )
@@ -296,10 +299,10 @@ async def run_audio_controller(
                             silence_duration = 0.0
 
             if chunk_count % 100 == 0:
-                print(f"[DEBUG] Processed {chunk_count} audio chunks (state={state.value})")
+                verbose_print(f"[DEBUG] Processed {chunk_count} audio chunks (state={state.value})")
 
     except asyncio.CancelledError:
-        print(f"[INFO] Audio controller stopped ({chunk_count} chunks processed)")
+        verbose_print(f"[INFO] Audio controller stopped ({chunk_count} chunks processed)")
         raise
     except Exception as exc:
         print(f"{ERROR_LOG_LABEL} Audio controller error: {exc}", file=sys.stderr)

@@ -13,6 +13,7 @@ from pi_transcription.cli.logging_utils import (
     ERROR_LOG_LABEL,
     TRANSCRIPT_LOG_LABEL,
     VAD_LOG_LABEL,
+    verbose_print,
 )
 from pi_transcription.network import WebSocketClient
 
@@ -26,7 +27,7 @@ def handle_transcription_event(event: dict) -> None:
 
     if event_type == "conversation.item.input_audio_transcription.delta":
         delta = event.get("delta", "")
-        print(f"[PARTIAL] {delta}", end="", flush=True)
+        verbose_print(f"[PARTIAL] {delta}", end="", flush=True)
 
     elif event_type == "conversation.item.input_audio_transcription.completed":
         transcript = event.get("transcript", "")
@@ -34,7 +35,7 @@ def handle_transcription_event(event: dict) -> None:
 
     elif event_type == "input_audio_buffer.committed":
         item_id = event.get("item_id", "")
-        print(f"{VAD_LOG_LABEL} Speech detected (item: {item_id})")
+        verbose_print(f"{VAD_LOG_LABEL} Speech detected (item: {item_id})")
 
     elif event_type == "error":
         error = event.get("error", {})
@@ -44,13 +45,13 @@ def handle_transcription_event(event: dict) -> None:
         print(f"{ERROR_LOG_LABEL} {error_type} ({error_code}): {error_message}", file=sys.stderr)
 
     elif event_type == "transcription_session.created":
-        print("[INFO] Transcription session created")
+        verbose_print("[INFO] Transcription session created")
 
     elif event_type == "transcription_session.updated":
-        print("[INFO] Transcription session configuration updated")
+        verbose_print("[INFO] Transcription session configuration updated")
 
     else:
-        print(f"[DEBUG] Received event: {event_type}")
+        verbose_print(f"[DEBUG] Received event: {event_type}")
 
 
 def _normalize_command(text: str) -> str:
@@ -67,7 +68,7 @@ async def maybe_stop_playback(transcript: str, speech_player: SpeechPlayer) -> b
     if any(cmd in normalized for cmd in STOP_COMMANDS):
         halted = await speech_player.stop()
         if halted:
-            print(f"{CONTROL_LOG_LABEL} Stop command detected; halting assistant audio.")
+            verbose_print(f"{CONTROL_LOG_LABEL} Stop command detected; halting assistant audio.")
         return True
     return False
 
@@ -82,7 +83,7 @@ async def receive_transcription_events(
 ) -> None:
     """Continuously receive and handle transcription events from WebSocket."""
 
-    print("[INFO] Starting event receiver...")
+    verbose_print("[INFO] Starting event receiver...")
     event_count = 0
 
     try:
@@ -102,7 +103,7 @@ async def receive_transcription_events(
                 speech_stopped_signal.set()
 
     except asyncio.CancelledError:
-        print(f"[INFO] Event receiver stopped ({event_count} events received)")
+        verbose_print(f"[INFO] Event receiver stopped ({event_count} events received)")
         raise
     except Exception as exc:
         print(f"{ERROR_LOG_LABEL} Event receiver error: {exc}", file=sys.stderr)

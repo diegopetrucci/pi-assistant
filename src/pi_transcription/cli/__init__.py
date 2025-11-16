@@ -1,5 +1,3 @@
-"""Command-line interface entry points for Pi transcription."""
+"""Command-line interface package for Pi transcription utilities."""
 
-from .app import main
-
-__all__ = ["main"]
+__all__: list[str] = []

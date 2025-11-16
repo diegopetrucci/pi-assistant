@@ -10,6 +10,7 @@ from typing import Optional
 
 from openai import AsyncOpenAI, BadRequestError
 
+from pi_transcription.cli.logging_utils import verbose_print
 from pi_transcription.config import (
     ASSISTANT_MODEL,
     ASSISTANT_SYSTEM_PROMPT,
@@ -51,7 +52,7 @@ class TurnTranscriptAggregator:
             self._segments.clear()
             self._seen_items.clear()
             self._state = "active"
-            print(f"{self._trace_label} {self._timestamp()} start turn")
+            verbose_print(f"{self._trace_label} {self._timestamp()} start turn")
 
     async def append_transcript(self, item_id: Optional[str], text: str) -> None:
         """Store a completed transcript fragment for the current turn."""
@@ -62,12 +63,12 @@ class TurnTranscriptAggregator:
 
         async with self._lock:
             if self._state == "idle":
-                print(
+                verbose_print(
                     f"{self._trace_label} {self._timestamp()} append ignored (idle) item={item_id}"
                 )
                 return
             if item_id and item_id in self._seen_items:
-                print(
+                verbose_print(
                     f"{self._trace_label} {self._timestamp()} append ignored (duplicate) "
                     f"item={item_id}"
                 )
@@ -75,7 +76,7 @@ class TurnTranscriptAggregator:
             if item_id:
                 self._seen_items.add(item_id)
             self._segments.append(cleaned)
-            print(
+            verbose_print(
                 f"{self._trace_label} {self._timestamp()} append stored item={item_id} "
                 f"segments={len(self._segments)} text={cleaned!r}"
             )
@@ -85,11 +86,11 @@ class TurnTranscriptAggregator:
 
         async with self._lock:
             if self._state == "idle":
-                print(f"{self._trace_label} {self._timestamp()} finalize skipped (idle)")
+                verbose_print(f"{self._trace_label} {self._timestamp()} finalize skipped (idle)")
                 return None
             self._state = "closing"
             pending_segments = len(self._segments)
-            print(
+            verbose_print(
                 f"{self._trace_label} {self._timestamp()} finalize start "
                 f"segments={pending_segments}"
             )
@@ -116,7 +117,7 @@ class TurnTranscriptAggregator:
                         if (not transcript and total_wait >= self._max_finalize_wait)
                         else "complete"
                     )
-                    print(
+                    verbose_print(
                         f"{self._trace_label} {self._timestamp()} finalize done "
                         f"segments_cleared={pending_segments} wait={total_wait:.3f}s "
                         f"mode={reason} transcript={snippet!r}"
@@ -153,7 +154,7 @@ class TurnTranscriptAggregator:
             self._segments.clear()
             self._seen_items.clear()
             suffix = f" reason={reason}" if reason else ""
-            print(
+            verbose_print(
                 f"{self._trace_label} {self._timestamp()} clear turn "
                 f"segments_dropped={segment_count}{suffix}"
             )
@@ -250,7 +251,7 @@ class LLMResponder:
         )
         if self._enable_tts:
             if audio_bytes:
-                print(
+                verbose_print(
                     f"[ASSISTANT] Received {chunk_count} audio chunk(s) "
                     f"({len(audio_bytes)} bytes @ {sample_rate or 'unknown'} Hz, "
                     f"format={audio_format or 'unknown'})"

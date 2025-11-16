@@ -10,7 +10,7 @@ import sys
 
 import websockets
 
-from pi_transcription.cli.logging_utils import ERROR_LOG_LABEL
+from pi_transcription.cli.logging_utils import ERROR_LOG_LABEL, verbose_print
 from pi_transcription.config import (
     OPENAI_REALTIME_ENDPOINT,
     SESSION_CONFIG,
@@ -29,9 +29,9 @@ class WebSocketClient:
         """
         Establish WebSocket connection to OpenAI Realtime API using API key
         """
-        print("Connecting to OpenAI Realtime API...")
-        print(f"  Endpoint: {OPENAI_REALTIME_ENDPOINT}")
-        print("  Auth method: API key")
+        verbose_print("Connecting to OpenAI Realtime API...")
+        verbose_print(f"  Endpoint: {OPENAI_REALTIME_ENDPOINT}")
+        verbose_print("  Auth method: API key")
 
         try:
             # Connect with required headers
@@ -39,15 +39,15 @@ class WebSocketClient:
                 OPENAI_REALTIME_ENDPOINT, additional_headers=WEBSOCKET_HEADERS
             )
             self.connected = True
-            print("✓ Connected to OpenAI Realtime API")
+            verbose_print("✓ Connected to OpenAI Realtime API")
 
             # Wait for initial session.created event (with timeout)
             try:
                 await asyncio.wait_for(self.wait_for_session_created(), timeout=10.0)
-                print("  (Initial session created)")
+                verbose_print("  (Initial session created)")
             except asyncio.TimeoutError:
                 print("  [WARNING] No session.created event received after 10s")
-                print("  [INFO] Trying to send session.update anyway...")
+                verbose_print("  [INFO] Trying to send session.update anyway...")
 
             await self.send_session_config()
 
@@ -62,7 +62,7 @@ class WebSocketClient:
         Returns:
             dict: The event from the server
         """
-        print("Waiting for transcription_session.created event...")
+        verbose_print("Waiting for transcription_session.created event...")
 
         try:
             async for message in self.websocket:
@@ -70,11 +70,11 @@ class WebSocketClient:
                 event_type = event.get("type")
 
                 # Debug: print what we received
-                print(f"[DEBUG] Received event type: {event_type}")
+                verbose_print(f"[DEBUG] Received event type: {event_type}")
 
                 # Handle both transcription_session.created and error events
                 if event_type == "transcription_session.created":
-                    print("✓ Transcription session created")
+                    verbose_print("✓ Transcription session created")
                     return event
                 elif event_type == "error":
                     error = event.get("error", {})
@@ -85,7 +85,7 @@ class WebSocketClient:
                     # Don't raise - continue listening for more events
                 else:
                     # Print the full event for debugging
-                    print(f"[DEBUG] Full event: {json.dumps(event, indent=2)}")
+                    verbose_print(f"[DEBUG] Full event: {json.dumps(event, indent=2)}")
 
         except Exception as e:
             print(f"Error waiting for session: {e}", file=sys.stderr)
@@ -100,16 +100,16 @@ class WebSocketClient:
         vad = SESSION_CONFIG["turn_detection"]
         noise_reduction = SESSION_CONFIG["input_audio_noise_reduction"]
 
-        print("Sending session configuration...")
-        print(f"  Model: {transcription['model']}")
-        print(f"  VAD: {vad['type']}")
-        print(f"  Noise reduction: {noise_reduction['type']}")
+        verbose_print("Sending session configuration...")
+        verbose_print(f"  Model: {transcription['model']}")
+        verbose_print(f"  VAD: {vad['type']}")
+        verbose_print(f"  Noise reduction: {noise_reduction['type']}")
 
         try:
             # Send the session update event with required session wrapper
             session_update = {"type": "transcription_session.update", "session": SESSION_CONFIG}
             await self.websocket.send(json.dumps(session_update))
-            print("✓ Session configuration sent")
+            verbose_print("✓ Session configuration sent")
 
         except Exception as e:
             print(f"Error sending session config: {e}", file=sys.stderr)
@@ -163,4 +163,4 @@ class WebSocketClient:
         if self.websocket:
             await self.websocket.close()
             self.connected = False
-            print("WebSocket connection closed")
+            verbose_print("WebSocket connection closed")

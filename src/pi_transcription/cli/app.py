@@ -12,7 +12,11 @@ from pi_transcription.assistant import LLMResponder, TurnTranscriptAggregator
 from pi_transcription.audio import AudioCapture, SpeechPlayer
 from pi_transcription.cli.controller import run_audio_controller
 from pi_transcription.cli.events import handle_transcription_event, receive_transcription_events
-from pi_transcription.cli.logging_utils import ASSISTANT_LOG_LABEL, ERROR_LOG_LABEL
+from pi_transcription.cli.logging_utils import (
+    ASSISTANT_LOG_LABEL,
+    ERROR_LOG_LABEL,
+    set_verbose_logging,
+)
 from pi_transcription.config import ASSISTANT_TTS_SAMPLE_RATE, FORCE_ALWAYS_ON
 from pi_transcription.diagnostics import test_audio_capture, test_websocket_client
 from pi_transcription.network import WebSocketClient
@@ -137,6 +141,12 @@ def parse_args():
         dest="force_always_on",
         help="Explicitly disable the wake-word override even if the env var is set.",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Show detailed diagnostic logs (wake word, state changes, etc.).",
+    )
     return parser.parse_args()
 
 
@@ -144,6 +154,7 @@ def main():
     """Main entry point"""
 
     args = parse_args()
+    set_verbose_logging(args.verbose)
     if args.mode == "test-audio":
         run_func = test_audio_capture
     elif args.mode == "test-websocket":
