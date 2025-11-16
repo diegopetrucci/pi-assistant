@@ -78,6 +78,7 @@ async def receive_transcription_events(
     speech_player: SpeechPlayer,
     *,
     stop_signal: asyncio.Event,
+    speech_stopped_signal: asyncio.Event,
 ) -> None:
     """Continuously receive and handle transcription events from WebSocket."""
 
@@ -87,8 +88,9 @@ async def receive_transcription_events(
     try:
         async for event in ws_client.receive_events():
             event_count += 1
+            event_type = event.get("type")
             handle_transcription_event(event)
-            if event.get("type") == "conversation.item.input_audio_transcription.completed":
+            if event_type == "conversation.item.input_audio_transcription.completed":
                 transcript = event.get("transcript", "")
                 item_id = event.get("item_id")
                 if await maybe_stop_playback(transcript, speech_player):
@@ -96,6 +98,8 @@ async def receive_transcription_events(
                     stop_signal.set()
                     continue
                 await transcript_buffer.append_transcript(item_id, transcript)
+            elif event_type == "input_audio_buffer.speech_stopped":
+                speech_stopped_signal.set()
 
     except asyncio.CancelledError:
         print(f"[INFO] Event receiver stopped ({event_count} events received)")

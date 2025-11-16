@@ -63,6 +63,7 @@ async def run_transcription(force_always_on: bool = False) -> None:
 
         # Create concurrent tasks for audio streaming and event receiving
         stop_signal = asyncio.Event()
+        speech_stopped_signal = asyncio.Event()
 
         audio_task = asyncio.create_task(
             run_audio_controller(
@@ -73,6 +74,7 @@ async def run_transcription(force_always_on: bool = False) -> None:
                 assistant=assistant,
                 speech_player=speech_player,
                 stop_signal=stop_signal,
+                speech_stopped_signal=speech_stopped_signal,
             )
         )
         event_task = asyncio.create_task(
@@ -81,6 +83,7 @@ async def run_transcription(force_always_on: bool = False) -> None:
                 transcript_buffer,
                 speech_player,
                 stop_signal=stop_signal,
+                speech_stopped_signal=speech_stopped_signal,
             )
         )
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
 from openai import AsyncOpenAI, BadRequestError
@@ -31,6 +32,10 @@ class TurnTranscriptAggregator:
         self._segments: list[str] = []
         self._seen_items: set[str] = set()
         self._state: str = "idle"
+        self._trace_label = "[TURN-TRACE]"
+
+    def _timestamp(self) -> str:
+        return datetime.now().strftime("%H:%M:%S.%f")[:-3]
 
     async def start_turn(self) -> None:
         """Begin capturing transcripts for a new turn."""
@@ -49,20 +54,37 @@ class TurnTranscriptAggregator:
 
         async with self._lock:
             if self._state == "idle":
+                print(
+                    f"{self._trace_label} {self._timestamp()} append ignored (idle) item={item_id}"
+                )
                 return
             if item_id and item_id in self._seen_items:
+                print(
+                    f"{self._trace_label} {self._timestamp()} append ignored (duplicate) "
+                    f"item={item_id}"
+                )
                 return
             if item_id:
                 self._seen_items.add(item_id)
             self._segments.append(cleaned)
+            print(
+                f"{self._trace_label} {self._timestamp()} append stored item={item_id} "
+                f"segments={len(self._segments)} text={cleaned!r}"
+            )
 
     async def finalize_turn(self) -> Optional[str]:
         """Return the aggregated transcript once the turn is over."""
 
         async with self._lock:
             if self._state == "idle":
+                print(f"{self._trace_label} {self._timestamp()} finalize skipped (idle)")
                 return None
             self._state = "closing"
+            pending_segments = len(self._segments)
+            print(
+                f"{self._trace_label} {self._timestamp()} finalize start "
+                f"segments={pending_segments}"
+            )
 
         if self._drain_timeout > 0:
             await asyncio.sleep(self._drain_timeout)
@@ -72,6 +94,11 @@ class TurnTranscriptAggregator:
             self._segments.clear()
             self._seen_items.clear()
             self._state = "idle"
+            snippet = (transcript[:80] + "…") if transcript and len(transcript) > 80 else transcript
+            print(
+                f"{self._trace_label} {self._timestamp()} finalize done "
+                f"segments_cleared={pending_segments} transcript={snippet!r}"
+            )
             return transcript or None
 
     async def clear_current_turn(self) -> None:

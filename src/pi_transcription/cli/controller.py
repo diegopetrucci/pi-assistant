@@ -123,6 +123,7 @@ async def run_audio_controller(
     assistant: LLMResponder,
     speech_player: SpeechPlayer,
     stop_signal: asyncio.Event,
+    speech_stopped_signal: asyncio.Event,
 ) -> None:
     """Multiplex microphone audio between the wake-word detector and the OpenAI stream."""
 
@@ -179,10 +180,33 @@ async def run_audio_controller(
     if state == StreamState.STREAMING:
         await transcript_buffer.start_turn()
 
+    def _transition_stream_to_listening(reason: str) -> None:
+        nonlocal state, heard_speech, silence_duration, retrigger_budget
+        if state != StreamState.STREAMING:
+            return
+        previous_state = state
+        state = StreamState.LISTENING
+        log_state_transition(previous_state, state, reason)
+        pre_roll.clear()
+        heard_speech = False
+        silence_duration = 0.0
+        retrigger_budget = 0
+        if wake_engine:
+            wake_engine.reset_detection()
+        if stream_resampler:
+            stream_resampler.reset()
+        task = schedule_turn_response(transcript_buffer, assistant, speech_player)
+        response_tasks.add(task)
+        task.add_done_callback(lambda fut, s=response_tasks: s.discard(fut))
+
     try:
         while True:
             audio_bytes = await audio_capture.get_audio_chunk()
             chunk_count += 1
+
+            if not force_always_on and speech_stopped_signal.is_set():
+                speech_stopped_signal.clear()
+                _transition_stream_to_listening("server speech stop event")
 
             if state == StreamState.LISTENING:
                 pre_roll.add(audio_bytes)
@@ -262,22 +286,7 @@ async def run_audio_controller(
                     silence_duration += chunk_duration
                     if silence_duration >= AUTO_STOP_MAX_SILENCE_SECONDS:
                         if retrigger_budget == 0:
-                            previous_state = state
-                            state = StreamState.LISTENING
-                            log_state_transition(previous_state, state, "silence detected")
-                            pre_roll.clear()
-                            heard_speech = False
-                            silence_duration = 0.0
-                            retrigger_budget = 0
-                            if wake_engine:
-                                wake_engine.reset_detection()
-                            if stream_resampler:
-                                stream_resampler.reset()
-                            task = schedule_turn_response(
-                                transcript_buffer, assistant, speech_player
-                            )
-                            response_tasks.add(task)
-                            task.add_done_callback(lambda fut, s=response_tasks: s.discard(fut))
+                            _transition_stream_to_listening("silence detected")
                         else:
                             print(
                                 f"{TURN_LOG_LABEL} Silence detected but "
