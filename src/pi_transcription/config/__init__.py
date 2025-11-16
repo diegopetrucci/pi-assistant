@@ -92,6 +92,18 @@ ASSISTANT_MODEL = os.getenv("ASSISTANT_MODEL", _ASSISTANT.get("model", "gpt-5.1-
 ASSISTANT_WEB_SEARCH_ENABLED = _env_bool(
     "ASSISTANT_WEB_SEARCH_ENABLED", _ASSISTANT.get("web_search_enabled", True)
 )
+ASSISTANT_TTS_ENABLED = _env_bool("ASSISTANT_TTS_ENABLED", _ASSISTANT.get("tts_enabled", True))
+ASSISTANT_TTS_RESPONSES_ENABLED = _env_bool(
+    "ASSISTANT_TTS_RESPONSES_ENABLED", _ASSISTANT.get("tts_responses_enabled", True)
+)
+ASSISTANT_TTS_MODEL = os.getenv(
+    "ASSISTANT_TTS_MODEL", _ASSISTANT.get("tts_model", "gpt-4o-mini-tts")
+)
+ASSISTANT_TTS_VOICE = os.getenv("ASSISTANT_TTS_VOICE", _ASSISTANT.get("tts_voice", "alloy"))
+ASSISTANT_TTS_FORMAT = os.getenv("ASSISTANT_TTS_FORMAT", _ASSISTANT.get("tts_format", "pcm"))
+ASSISTANT_TTS_SAMPLE_RATE = _env_int(
+    "ASSISTANT_TTS_SAMPLE_RATE", _ASSISTANT.get("tts_sample_rate", 24000)
+)
 
 # Auto-stop Configuration
 _AUTO_STOP = _DEFAULTS["auto_stop"]

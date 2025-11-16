@@ -46,3 +46,8 @@ type = "near_field"
 [assistant]
 model = "gpt-5.1-2025-11-13"
 web_search_enabled = true
+tts_enabled = true
+tts_model = "gpt-4o-mini-tts"
+tts_voice = "alloy"
+tts_format = "pcm"
+tts_sample_rate = 24000

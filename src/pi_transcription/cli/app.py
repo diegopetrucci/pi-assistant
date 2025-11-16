@@ -12,8 +12,9 @@ from typing import Optional
 import numpy as np
 
 from pi_transcription.assistant import LLMResponder, TurnTranscriptAggregator
-from pi_transcription.audio import AudioCapture
+from pi_transcription.audio import AudioCapture, SpeechPlayer
 from pi_transcription.config import (
+    ASSISTANT_TTS_SAMPLE_RATE,
     AUTO_STOP_ENABLED,
     AUTO_STOP_MAX_SILENCE_SECONDS,
     AUTO_STOP_SILENCE_THRESHOLD,
@@ -134,7 +135,9 @@ def handle_transcription_event(event):
 
 
 async def finalize_turn_and_respond(
-    transcript_buffer: TurnTranscriptAggregator, assistant: LLMResponder
+    transcript_buffer: TurnTranscriptAggregator,
+    assistant: LLMResponder,
+    speech_player: SpeechPlayer,
 ):
     """Gather a completed turn transcript and fetch an assistant reply."""
 
@@ -150,18 +153,32 @@ async def finalize_turn_and_respond(
         print(f"{ASSISTANT_LOG_LABEL} Error requesting assistant reply: {exc}", file=sys.stderr)
         return
 
-    if reply:
-        print(f"{ASSISTANT_LOG_LABEL} {reply}")
-    else:
+    if not reply:
         print(f"{ASSISTANT_LOG_LABEL} (empty response)")
+        return
+
+    if reply.text:
+        print(f"{ASSISTANT_LOG_LABEL} {reply.text}")
+    else:
+        print(f"{ASSISTANT_LOG_LABEL} (no text content)")
+
+    if reply.audio_bytes:
+        try:
+            await speech_player.play(reply.audio_bytes, sample_rate=reply.audio_sample_rate)
+        except Exception as exc:  # pragma: no cover - host audio failure
+            print(f"{ASSISTANT_LOG_LABEL} Error playing audio reply: {exc}", file=sys.stderr)
 
 
 def schedule_turn_response(
-    transcript_buffer: TurnTranscriptAggregator, assistant: LLMResponder
+    transcript_buffer: TurnTranscriptAggregator,
+    assistant: LLMResponder,
+    speech_player: SpeechPlayer,
 ) -> asyncio.Task:
     """Fire-and-forget helper for assistant calls with error reporting."""
 
-    task = asyncio.create_task(finalize_turn_and_respond(transcript_buffer, assistant))
+    task = asyncio.create_task(
+        finalize_turn_and_respond(transcript_buffer, assistant, speech_player)
+    )
 
     def _log_task_error(fut: asyncio.Task):
         try:
@@ -180,6 +197,7 @@ async def run_audio_controller(
     force_always_on: bool,
     transcript_buffer: TurnTranscriptAggregator,
     assistant: LLMResponder,
+    speech_player: SpeechPlayer,
 ):
     """
     Multiplex audio between the wake-word detector and the OpenAI stream.
@@ -290,7 +308,9 @@ async def run_audio_controller(
                             retrigger_budget = 0
                             if wake_engine:
                                 wake_engine.reset_detection()
-                            task = schedule_turn_response(transcript_buffer, assistant)
+                            task = schedule_turn_response(
+                                transcript_buffer, assistant, speech_player
+                            )
                             response_tasks.add(task)
                             task.add_done_callback(lambda fut, s=response_tasks: s.discard(fut))
                         else:
@@ -356,6 +376,23 @@ async def run_transcription(force_always_on: bool = False):
     ws_client = WebSocketClient()
     transcript_buffer = TurnTranscriptAggregator()
     assistant = LLMResponder()
+    speech_player = SpeechPlayer(default_sample_rate=ASSISTANT_TTS_SAMPLE_RATE)
+
+    responses_audio_enabled = False
+    if assistant.tts_enabled:
+        try:
+            responses_audio_enabled = await assistant.verify_responses_audio_support()
+        except Exception as exc:
+            assistant.set_responses_audio_supported(False)
+            print(
+                f"{ASSISTANT_LOG_LABEL} Unable to verify Responses audio support: {exc}",
+                file=sys.stderr,
+            )
+
+    if responses_audio_enabled:
+        print(f"{ASSISTANT_LOG_LABEL} Responses audio enabled; streaming assistant replies.")
+    elif assistant.tts_enabled:
+        print(f"{ASSISTANT_LOG_LABEL} Responses audio not available; using Audio API for TTS.")
 
     # Get current event loop
     loop = asyncio.get_running_loop()
@@ -378,6 +415,7 @@ async def run_transcription(force_always_on: bool = False):
                 force_always_on=force_always_on,
                 transcript_buffer=transcript_buffer,
                 assistant=assistant,
+                speech_player=speech_player,
             )
         )
         event_task = asyncio.create_task(receive_transcription_events(ws_client, transcript_buffer))
