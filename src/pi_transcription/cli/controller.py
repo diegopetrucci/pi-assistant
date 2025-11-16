@@ -200,6 +200,8 @@ async def run_audio_controller(
                     retrigger_budget = 0
                     if wake_engine:
                         wake_engine.reset_detection()
+                    if stream_resampler:
+                        stream_resampler.reset()
                     await transcript_buffer.clear_current_turn()
                 continue
 
@@ -269,6 +271,8 @@ async def run_audio_controller(
                             retrigger_budget = 0
                             if wake_engine:
                                 wake_engine.reset_detection()
+                            if stream_resampler:
+                                stream_resampler.reset()
                             task = schedule_turn_response(
                                 transcript_buffer, assistant, speech_player
                             )
