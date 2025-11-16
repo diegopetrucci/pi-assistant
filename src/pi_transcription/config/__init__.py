@@ -68,6 +68,7 @@ SAMPLE_RATE = _env_int("SAMPLE_RATE", _AUDIO["sample_rate"])
 BUFFER_SIZE = _env_int("BUFFER_SIZE", _AUDIO["buffer_size"])
 CHANNELS = _env_int("CHANNELS", _AUDIO["channels"])
 DTYPE = os.getenv("DTYPE", _AUDIO["dtype"])
+AUDIO_INPUT_DEVICE = os.getenv("AUDIO_INPUT_DEVICE")
 AUDIO_QUEUE_MAX_SIZE = _env_int("AUDIO_QUEUE_MAX_SIZE", _AUDIO["queue_max_size"])
 PREROLL_DURATION_SECONDS = _env_float(
     "PREROLL_DURATION_SECONDS", _AUDIO["preroll_duration_seconds"]

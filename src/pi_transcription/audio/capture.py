@@ -9,6 +9,7 @@ import sys
 import sounddevice as sd
 
 from pi_transcription.config import (
+    AUDIO_INPUT_DEVICE,
     AUDIO_QUEUE_MAX_SIZE,
     BUFFER_SIZE,
     CHANNELS,
@@ -25,6 +26,7 @@ class AudioCapture:
         self.stream = None
         self.loop = None
         self.callback_count = 0  # Debug counter
+        self.input_device = None
 
     def callback(self, indata, frames, time_info, status):
         """
@@ -71,14 +73,26 @@ class AudioCapture:
         print(f"  Buffer size: {BUFFER_SIZE} frames")
         print(f"  Data type: {DTYPE}")
 
+        device = self._select_input_device()
+        self.input_device = device
+        print(f"  Input device: {self._describe_device(device)}")
+
         # Initialize sounddevice input stream
-        self.stream = sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=CHANNELS,
-            dtype=DTYPE,
-            blocksize=BUFFER_SIZE,
-            callback=self.callback,
-        )
+        try:
+            self.stream = sd.InputStream(
+                samplerate=SAMPLE_RATE,
+                channels=CHANNELS,
+                dtype=DTYPE,
+                blocksize=BUFFER_SIZE,
+                callback=self.callback,
+                device=device,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "Unable to initialize audio input stream. "
+                "Verify that a microphone is connected and available. "
+                "Set AUDIO_INPUT_DEVICE to override the default device."
+            ) from exc
 
         self.stream.start()
         print("Audio stream started")
@@ -98,3 +112,91 @@ class AudioCapture:
             bytes: Raw audio data
         """
         return await self.audio_queue.get()
+
+    def _select_input_device(self):
+        """
+        Determine which audio input device to use.
+
+        Prefers the explicit AUDIO_INPUT_DEVICE override, then the system default,
+        then falls back to the first enumerated input device with sufficient channels.
+        """
+
+        override = self._parse_device_override(AUDIO_INPUT_DEVICE)
+        if override is not None:
+            self._validate_device(override)
+            return override
+
+        default_device = self._coerce_input_index(sd.default.device)
+        if default_device is not None and default_device >= 0:
+            if self._device_is_valid(default_device):
+                return default_device
+
+        return self._first_available_input_device()
+
+    @staticmethod
+    def _parse_device_override(value):
+        if not value:
+            return None
+
+        candidate = value.strip()
+        if not candidate:
+            return None
+
+        try:
+            return int(candidate)
+        except ValueError:
+            return candidate
+
+    @staticmethod
+    def _coerce_input_index(device):
+        if isinstance(device, (list, tuple)):
+            candidate = device[0]
+        else:
+            candidate = device
+
+        return candidate if isinstance(candidate, int) else None
+
+    def _device_is_valid(self, device):
+        try:
+            sd.query_devices(device)
+            return True
+        except Exception:
+            return False
+
+    def _validate_device(self, device):
+        try:
+            sd.query_devices(device)
+        except Exception as exc:
+            raise RuntimeError(
+                f"AUDIO_INPUT_DEVICE '{device}' is not recognized by sounddevice."
+            ) from exc
+
+    def _first_available_input_device(self):
+        try:
+            devices = sd.query_devices()
+        except Exception as exc:
+            raise RuntimeError(
+                "Unable to query audio devices via PortAudio. "
+                "Run `arecord -l` to verify the USB microphone is attached."
+            ) from exc
+
+        for idx, info in enumerate(devices):
+            if info.get("max_input_channels", 0) >= CHANNELS:
+                return idx
+
+        raise RuntimeError(
+            "No audio input devices with the required channel count were found. "
+            "Connect a microphone and retry."
+        )
+
+    def _describe_device(self, device):
+        if device is None:
+            return "system default"
+
+        try:
+            info = sd.query_devices(device)
+            name = info.get("name", "Unknown device")
+            index = info.get("index", device if isinstance(device, int) else "?")
+            return f"{name} (id {index})"
+        except Exception:
+            return str(device)

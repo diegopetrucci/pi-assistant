@@ -178,7 +178,7 @@ environment-variable overrides:
 
 - `OPENAI_API_KEY` (required), `OPENAI_MODEL`, `OPENAI_REALTIME_ENDPOINT`
 - Audio pipeline knobs: `SAMPLE_RATE`, `BUFFER_SIZE`, `CHANNELS`, `DTYPE`,
-  `PREROLL_DURATION_SECONDS`, `AUDIO_QUEUE_MAX_SIZE`
+  `PREROLL_DURATION_SECONDS`, `AUDIO_QUEUE_MAX_SIZE`, `AUDIO_INPUT_DEVICE`
 - Auto-stop tuning: `AUTO_STOP_ENABLED`, `AUTO_STOP_SILENCE_THRESHOLD`,
   `AUTO_STOP_MAX_SILENCE_SECONDS`
 - Wake-word overrides (see below): `WAKE_WORD_*`, `FORCE_ALWAYS_ON`
@@ -265,6 +265,11 @@ source .venv/bin/activate
 # List microphones (Raspberry Pi)
 arecord -l
 ```
+
+**`Error querying device -1`:**
+- Run `uv run pi-transcription test-audio` to confirm sounddevice can capture samples.
+- Use `arecord -l` (or `sd.query_devices()` in Python) to note the correct ALSA card/index.
+- Export `AUDIO_INPUT_DEVICE=<index-or-name>` so the client selects the right microphone.
 
 **Licensing for bundled wake-word models:**
 - `models/hey_jarvis_v0.1.(onnx|tflite)`, `models/melspectrogram.onnx`, and `models/embedding_model.onnx` are distributed under the Apache 2.0 license from the [openWakeWord](https://github.com/dscripka/openWakeWord) project.
