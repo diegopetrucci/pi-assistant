@@ -60,6 +60,16 @@ Need to hand a `requirements.txt` to another system? Export one on demand:
 uv export --format requirements-txt > requirements.txt
 ```
 
+### Optional: Pin repository-local Python 3.11
+
+If your Raspberry Pi workflow needs Python 3.11 without touching the system installation, let `uv` download a portable interpreter that only applies inside this repo:
+
+```bash
+uv python pin 3.11
+```
+
+This stores the interpreter under `.uv/python/...` and records the version in `.python-version`. Commit `.python-version`, keep `.uv/` ignored, and every `uv` command you run here (including `uv sync`) will automatically use that local 3.11 build so packages like `tflite-runtime` install cleanly. To switch later, run `uv python pin <other-version>` or remove `.python-version`.
+
 ### 4. Configure API Key
 
 Create a `.env` file with your OpenAI API key:
