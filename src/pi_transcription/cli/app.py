@@ -12,7 +12,7 @@ from pi_transcription.assistant import LLMResponder, TurnTranscriptAggregator
 from pi_transcription.audio import AudioCapture, SpeechPlayer
 from pi_transcription.cli.controller import run_audio_controller
 from pi_transcription.cli.events import handle_transcription_event, receive_transcription_events
-from pi_transcription.cli.logging_utils import ASSISTANT_LOG_LABEL
+from pi_transcription.cli.logging_utils import ASSISTANT_LOG_LABEL, ERROR_LOG_LABEL
 from pi_transcription.config import ASSISTANT_TTS_SAMPLE_RATE, FORCE_ALWAYS_ON
 from pi_transcription.diagnostics import test_audio_capture, test_websocket_client
 from pi_transcription.network import WebSocketClient
@@ -91,7 +91,7 @@ async def run_transcription(force_always_on: bool = False) -> None:
         print("\n\nShutdown requested...")
 
     except Exception as e:
-        print(f"\n[ERROR] Transcription failed: {e}", file=sys.stderr)
+        print(f"\n{ERROR_LOG_LABEL} Transcription failed: {e}", file=sys.stderr)
         raise
 
     finally:

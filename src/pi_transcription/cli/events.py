@@ -10,6 +10,7 @@ from pi_transcription.assistant import TurnTranscriptAggregator
 from pi_transcription.audio import SpeechPlayer
 from pi_transcription.cli.logging_utils import (
     CONTROL_LOG_LABEL,
+    ERROR_LOG_LABEL,
     TRANSCRIPT_LOG_LABEL,
     VAD_LOG_LABEL,
 )
@@ -40,7 +41,7 @@ def handle_transcription_event(event: dict) -> None:
         error_type = error.get("type", "unknown")
         error_message = error.get("message", "No message")
         error_code = error.get("code", "unknown")
-        print(f"[ERROR] {error_type} ({error_code}): {error_message}", file=sys.stderr)
+        print(f"{ERROR_LOG_LABEL} {error_type} ({error_code}): {error_message}", file=sys.stderr)
 
     elif event_type == "transcription_session.created":
         print("[INFO] Transcription session created")
@@ -100,5 +101,5 @@ async def receive_transcription_events(
         print(f"[INFO] Event receiver stopped ({event_count} events received)")
         raise
     except Exception as exc:
-        print(f"[ERROR] Event receiver error: {exc}", file=sys.stderr)
+        print(f"{ERROR_LOG_LABEL} Event receiver error: {exc}", file=sys.stderr)
         raise

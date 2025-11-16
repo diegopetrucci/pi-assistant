@@ -10,6 +10,7 @@ import sys
 
 import websockets
 
+from pi_transcription.cli.logging_utils import ERROR_LOG_LABEL
 from pi_transcription.config import (
     OPENAI_REALTIME_ENDPOINT,
     SESSION_CONFIG,
@@ -78,7 +79,7 @@ class WebSocketClient:
                 elif event_type == "error":
                     error = event.get("error", {})
                     print(
-                        f"[ERROR] Server error: {error.get('message', 'Unknown error')}",
+                        f"{ERROR_LOG_LABEL} Server error: {error.get('message', 'Unknown error')}",
                         file=sys.stderr,
                     )
                     # Don't raise - continue listening for more events

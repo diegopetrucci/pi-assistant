@@ -13,6 +13,7 @@ from pi_transcription.audio import SpeechPlayer
 from pi_transcription.cli.logging_utils import (
     ASSISTANT_LOG_LABEL,
     CONTROL_LOG_LABEL,
+    ERROR_LOG_LABEL,
     TURN_LOG_LABEL,
     WAKE_LOG_LABEL,
     log_state_transition,
@@ -139,7 +140,7 @@ async def run_audio_controller(
                 consecutive_required=WAKE_WORD_CONSECUTIVE_FRAMES,
             )
         except RuntimeError as exc:
-            print(f"[ERROR] {exc}", file=sys.stderr)
+            print(f"{ERROR_LOG_LABEL} {exc}", file=sys.stderr)
             raise
 
     pre_roll = PreRollBuffer(PREROLL_DURATION_SECONDS, SAMPLE_RATE)
@@ -264,7 +265,7 @@ async def run_audio_controller(
         print(f"[INFO] Audio controller stopped ({chunk_count} chunks processed)")
         raise
     except Exception as exc:
-        print(f"[ERROR] Audio controller error: {exc}", file=sys.stderr)
+        print(f"{ERROR_LOG_LABEL} Audio controller error: {exc}", file=sys.stderr)
         raise
     finally:
         if response_tasks:
