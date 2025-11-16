@@ -261,6 +261,28 @@ uv run python -m unittest tests/test_wake_word.py
 
 > **Note:** The wake-word test is skipped automatically when `openwakeword` (and its runtimes) are unavailable.
 
+### Running Tests
+
+You can run the full test suite through uv (no manual activation required):
+
+```bash
+uv run pytest
+```
+
+Add `-v` for verbose output:
+
+```bash
+uv run pytest -v
+```
+
+To generate coverage reports (powered by `pytest-cov`):
+
+```bash
+uv run pytest --cov
+```
+
+Async tests rely on `pytest-asyncio`; no extra setup is needed when using `uv sync --group dev`.
+
 ## Implementation Status
 
 - ✅ **Phase 1**: Project Setup - Virtual environment, dependencies, .env configuration

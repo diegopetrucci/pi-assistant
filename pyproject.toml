@@ -25,6 +25,10 @@ pi-transcription = "pi_transcription.cli.app:main"
 dev = [
     "ruff>=0.14.5",
     "pre-commit>=3.7.0",
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+    "pytest-asyncio>=0.23.8",
+    "anyio>=4.5.0",
 ]
 
 [tool.setuptools]

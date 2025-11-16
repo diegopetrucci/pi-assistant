@@ -6,8 +6,12 @@ import asyncio
 import sys
 import wave
 
+import pytest
+
 from pi_transcription.audio import AudioCapture
 from pi_transcription.config import CHANNELS, SAMPLE_RATE
+
+pytestmark = pytest.mark.skip(reason="Manual audio verification test; run explicitly when needed.")
 
 
 async def test_and_save_audio():

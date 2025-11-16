@@ -96,6 +96,7 @@ class TurnTranscriptAggregator:
 
         wait_interval = self._drain_timeout if self._drain_timeout > 0 else 0.1
         total_wait = 0.0
+        ready_but_empty = object()
 
         async def _maybe_finalize() -> Optional[str]:
             async with self._lock:
@@ -120,10 +121,12 @@ class TurnTranscriptAggregator:
                         f"segments_cleared={pending_segments} wait={total_wait:.3f}s "
                         f"mode={reason} transcript={snippet!r}"
                     )
-                    return transcript or None
+                    return transcript or ready_but_empty
                 return None
 
         maybe_transcript = await _maybe_finalize()
+        if maybe_transcript is ready_but_empty:
+            return None
         if maybe_transcript is not None:
             return maybe_transcript
 
@@ -137,6 +140,8 @@ class TurnTranscriptAggregator:
                 await asyncio.sleep(wait_duration)
                 total_wait += wait_duration
             maybe_transcript = await _maybe_finalize()
+            if maybe_transcript is ready_but_empty:
+                return None
             if maybe_transcript is not None:
                 return maybe_transcript
 
