@@ -75,6 +75,8 @@ async def receive_transcription_events(
     ws_client: WebSocketClient,
     transcript_buffer: TurnTranscriptAggregator,
     speech_player: SpeechPlayer,
+    *,
+    stop_signal: asyncio.Event,
 ) -> None:
     """Continuously receive and handle transcription events from WebSocket."""
 
@@ -90,6 +92,7 @@ async def receive_transcription_events(
                 item_id = event.get("item_id")
                 if await maybe_stop_playback(transcript, speech_player):
                     await transcript_buffer.clear_current_turn()
+                    stop_signal.set()
                     continue
                 await transcript_buffer.append_transcript(item_id, transcript)
 

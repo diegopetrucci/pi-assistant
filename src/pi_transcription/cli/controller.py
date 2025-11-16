@@ -12,6 +12,7 @@ from pi_transcription.assistant import LLMResponder, TurnTranscriptAggregator
 from pi_transcription.audio import SpeechPlayer
 from pi_transcription.cli.logging_utils import (
     ASSISTANT_LOG_LABEL,
+    CONTROL_LOG_LABEL,
     TURN_LOG_LABEL,
     WAKE_LOG_LABEL,
     log_state_transition,
@@ -118,6 +119,7 @@ async def run_audio_controller(
     transcript_buffer: TurnTranscriptAggregator,
     assistant: LLMResponder,
     speech_player: SpeechPlayer,
+    stop_signal: asyncio.Event,
 ) -> None:
     """Multiplex microphone audio between the wake-word detector and the OpenAI stream."""
 
@@ -163,6 +165,22 @@ async def run_audio_controller(
 
             if state == StreamState.LISTENING:
                 pre_roll.add(audio_bytes)
+
+            if stop_signal.is_set():
+                stop_signal.clear()
+                if state == StreamState.STREAMING:
+                    print(f"{CONTROL_LOG_LABEL} Stop command received; returning to listening.")
+                    previous_state = state
+                    state = StreamState.LISTENING
+                    log_state_transition(previous_state, state, "stop command received")
+                    pre_roll.clear()
+                    heard_speech = False
+                    silence_duration = 0.0
+                    retrigger_budget = 0
+                    if wake_engine:
+                        wake_engine.reset_detection()
+                    await transcript_buffer.clear_current_turn()
+                continue
 
             detection = WakeWordDetection()
             if wake_engine:

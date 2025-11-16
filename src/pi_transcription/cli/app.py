@@ -62,6 +62,8 @@ async def run_transcription(force_always_on: bool = False) -> None:
         print("Listening... (Press Ctrl+C to stop)\n")
 
         # Create concurrent tasks for audio streaming and event receiving
+        stop_signal = asyncio.Event()
+
         audio_task = asyncio.create_task(
             run_audio_controller(
                 audio_capture,
@@ -70,10 +72,16 @@ async def run_transcription(force_always_on: bool = False) -> None:
                 transcript_buffer=transcript_buffer,
                 assistant=assistant,
                 speech_player=speech_player,
+                stop_signal=stop_signal,
             )
         )
         event_task = asyncio.create_task(
-            receive_transcription_events(ws_client, transcript_buffer, speech_player)
+            receive_transcription_events(
+                ws_client,
+                transcript_buffer,
+                speech_player,
+                stop_signal=stop_signal,
+            )
         )
 
         # Wait for both tasks (they run until cancelled)
