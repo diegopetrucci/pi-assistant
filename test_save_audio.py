@@ -7,7 +7,7 @@ import sys
 import wave
 
 from config import CHANNELS, SAMPLE_RATE
-from transcribe import AudioCapture
+from start import AudioCapture
 
 
 async def test_and_save_audio():

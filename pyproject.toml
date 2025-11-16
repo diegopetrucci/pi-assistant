@@ -27,7 +27,7 @@ dev = [
 py-modules = [
     "audio_capture",
     "config",
-    "transcribe",
+    "start",
     "test_audio",
     "test_save_audio",
     "transcription_tests",

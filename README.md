@@ -82,19 +82,19 @@ You can run commands directly through uv (no manual activation needed) or activa
 
 ```bash
 # Full transcription pipeline (default mode)
-uv run python transcribe.py
+uv run python start.py
 
 # Force streaming without the wake word (debug mode)
-uv run python transcribe.py --force-always-on
+uv run python start.py --force-always-on
 
 # Explicitly require the wake word when FORCE_ALWAYS_ON=1 is set in the env
-uv run python transcribe.py --no-force-always-on
+uv run python start.py --no-force-always-on
 
 # Test WebSocket connection to OpenAI (requires API key)
-uv run python transcribe.py test-websocket
+uv run python start.py test-websocket
 
 # Test audio capture from microphone (no API key needed)
-uv run python transcribe.py test-audio
+uv run python start.py test-audio
 ```
 
 ## Code Quality
@@ -187,7 +187,7 @@ pi-transcription/
 ├── ruff.toml            # Ruff formatter/linter configuration
 ├── models/              # Bundled openWakeWord models (Apache 2.0 license)
 ├── config.py            # Configuration settings
-├── transcribe.py        # Main application with audio capture
+├── start.py             # Main application with audio capture
 ├── test_audio.py        # Audio device listing utility
 ├── test_save_audio.py   # Audio capture verification (saves WAV file)
 ├── plan.md              # Implementation plan

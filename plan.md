@@ -55,7 +55,7 @@
 3. **Pre-roll buffer & gating**
    - Introduce an `AudioRouter` or extend `AudioCapture` consumer logic to keep a rolling buffer, flush on trigger, and queue audio for OpenAI once streaming.
 4. **State management**
-   - Embed a small controller in `transcribe.py` that coordinates the wake-word engine, buffering, and websocket streaming tasks.
+   - Embed a small controller in `start.py` that coordinates the wake-word engine, buffering, and websocket streaming tasks.
 5. **Debug override & config**
    - Add CLI/env plumbing plus new constants in `config.py` for thresholds and buffer durations.
 6. **Tests & scripts**

@@ -101,6 +101,5 @@ async def test_websocket_client(event_handler=None):
 
 if __name__ == "__main__":
     print(
-        "Run individual tests via `python transcribe.py test-audio` or "
-        "`python transcribe.py test-websocket`."
+        "Run individual tests via `python start.py test-audio` or `python start.py test-websocket`."
     )
