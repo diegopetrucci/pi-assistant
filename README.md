@@ -193,6 +193,13 @@ value and leave `STREAM_SAMPLE_RATE` at the default 24 kHz. The controller will
 resample buffered and live audio before sending it to OpenAI, so wake-word
 detection and transcription stay in sync.
 
+To persist the override in this repo, append it to `.env` once:
+
+```bash
+cd pi-transcription
+echo "SAMPLE_RATE=48000" >> .env
+```
+
 ### Wake Word Settings
 
 Wake-word gating is enabled by default and uses the bundled openWakeWord “hey jarvis” model:
