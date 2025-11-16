@@ -18,10 +18,10 @@ class SpeechPlayer:
         self._default_sample_rate = default_sample_rate
         self._play_lock = asyncio.Lock()
         self._is_playing = asyncio.Event()
-        self._output_device = self._detect_output_device()
-        self._playback_sample_rate = self._select_playback_sample_rate(default_sample_rate)
         self._resample_warnings: set[int] = set()
         self._override_logged = False
+        self._output_device = self._detect_output_device()
+        self._playback_sample_rate = self._select_playback_sample_rate(default_sample_rate)
 
     async def play(self, audio_bytes: bytes, sample_rate: Optional[int] = None) -> None:
         """Play PCM16 audio without blocking the event loop."""
