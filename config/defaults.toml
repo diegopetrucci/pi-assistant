@@ -42,3 +42,7 @@ silence_duration_ms = 500
 
 [session.input_audio_noise_reduction]
 type = "near_field"
+
+[assistant]
+model = "gpt-5.1-2025-11-13"
+web_search_enabled = true

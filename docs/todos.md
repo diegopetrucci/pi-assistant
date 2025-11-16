@@ -7,4 +7,5 @@ Required:
 
 
 Maybe:
+- [ ] Option to reduce debug logs
 - [ ] Add speaker diarization

@@ -11,6 +11,7 @@ from typing import Optional
 
 import numpy as np
 
+from pi_transcription.assistant import LLMResponder, TurnTranscriptAggregator
 from pi_transcription.audio import AudioCapture
 from pi_transcription.config import (
     AUTO_STOP_ENABLED,
@@ -44,12 +45,14 @@ COLOR_GREEN = "\033[32m"
 COLOR_YELLOW = "\033[33m"
 COLOR_BLUE = "\033[34m"
 COLOR_CYAN = "\033[36m"
+COLOR_MAGENTA = "\033[35m"
 
 TURN_LOG_LABEL = f"{COLOR_ORANGE}[TURN]{RESET}"
 TRANSCRIPT_LOG_LABEL = f"{COLOR_GREEN}[TRANSCRIPT]{RESET}"
 VAD_LOG_LABEL = f"{COLOR_YELLOW}[VAD]{RESET}"
 STATE_LOG_LABEL = f"{COLOR_CYAN}[STATE]{RESET}"
 WAKE_LOG_LABEL = f"{COLOR_BLUE}[WAKE]{RESET}"
+ASSISTANT_LOG_LABEL = f"{COLOR_MAGENTA}[ASSISTANT]{RESET}"
 
 
 def log_state_transition(previous: Optional[StreamState], new: StreamState, reason: str) -> None:
@@ -130,7 +133,54 @@ def handle_transcription_event(event):
         print(f"[DEBUG] Received event: {event_type}")
 
 
-async def run_audio_controller(audio_capture, ws_client, *, force_always_on: bool):
+async def finalize_turn_and_respond(
+    transcript_buffer: TurnTranscriptAggregator, assistant: LLMResponder
+):
+    """Gather a completed turn transcript and fetch an assistant reply."""
+
+    transcript = await transcript_buffer.finalize_turn()
+    if not transcript:
+        return
+
+    print(f"{TURN_LOG_LABEL} Sending transcript to assistant: {transcript}")
+
+    try:
+        reply = await assistant.generate_reply(transcript)
+    except Exception as exc:  # pragma: no cover - network failure
+        print(f"{ASSISTANT_LOG_LABEL} Error requesting assistant reply: {exc}", file=sys.stderr)
+        return
+
+    if reply:
+        print(f"{ASSISTANT_LOG_LABEL} {reply}")
+    else:
+        print(f"{ASSISTANT_LOG_LABEL} (empty response)")
+
+
+def schedule_turn_response(
+    transcript_buffer: TurnTranscriptAggregator, assistant: LLMResponder
+) -> asyncio.Task:
+    """Fire-and-forget helper for assistant calls with error reporting."""
+
+    task = asyncio.create_task(finalize_turn_and_respond(transcript_buffer, assistant))
+
+    def _log_task_error(fut: asyncio.Task):
+        try:
+            fut.result()
+        except Exception as exc:  # pragma: no cover - unexpected
+            print(f"{ASSISTANT_LOG_LABEL} Unexpected assistant error: {exc}", file=sys.stderr)
+
+    task.add_done_callback(_log_task_error)
+    return task
+
+
+async def run_audio_controller(
+    audio_capture,
+    ws_client,
+    *,
+    force_always_on: bool,
+    transcript_buffer: TurnTranscriptAggregator,
+    assistant: LLMResponder,
+):
     """
     Multiplex audio between the wake-word detector and the OpenAI stream.
     """
@@ -165,6 +215,10 @@ async def run_audio_controller(audio_capture, ws_client, *, force_always_on: boo
     silence_duration = 0.0
     heard_speech = False
     retrigger_budget = 0
+    response_tasks: set[asyncio.Task] = set()
+
+    if state == StreamState.STREAMING:
+        await transcript_buffer.start_turn()
 
     try:
         while True:
@@ -188,6 +242,7 @@ async def run_audio_controller(audio_capture, ws_client, *, force_always_on: boo
                 if state == StreamState.LISTENING:
                     previous_state = state
                     state = StreamState.STREAMING
+                    await transcript_buffer.start_turn()
                     log_state_transition(previous_state, state, "wake phrase detected")
                     payload = pre_roll.flush()
                     if payload:
@@ -235,6 +290,9 @@ async def run_audio_controller(audio_capture, ws_client, *, force_always_on: boo
                             retrigger_budget = 0
                             if wake_engine:
                                 wake_engine.reset_detection()
+                            task = schedule_turn_response(transcript_buffer, assistant)
+                            response_tasks.add(task)
+                            task.add_done_callback(lambda fut, s=response_tasks: s.discard(fut))
                         else:
                             print(
                                 f"{TURN_LOG_LABEL} Silence detected but "
@@ -252,9 +310,14 @@ async def run_audio_controller(audio_capture, ws_client, *, force_always_on: boo
     except Exception as e:
         print(f"[ERROR] Audio controller error: {e}", file=sys.stderr)
         raise
+    finally:
+        if response_tasks:
+            for task in response_tasks:
+                task.cancel()
+            await asyncio.gather(*response_tasks, return_exceptions=True)
 
 
-async def receive_transcription_events(ws_client):
+async def receive_transcription_events(ws_client, transcript_buffer: TurnTranscriptAggregator):
     """
     Continuously receive and handle transcription events from WebSocket
 
@@ -268,6 +331,10 @@ async def receive_transcription_events(ws_client):
         async for event in ws_client.receive_events():
             event_count += 1
             handle_transcription_event(event)
+            if event.get("type") == "conversation.item.input_audio_transcription.completed":
+                transcript = event.get("transcript", "")
+                item_id = event.get("item_id")
+                await transcript_buffer.append_transcript(item_id, transcript)
 
     except asyncio.CancelledError:
         print(f"[INFO] Event receiver stopped ({event_count} events received)")
@@ -287,6 +354,8 @@ async def run_transcription(force_always_on: bool = False):
     # Create instances
     audio_capture = AudioCapture()
     ws_client = WebSocketClient()
+    transcript_buffer = TurnTranscriptAggregator()
+    assistant = LLMResponder()
 
     # Get current event loop
     loop = asyncio.get_running_loop()
@@ -303,9 +372,15 @@ async def run_transcription(force_always_on: bool = False):
 
         # Create concurrent tasks for audio streaming and event receiving
         audio_task = asyncio.create_task(
-            run_audio_controller(audio_capture, ws_client, force_always_on=force_always_on)
+            run_audio_controller(
+                audio_capture,
+                ws_client,
+                force_always_on=force_always_on,
+                transcript_buffer=transcript_buffer,
+                assistant=assistant,
+            )
         )
-        event_task = asyncio.create_task(receive_transcription_events(ws_client))
+        event_task = asyncio.create_task(receive_transcription_events(ws_client, transcript_buffer))
 
         # Wait for both tasks (they run until cancelled)
         await asyncio.gather(audio_task, event_task)

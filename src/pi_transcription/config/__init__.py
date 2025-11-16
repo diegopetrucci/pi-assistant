@@ -86,6 +86,13 @@ WEBSOCKET_HEADERS = {
 SESSION_CONFIG = copy.deepcopy(_DEFAULTS["session"])
 SESSION_CONFIG["input_audio_transcription"]["model"] = OPENAI_MODEL
 
+# Assistant / LLM Configuration
+_ASSISTANT = _DEFAULTS.get("assistant", {})
+ASSISTANT_MODEL = os.getenv("ASSISTANT_MODEL", _ASSISTANT.get("model", "gpt-5.1-2025-11-13"))
+ASSISTANT_WEB_SEARCH_ENABLED = _env_bool(
+    "ASSISTANT_WEB_SEARCH_ENABLED", _ASSISTANT.get("web_search_enabled", True)
+)
+
 # Auto-stop Configuration
 _AUTO_STOP = _DEFAULTS["auto_stop"]
 AUTO_STOP_ENABLED = _env_bool("AUTO_STOP_ENABLED", _AUTO_STOP["enabled"])
