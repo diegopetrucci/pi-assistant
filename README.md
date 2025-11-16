@@ -203,7 +203,7 @@ pi-transcription/
 ├── start.py                 # Compatibility shim for legacy entry point
 ├── README.md
 ├── pyproject.toml
-├── uv.lock / ruff.toml / plan.md / todos.md
+├── uv.lock / ruff.toml / docs/wake-word.md / todos.md
 └── .venv/ (managed by `uv sync`)
 ```
 
@@ -258,4 +258,4 @@ This project is for educational and development purposes.
 
 For issues and questions, refer to:
 - OpenAI Realtime API docs: https://platform.openai.com/docs/guides/realtime
-- Plan document: `plan.md`
+- Plan document: `docs/wake-word.md`
