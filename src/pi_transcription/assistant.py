@@ -12,6 +12,7 @@ from openai import AsyncOpenAI, BadRequestError
 
 from pi_transcription.config import (
     ASSISTANT_MODEL,
+    ASSISTANT_SYSTEM_PROMPT,
     ASSISTANT_TTS_ENABLED,
     ASSISTANT_TTS_FORMAT,
     ASSISTANT_TTS_MODEL,
@@ -19,6 +20,7 @@ from pi_transcription.config import (
     ASSISTANT_TTS_SAMPLE_RATE,
     ASSISTANT_TTS_VOICE,
     ASSISTANT_WEB_SEARCH_ENABLED,
+    LOCATION_NAME,
     OPENAI_API_KEY,
 )
 
@@ -169,6 +171,8 @@ class LLMResponder:
         self,
         *,
         model: str = ASSISTANT_MODEL,
+        system_prompt: str = ASSISTANT_SYSTEM_PROMPT,
+        location_name: str = LOCATION_NAME,
         enable_web_search: bool = ASSISTANT_WEB_SEARCH_ENABLED,
         enable_tts: bool = ASSISTANT_TTS_ENABLED,
         use_responses_audio: bool = ASSISTANT_TTS_RESPONSES_ENABLED,
@@ -180,6 +184,8 @@ class LLMResponder:
     ):
         self._client = client or AsyncOpenAI(api_key=OPENAI_API_KEY)
         self._model = model
+        self._system_prompt = system_prompt.strip()
+        self._location_name = location_name.strip()
         self._enable_web_search = enable_web_search
         self._enable_tts = enable_tts
         self._tts_model = tts_model
@@ -197,14 +203,36 @@ class LLMResponder:
         if not prompt:
             return None
 
+        messages: list[dict] = []
+        if self._system_prompt:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": self._system_prompt}],
+                }
+            )
+        if self._location_name:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": f"Device location: {self._location_name}",
+                        }
+                    ],
+                }
+            )
+        messages.append(
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": prompt}],
+            }
+        )
+
         request_kwargs = {
             "model": self._model,
-            "input": [
-                {
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": prompt}],
-                }
-            ],
+            "input": messages,
         }
         if self._enable_web_search:
             request_kwargs["tools"] = [{"type": "web_search"}]

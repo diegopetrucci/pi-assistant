@@ -104,8 +104,8 @@ def _prompt_for_api_key() -> str | None:
     return api_key
 
 
-def _persist_api_key(api_key: str) -> None:
-    """Write or update OPENAI_API_KEY in the repo's .env file."""
+def _persist_env_value(key: str, value: str) -> None:
+    """Write or update a key=value entry in the repo's .env file."""
 
     existing_lines: list[str] = []
     replaced = False
@@ -115,16 +115,22 @@ def _persist_api_key(api_key: str) -> None:
 
     new_lines: list[str] = []
     for line in existing_lines:
-        if line.startswith("OPENAI_API_KEY="):
-            new_lines.append(f"OPENAI_API_KEY={api_key}")
+        if line.startswith(f"{key}="):
+            new_lines.append(f"{key}={value}")
             replaced = True
         else:
             new_lines.append(line)
 
     if not replaced:
-        new_lines.append(f"OPENAI_API_KEY={api_key}")
+        new_lines.append(f"{key}={value}")
 
     ENV_PATH.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8")
+
+
+def _persist_api_key(api_key: str) -> None:
+    """Write or update OPENAI_API_KEY in the repo's .env file."""
+
+    _persist_env_value("OPENAI_API_KEY", api_key)
 
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or _prompt_for_api_key()
@@ -145,6 +151,7 @@ SESSION_CONFIG["input_audio_transcription"]["model"] = OPENAI_MODEL
 # Assistant / LLM Configuration
 _ASSISTANT = _DEFAULTS.get("assistant", {})
 ASSISTANT_MODEL = os.getenv("ASSISTANT_MODEL", _ASSISTANT.get("model", "gpt-5.1-2025-11-13"))
+ASSISTANT_SYSTEM_PROMPT = os.getenv("ASSISTANT_SYSTEM_PROMPT", _ASSISTANT.get("system_prompt", ""))
 ASSISTANT_WEB_SEARCH_ENABLED = _env_bool(
     "ASSISTANT_WEB_SEARCH_ENABLED", _ASSISTANT.get("web_search_enabled", True)
 )
@@ -160,6 +167,48 @@ ASSISTANT_TTS_FORMAT = os.getenv("ASSISTANT_TTS_FORMAT", _ASSISTANT.get("tts_for
 ASSISTANT_TTS_SAMPLE_RATE = _env_int(
     "ASSISTANT_TTS_SAMPLE_RATE", _ASSISTANT.get("tts_sample_rate", 24000)
 )
+
+_DEVICE = _DEFAULTS.get("device", {})
+
+
+def _prompt_for_location_name() -> str | None:
+    """Request a location name (city/region) for contextual replies."""
+
+    if not sys.stdin.isatty():
+        return None
+
+    sys.stderr.write(
+        "\nLOCATION_NAME is missing. Provide a city or region so the assistant knows "
+        "where this Pi is located.\n"
+    )
+    try:
+        location = input("Device location (e.g., London, UK): ").strip()
+    except (EOFError, KeyboardInterrupt):  # pragma: no cover - interactive prompt
+        sys.stderr.write("\nNo location provided; leaving LOCATION_NAME empty.\n")
+        return None
+
+    if not location:
+        sys.stderr.write("Empty location provided; leaving LOCATION_NAME empty.\n")
+        return None
+
+    _persist_env_value("LOCATION_NAME", location)
+    os.environ["LOCATION_NAME"] = location
+    sys.stderr.write("Saved LOCATION_NAME to .env\n\n")
+    return location
+
+
+def _resolve_location_name() -> str:
+    env_location = os.getenv("LOCATION_NAME")
+    if env_location and env_location.strip():
+        return env_location.strip()
+    default_location = _DEVICE.get("location_name", "").strip()
+    if default_location:
+        return default_location
+    prompted = _prompt_for_location_name()
+    return (prompted or "").strip()
+
+
+LOCATION_NAME = _resolve_location_name()
 
 # Auto-stop Configuration
 _AUTO_STOP = _DEFAULTS["auto_stop"]

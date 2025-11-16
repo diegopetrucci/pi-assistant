@@ -182,7 +182,15 @@ environment-variable overrides:
   `AUDIO_INPUT_DEVICE`
 - Auto-stop tuning: `AUTO_STOP_ENABLED`, `AUTO_STOP_SILENCE_THRESHOLD`,
   `AUTO_STOP_MAX_SILENCE_SECONDS`
+- Assistant replies: `ASSISTANT_MODEL`, `ASSISTANT_SYSTEM_PROMPT`,
+  `ASSISTANT_WEB_SEARCH_ENABLED`, `ASSISTANT_TTS_*`
 - Wake-word overrides (see below): `WAKE_WORD_*`, `FORCE_ALWAYS_ON`
+
+If you want the assistant to know its real-world context, set
+`LOCATION_NAME="London, UK"` (or edit `device.location_name` in `config/defaults.toml`).
+The value is sent as a system message (`Device location: London, UK`) alongside any
+custom assistant prompt, and the CLI will interactively ask for it the first time it
+runs if neither the env var nor the defaults provide one.
 
 Update the TOML file for new defaults (which can be committed) and use env vars
 for per-device overrides.
