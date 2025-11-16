@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import copy
 import os
+import sys
+from getpass import getpass
 from pathlib import Path
 
 try:  # Python 3.11+
@@ -18,10 +20,11 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for 3.10 environments
 
 from dotenv import load_dotenv
 
-load_dotenv()
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULTS_PATH = PROJECT_ROOT / "config" / "defaults.toml"
+ENV_PATH = PROJECT_ROOT / ".env"
+
+load_dotenv(ENV_PATH)
 
 if not DEFAULTS_PATH.exists():  # pragma: no cover - configuration issue
     raise FileNotFoundError(
@@ -70,8 +73,57 @@ PREROLL_DURATION_SECONDS = _env_float(
     "PREROLL_DURATION_SECONDS", _AUDIO["preroll_duration_seconds"]
 )
 
+
 # OpenAI API Configuration
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+def _prompt_for_api_key() -> str | None:
+    """Interactively request and persist the OpenAI API key when missing."""
+
+    if not sys.stdin.isatty():  # Non-interactive session (CI, tests, etc.)
+        return None
+
+    sys.stderr.write(
+        "\nOPENAI_API_KEY is missing. Paste your OpenAI API key to store it in .env:\n"
+    )
+    try:
+        api_key = getpass("OpenAI API key: ").strip()
+    except (EOFError, KeyboardInterrupt):  # pragma: no cover - interactive prompt
+        sys.stderr.write("\nNo API key provided; aborting.\n")
+        return None
+
+    if not api_key:
+        sys.stderr.write("Empty API key provided; aborting.\n")
+        return None
+
+    _persist_api_key(api_key)
+    os.environ["OPENAI_API_KEY"] = api_key
+    sys.stderr.write("Saved API key to .env\n\n")
+    return api_key
+
+
+def _persist_api_key(api_key: str) -> None:
+    """Write or update OPENAI_API_KEY in the repo's .env file."""
+
+    existing_lines: list[str] = []
+    replaced = False
+
+    if ENV_PATH.exists():
+        existing_lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+
+    new_lines: list[str] = []
+    for line in existing_lines:
+        if line.startswith("OPENAI_API_KEY="):
+            new_lines.append(f"OPENAI_API_KEY={api_key}")
+            replaced = True
+        else:
+            new_lines.append(line)
+
+    if not replaced:
+        new_lines.append(f"OPENAI_API_KEY={api_key}")
+
+    ENV_PATH.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8")
+
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or _prompt_for_api_key()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", _DEFAULTS["openai"]["model"])
 OPENAI_REALTIME_ENDPOINT = os.getenv(
     "OPENAI_REALTIME_ENDPOINT", _DEFAULTS["openai"]["realtime_endpoint"]
@@ -136,6 +188,6 @@ FORCE_ALWAYS_ON = _env_bool("FORCE_ALWAYS_ON", default=False)
 # Validation
 if not OPENAI_API_KEY:
     raise ValueError(
-        "OPENAI_API_KEY not found in environment variables. "
-        "Please create a .env file with your API key."
+        "OPENAI_API_KEY not configured. "
+        "Set the variable manually or rerun in an interactive shell to supply it."
     )

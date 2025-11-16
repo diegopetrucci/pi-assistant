@@ -86,6 +86,8 @@ OPENAI_API_KEY=your_actual_api_key_here
 
 Get your API key from: https://platform.openai.com/api-keys
 
+On first launch, if `.env` is missing or `OPENAI_API_KEY` is empty, the CLI prompts you to paste the key so the setup can continue without manual file edits.
+
 ## Usage
 
 You can run commands directly through uv (no manual activation needed) or activate `.venv/` yourself.
