@@ -14,7 +14,7 @@ from typing import Optional
 from pi_assistant.audio.resampler import LinearResampler
 
 try:
-    from openwakeword.model import Model
+    from openwakeword.model import Model  # pyright: ignore[reportMissingTypeStubs]
 except Exception as exc:  # pragma: no cover - handled downstream
     Model = None
     _IMPORT_ERROR = exc
@@ -116,7 +116,7 @@ class WakeWordEngine:
         *,
         melspec_model_path: Optional[Path],
         embedding_model_path: Optional[Path],
-    ) -> Model:
+    ) -> Model:  # pyright: ignore[reportInvalidTypeForm]
         """Load a TFLite model, falling back to ONNX when needed."""
 
         errors = []
@@ -137,7 +137,7 @@ class WakeWordEngine:
                 ):
                     extra_kwargs["melspec_model_path"] = str(melspec_model_path)
                     extra_kwargs["embedding_model_path"] = str(embedding_model_path)
-                return Model(
+                return Model(  # pyright: ignore[reportOptionalCall]
                     wakeword_models=[str(resolved)],
                     inference_framework=inference,
                     **extra_kwargs,

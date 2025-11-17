@@ -20,7 +20,7 @@ async def test_maybe_stop_playback_detects_stop_command(monkeypatch):
             halted.set()
             return True
 
-    result = await events.maybe_stop_playback("Hey jarvis stop please", DummySpeechPlayer())
+    result = await events.maybe_stop_playback("Hey jarvis stop please", DummySpeechPlayer())  # pyright: ignore[reportArgumentType]
 
     assert result is True
     assert halted.is_set()
@@ -32,7 +32,7 @@ async def test_maybe_stop_playback_ignores_other_text():
         async def stop(self):
             raise AssertionError("stop should not be called")
 
-    result = await events.maybe_stop_playback("No command here", DummySpeechPlayer())
+    result = await events.maybe_stop_playback("No command here", DummySpeechPlayer())  # pyright: ignore[reportArgumentType]
 
     assert result is False
 
@@ -85,9 +85,9 @@ async def test_receive_events_appends_transcripts_and_flags_speech_stop(monkeypa
     speech_stopped_signal = asyncio.Event()
 
     await events.receive_transcription_events(
-        ws_client,
-        buffer,
-        speech_player,
+        ws_client,  # pyright: ignore[reportArgumentType]
+        buffer,  # pyright: ignore[reportArgumentType]
+        speech_player,  # pyright: ignore[reportArgumentType]
         stop_signal=stop_signal,
         speech_stopped_signal=speech_stopped_signal,
     )
@@ -113,9 +113,9 @@ async def test_receive_events_handles_stop_command(monkeypatch):
     speech_stopped_signal = asyncio.Event()
 
     await events.receive_transcription_events(
-        ws_client,
-        buffer,
-        speech_player,
+        ws_client,  # pyright: ignore[reportArgumentType]
+        buffer,  # pyright: ignore[reportArgumentType]
+        speech_player,  # pyright: ignore[reportArgumentType]
         stop_signal=stop_signal,
         speech_stopped_signal=speech_stopped_signal,
     )

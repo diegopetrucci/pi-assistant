@@ -2,7 +2,7 @@
 Test script to verify audio setup and list available devices
 """
 
-import sounddevice as sd
+import sounddevice as sd  # pyright: ignore[reportMissingTypeStubs]
 
 from pi_assistant.config import BUFFER_SIZE, CHANNELS, DTYPE, SAMPLE_RATE
 
@@ -16,9 +16,9 @@ print()
 # Get default input device
 try:
     default_input = sd.query_devices(kind="input")
-    print(f"Default input device: {default_input['name']}")
-    print(f"  Max input channels: {default_input['max_input_channels']}")
-    print(f"  Default sample rate: {default_input['default_samplerate']}")
+    print(f"Default input device: {default_input['name']}")  # pyright: ignore[reportArgumentType,reportCallIssue]
+    print(f"  Max input channels: {default_input['max_input_channels']}")  # pyright: ignore[reportArgumentType,reportCallIssue]
+    print(f"  Default sample rate: {default_input['default_samplerate']}")  # pyright: ignore[reportArgumentType,reportCallIssue]
     print()
 except Exception as e:
     print(f"Error getting default input device: {e}")

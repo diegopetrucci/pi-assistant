@@ -102,7 +102,7 @@ def test_callback_warns_when_queue_full(monkeypatch):
         def put_nowait(self, _):
             raise asyncio.QueueFull
 
-    capture.audio_queue = FullQueue()
+    capture.audio_queue = FullQueue()  # pyright: ignore[reportAttributeAccessIssue]
     audio_chunk = np.zeros((4,), dtype=np.int16)
 
     stderr = io.StringIO()
@@ -121,7 +121,7 @@ def test_callback_logs_status(monkeypatch):
         def put_nowait(self, _):
             pass
 
-    capture.audio_queue = Queue()
+    capture.audio_queue = Queue()  # pyright: ignore[reportAttributeAccessIssue]
     audio_chunk = np.zeros((4,), dtype=np.int16)
 
     stderr = io.StringIO()

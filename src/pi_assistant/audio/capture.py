@@ -57,7 +57,7 @@ class AudioCapture:
         # Put audio data in queue (non-blocking)
         # If queue is full, skip this chunk to prevent blocking
         try:
-            self.loop.call_soon_threadsafe(self.audio_queue.put_nowait, audio_bytes)
+            self.loop.call_soon_threadsafe(self.audio_queue.put_nowait, audio_bytes)  # pyright: ignore[reportOptionalMemberAccess]
         except asyncio.QueueFull:
             print("Warning: Audio queue full, dropping frame", file=sys.stderr)
 
@@ -184,7 +184,7 @@ class AudioCapture:
             ) from exc
 
         for idx, info in enumerate(devices):
-            if info.get("max_input_channels", 0) >= CHANNELS:
+            if info.get("max_input_channels", 0) >= CHANNELS:  # pyright: ignore[reportAttributeAccessIssue]
                 return idx
 
         raise RuntimeError(
@@ -198,8 +198,8 @@ class AudioCapture:
 
         try:
             info = sd.query_devices(device)
-            name = info.get("name", "Unknown device")
-            index = info.get("index", device if isinstance(device, int) else "?")
+            name = info.get("name", "Unknown device")  # pyright: ignore[reportAttributeAccessIssue]
+            index = info.get("index", device if isinstance(device, int) else "?")  # pyright: ignore[reportAttributeAccessIssue]
             return f"{name} (id {index})"
         except Exception:
             return str(device)

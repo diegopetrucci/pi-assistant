@@ -63,7 +63,7 @@ async def test_run_audio_controller_force_always_on_handles_stop(monkeypatch):
 
     transitions = []
 
-    def fake_log(previous, current, reason):
+    def fake_log(previous, current, reason):  # pyright: ignore[reportRedeclaration]
         transitions.append(reason)
 
     monkeypatch.setattr(controller, "log_state_transition", fake_log)
@@ -86,11 +86,11 @@ async def test_run_audio_controller_force_always_on_handles_stop(monkeypatch):
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,
+            ws_client,  # pyright: ignore[reportArgumentType]
             force_always_on=True,
-            transcript_buffer=transcript_buffer,
-            assistant=assistant,
-            speech_player=speech_player,
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -198,11 +198,11 @@ async def test_run_audio_controller_streams_after_wake_word_and_auto_stop(monkey
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,
+            ws_client,  # pyright: ignore[reportArgumentType]
             force_always_on=False,
-            transcript_buffer=transcript_buffer,
-            assistant=assistant,
-            speech_player=speech_player,
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -306,11 +306,11 @@ async def test_run_audio_controller_handles_server_stop_signal(monkeypatch):
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,
+            ws_client,  # pyright: ignore[reportArgumentType]
             force_always_on=False,
-            transcript_buffer=transcript_buffer,
-            assistant=assistant,
-            speech_player=speech_player,
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -403,11 +403,11 @@ async def test_run_audio_controller_cancellation_cleans_response_tasks(monkeypat
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,
+            ws_client,  # pyright: ignore[reportArgumentType]
             force_always_on=False,
-            transcript_buffer=transcript_buffer,
-            assistant=assistant,
-            speech_player=speech_player,
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -509,11 +509,11 @@ async def test_run_audio_controller_manual_stop_clears_buffers(monkeypatch):
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,
+            ws_client,  # pyright: ignore[reportArgumentType]
             force_always_on=False,
-            transcript_buffer=transcript_buffer,
-            assistant=assistant,
-            speech_player=speech_player,
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -611,11 +611,11 @@ async def test_run_audio_controller_auto_stop_silence_transition(monkeypatch):
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,
+            ws_client,  # pyright: ignore[reportArgumentType]
             force_always_on=False,
-            transcript_buffer=transcript_buffer,
-            assistant=assistant,
-            speech_player=speech_player,
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -735,11 +735,11 @@ async def test_run_audio_controller_retrigger_delays_auto_stop(monkeypatch):
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,
+            ws_client,  # pyright: ignore[reportArgumentType]
             force_always_on=False,
-            transcript_buffer=transcript_buffer,
-            assistant=assistant,
-            speech_player=speech_player,
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -856,11 +856,11 @@ async def test_auto_stop_wait_allows_new_wake(monkeypatch):
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,
+            ws_client,  # pyright: ignore[reportArgumentType]
             force_always_on=False,
-            transcript_buffer=transcript_buffer,
-            assistant=assistant,
-            speech_player=speech_player,
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -963,11 +963,11 @@ async def test_run_audio_controller_stop_signal_during_preroll_flush(monkeypatch
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,
+            ws_client,  # pyright: ignore[reportArgumentType]
             force_always_on=False,
-            transcript_buffer=transcript_buffer,
-            assistant=assistant,
-            speech_player=speech_player,
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )

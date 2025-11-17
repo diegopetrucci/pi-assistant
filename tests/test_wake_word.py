@@ -34,8 +34,8 @@ class WakeWordEngineTest(unittest.TestCase):
 
         try:
             engine = WakeWordEngine(
-                str(jarvis_model),
-                fallback_model_path=str(jarvis_fallback),
+                str(jarvis_model),  # pyright: ignore[reportArgumentType]
+                fallback_model_path=str(jarvis_fallback),  # pyright: ignore[reportArgumentType]
                 melspec_model_path=WAKE_WORD_MELSPEC_MODEL_PATH,
                 embedding_model_path=WAKE_WORD_EMBEDDING_MODEL_PATH,
                 source_sample_rate=SAMPLE_RATE,
