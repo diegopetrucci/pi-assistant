@@ -772,7 +772,7 @@ async def test_run_audio_controller_retrigger_delays_auto_stop(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_auto_stop_wait_blocks_new_wake(monkeypatch):
+async def test_auto_stop_wait_allows_new_wake(monkeypatch):
     capture = FakeCapture()
     loud_chunk = (np.ones(128, dtype=np.int16) * 20000).tobytes()
     silence_chunk = np.zeros(128, dtype=np.int16).tobytes()
@@ -877,7 +877,7 @@ async def test_auto_stop_wait_blocks_new_wake(monkeypatch):
     capture.queue.put_nowait(loud_chunk)
     await asyncio.sleep(0.05)
 
-    assert transcript_buffer.started == 1  # new wake ignored while awaiting server stop
+    assert transcript_buffer.started == 2  # new wake starts another turn even while waiting
 
     speech_stopped_signal.set()
     await asyncio.sleep(0.05)
