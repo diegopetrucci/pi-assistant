@@ -36,6 +36,8 @@ _VERBOSE_LOG_FILE: Optional[TextIO] = None
 _VERBOSE_LOG_PATH: Optional[Path] = None
 _VERBOSE_LOG_ERROR_REPORTED = False
 _ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+_AUTO_CONFIGURE_PENDING = bool(VERBOSE_LOG_CAPTURE_ENABLED and VERBOSE_LOG_DIRECTORY is not None)
+_AUTO_CONFIGURED = False
 
 
 def _close_verbose_log() -> None:
@@ -61,7 +63,10 @@ def configure_verbose_log_capture(
     """Enable or disable persistent capture of verbose logs."""
 
     global _VERBOSE_LOG_FILE, _VERBOSE_LOG_PATH, _VERBOSE_LOG_ERROR_REPORTED
+    global _AUTO_CONFIGURE_PENDING, _AUTO_CONFIGURED
 
+    _AUTO_CONFIGURE_PENDING = False
+    _AUTO_CONFIGURED = destination is not None
     _close_verbose_log()
     if destination is None:
         _VERBOSE_LOG_PATH = None
@@ -114,7 +119,19 @@ def _log_capture_active() -> bool:
 def current_verbose_log_path() -> Optional[Path]:
     """Return the active verbose log path, if capture is enabled."""
 
+    _ensure_auto_configured()
     return _VERBOSE_LOG_PATH
+
+
+def _ensure_auto_configured() -> None:
+    """Lazily configure verbose log capture when defaults request it."""
+
+    global _AUTO_CONFIGURED
+    if not _AUTO_CONFIGURE_PENDING or _AUTO_CONFIGURED:
+        return
+
+    configure_verbose_log_capture(VERBOSE_LOG_DIRECTORY, per_session=True)
+    _AUTO_CONFIGURED = True
 
 
 def _compose_verbose_line(timestamp: str, args: tuple[object, ...], sep: str) -> str:
@@ -168,6 +185,7 @@ def is_verbose_logging_enabled() -> bool:
 def verbose_print(*args, **kwargs) -> None:
     """Print when verbose logging is enabled and optionally persist to disk."""
 
+    _ensure_auto_configured()
     timestamp = _format_timestamp()
     if _log_capture_active():
         sep = kwargs.get("sep", " ")
@@ -187,6 +205,7 @@ def verbose_print(*args, **kwargs) -> None:
 def log_state_transition(previous: Optional[StreamState], new: StreamState, reason: str) -> None:
     """Emit a consistent log for controller state changes."""
 
+    _ensure_auto_configured()
     if not _VERBOSE_LOGGING and not _log_capture_active():
         return
 
@@ -199,7 +218,3 @@ def log_state_transition(previous: Optional[StreamState], new: StreamState, reas
         verbose_print(
             f"{STATE_LOG_LABEL} {previous.value.upper()} -> {new.value.upper()} ({reason})"
         )
-
-
-if VERBOSE_LOG_CAPTURE_ENABLED and VERBOSE_LOG_DIRECTORY is not None:
-    configure_verbose_log_capture(VERBOSE_LOG_DIRECTORY, per_session=True)
