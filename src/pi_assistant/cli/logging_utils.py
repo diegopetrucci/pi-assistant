@@ -103,13 +103,15 @@ def _build_session_log_path(directory: Path) -> Path:
         pass
 
     counter = 1
-    while True:
+    MAX_RETRIES = 1000
+    while counter <= MAX_RETRIES:
         candidate = directory / f"{safe_timestamp}_{counter}.log"
         try:
             candidate.open("x", encoding="utf-8").close()
             return candidate
         except FileExistsError:
             counter += 1
+    raise RuntimeError(f"Unable to create a unique log file in {directory} after {MAX_RETRIES} attempts.")
 
 
 def _log_capture_active() -> bool:
