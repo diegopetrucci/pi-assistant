@@ -323,10 +323,11 @@ VERBOSE_LOG_CAPTURE_ENABLED = _env_bool(
 )
 if VERBOSE_LOG_CAPTURE_ENABLED:
     _DEFAULT_VERBOSE_DIR = _LOGGING.get("verbose_log_directory")
-    if isinstance(_DEFAULT_VERBOSE_DIR, str) and _DEFAULT_VERBOSE_DIR.strip():
-        default_verbose_dir = _DEFAULT_VERBOSE_DIR.strip()
-    else:
-        default_verbose_dir = "logs"
+    default_verbose_dir = "logs"
+    if isinstance(_DEFAULT_VERBOSE_DIR, str):
+        stripped_verbose_dir = _DEFAULT_VERBOSE_DIR.strip()
+        if stripped_verbose_dir:
+            default_verbose_dir = stripped_verbose_dir
 
     VERBOSE_LOG_DIRECTORY = _env_path("VERBOSE_LOG_DIRECTORY", default_verbose_dir)
 else:

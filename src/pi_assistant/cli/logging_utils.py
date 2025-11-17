@@ -89,12 +89,22 @@ def configure_verbose_log_capture(
 def _build_session_log_path(directory: Path) -> Path:
     timestamp = datetime.now().isoformat(timespec="milliseconds")
     safe_timestamp = timestamp.replace(":", "-")
-    candidate = directory / f"{safe_timestamp}.log"
+    base_path = directory / f"{safe_timestamp}.log"
+
+    try:
+        base_path.open("x", encoding="utf-8").close()
+        return base_path
+    except FileExistsError:
+        pass
+
     counter = 1
-    while candidate.exists():
+    while True:
         candidate = directory / f"{safe_timestamp}_{counter}.log"
-        counter += 1
-    return candidate
+        try:
+            candidate.open("x", encoding="utf-8").close()
+            return candidate
+        except FileExistsError:
+            counter += 1
 
 
 def _log_capture_active() -> bool:
@@ -119,6 +129,8 @@ def _compose_verbose_line(timestamp: str, args: tuple[object, ...], sep: str) ->
 
 
 def _write_verbose_log_entry(timestamp: str, args: tuple[object, ...], sep: str, end: str) -> None:
+    global _VERBOSE_LOG_ERROR_REPORTED
+
     if _VERBOSE_LOG_FILE is None:
         return
 
@@ -127,12 +139,14 @@ def _write_verbose_log_entry(timestamp: str, args: tuple[object, ...], sep: str,
     try:
         _VERBOSE_LOG_FILE.write(clean_line + end)
         _VERBOSE_LOG_FILE.flush()
-    except Exception:
-        pass
+    except OSError as exc:
+        if not _VERBOSE_LOG_ERROR_REPORTED:
+            sys.stderr.write(f"Unable to write to verbose log file: {exc}\n")
+            _VERBOSE_LOG_ERROR_REPORTED = True
 
 
 def _format_timestamp() -> str:
-    """Return the current time formatted as MM:SS.mmm."""
+    """Return the current time formatted as mm:ss.mmm (minutes:seconds.milliseconds)."""
 
     now = datetime.now()
     return f"{now:%M:%S}.{now.microsecond // 1000:03d}"
@@ -158,10 +172,6 @@ def verbose_print(*args, **kwargs) -> None:
     if _log_capture_active():
         sep = kwargs.get("sep", " ")
         end = kwargs.get("end", "\n")
-        if not isinstance(sep, str):
-            sep = str(sep)
-        if not isinstance(end, str):
-            end = str(end)
         _write_verbose_log_entry(timestamp, args, sep, end)
 
     if not _VERBOSE_LOGGING:
