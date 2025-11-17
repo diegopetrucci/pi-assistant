@@ -6,8 +6,8 @@ import asyncio
 from typing import Optional
 
 import numpy as np
-import sounddevice as sd
 
+from ._sounddevice import sounddevice as sd
 from .resampler import LinearResampler
 
 

@@ -6,8 +6,6 @@ Handles audio capture from USB microphone
 import asyncio
 import sys
 
-import sounddevice as sd
-
 from pi_transcription.cli.logging_utils import verbose_print
 from pi_transcription.config import (
     AUDIO_INPUT_DEVICE,
@@ -17,6 +15,8 @@ from pi_transcription.config import (
     DTYPE,
     SAMPLE_RATE,
 )
+
+from ._sounddevice import sounddevice as sd
 
 
 class AudioCapture:
