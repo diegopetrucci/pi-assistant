@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from pi_transcription.cli import events
+from pi_assistant.cli import events
 
 
 def test_normalize_command_strips_non_alphanum():

@@ -1,6 +1,6 @@
 import numpy as np
 
-from pi_transcription.cli import controller
+from pi_assistant.cli import controller
 
 
 def test_calculate_rms_handles_empty_bytes():

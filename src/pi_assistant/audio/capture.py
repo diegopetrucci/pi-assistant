@@ -6,8 +6,8 @@ Handles audio capture from USB microphone
 import asyncio
 import sys
 
-from pi_transcription.cli.logging_utils import verbose_print
-from pi_transcription.config import (
+from pi_assistant.cli.logging_utils import verbose_print
+from pi_assistant.config import (
     AUDIO_INPUT_DEVICE,
     AUDIO_QUEUE_MAX_SIZE,
     BUFFER_SIZE,

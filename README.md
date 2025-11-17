@@ -28,7 +28,7 @@ Real-time speech-to-text transcription system for Raspberry Pi 5 that streams au
 ### 1. Clone or Navigate to Project
 
 ```bash
-cd /path/to/pi-transcription
+cd /path/to/pi-assistant
 ```
 
 ### 2. Install uv (one time per machine)
@@ -72,7 +72,7 @@ This stores the interpreter under `.uv/python/...` and records the version in `.
 ./scripts/install-portaudio-deps.sh
 ```
 
-The script performs an `apt-get update` and installs `libportaudio2`, `libportaudiocpp0`, and `portaudio19-dev` using `sudo`. If you're on a distro without `apt-get`, install the equivalent PortAudio development packages via your package manager before running `uv run pi-transcription`.
+The script performs an `apt-get update` and installs `libportaudio2`, `libportaudiocpp0`, and `portaudio19-dev` using `sudo`. If you're on a distro without `apt-get`, install the equivalent PortAudio development packages via your package manager before running `uv run pi-assistant`.
 
 ### 5. Configure API Key
 
@@ -98,19 +98,19 @@ You can run commands directly through uv (no manual activation needed) or activa
 
 ```bash
 # Full transcription pipeline (default mode)
-uv run pi-transcription
+uv run pi-assistant
 
 # Force streaming without the wake word (debug mode)
-uv run pi-transcription --force-always-on
+uv run pi-assistant --force-always-on
 
 # Explicitly require the wake word when FORCE_ALWAYS_ON=1 is set in the env
-uv run pi-transcription --no-force-always-on
+uv run pi-assistant --no-force-always-on
 
 # Test WebSocket connection to OpenAI (requires API key)
-uv run pi-transcription test-websocket
+uv run pi-assistant test-websocket
 
 # Test audio capture from microphone (no API key needed)
-uv run pi-transcription test-audio
+uv run pi-assistant test-audio
 
 # Legacy shim (still available if you prefer python scripts)
 uv run python start.py --help
@@ -165,7 +165,7 @@ arecord --device=hw:1,0 --format S16_LE --rate 24000 -c 1 test.wav
 
 ## Configuration
 
-Defaults live in `config/defaults.toml` and are loaded by `pi_transcription.config`.
+Defaults live in `config/defaults.toml` and are loaded by `pi_assistant.config`.
 The TOML file documents the baseline runtime (24 kHz mono PCM, VAD thresholds,
 noise reduction, etc.), while the module exposes strongly typed constants and
 environment-variable overrides:
@@ -198,7 +198,7 @@ detection and transcription stay in sync.
 To persist the override in this repo, append it to `.env` once:
 
 ```bash
-cd pi-transcription
+cd pi-assistant
 echo "SAMPLE_RATE=48000" >> .env
 ```
 
@@ -218,13 +218,13 @@ Every detection above the configured threshold is logged with the `[WAKE]` label
 ## Project Structure
 
 ```
-pi-transcription/
+pi-assistant/
 ├── config/
 │   └── defaults.toml        # Baseline runtime configuration
 ├── models/                  # Bundled openWakeWord assets
 ├── scripts/                 # Repo automation helpers
 ├── src/
-│   └── pi_transcription/
+│   └── pi_assistant/
 │       ├── __init__.py
 │       ├── audio/capture.py
 │       ├── cli/app.py       # CLI + orchestration
@@ -305,7 +305,7 @@ arecord -l
 ```
 
 **`Error querying device -1`:**
-- Run `uv run pi-transcription test-audio` to confirm sounddevice can capture samples.
+- Run `uv run pi-assistant test-audio` to confirm sounddevice can capture samples.
 - Use `arecord -l` (or `sd.query_devices()` in Python) to note the correct ALSA card/index.
 - Export `AUDIO_INPUT_DEVICE=<index-or-name>` so the client selects the right microphone.
 

@@ -10,8 +10,8 @@ from typing import Optional
 
 from openai import AsyncOpenAI, BadRequestError
 
-from pi_transcription.cli.logging_utils import verbose_print
-from pi_transcription.config import (
+from pi_assistant.cli.logging_utils import verbose_print
+from pi_assistant.config import (
     ASSISTANT_MODEL,
     ASSISTANT_SYSTEM_PROMPT,
     ASSISTANT_TTS_ENABLED,
