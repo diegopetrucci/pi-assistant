@@ -1,8 +1,6 @@
 # TODOs
 
 Required:
-- [ ] remove start.py
-- [ ] remove src/pi-transcription as i believe it's unused
 - [ ] move test_recording.wav to an assets folder
 - [ ] update the readme, agents, etc
 - [ ] Drop "hey wakeword" from user message
