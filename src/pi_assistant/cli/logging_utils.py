@@ -166,7 +166,6 @@ def _write_verbose_log_entry(timestamp: str, args: tuple[object, ...], sep: str,
             sys.stderr.write(f"Unable to write to verbose log file: {exc}\n")
             _VERBOSE_LOG_ERROR_REPORTED = True
 
-    """Return the current time formatted as mm:ss.mmm (minutes:seconds.milliseconds), where 'mm' is minutes (not hours)."""
 def _format_timestamp() -> str:
     """Return the current time formatted as mm:ss.mmm (minutes:seconds.milliseconds)."""
 
