@@ -1,6 +1,7 @@
 # Raspberry Pi Audio Transcription System
 
 [![CI](https://github.com/diegopetrucci/pi-assistant/actions/workflows/tests.yml/badge.svg)](https://github.com/diegopetrucci/pi-assistant/actions/workflows/tests.yml)
+[![Codecov](https://codecov.io/gh/diegopetrucci/pi-assistant/branch/main/graph/badge.svg)](https://codecov.io/gh/diegopetrucci/pi-assistant)
 
 Real-time speech-to-text transcription system for Raspberry Pi 5 that streams audio from a USB microphone to OpenAI's Realtime API and displays transcribed text in the terminal.
 

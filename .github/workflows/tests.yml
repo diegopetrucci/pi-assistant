@@ -49,5 +49,16 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev --locked
 
-      - name: Run tests
-        run: uv run pytest --ignore=tests/manual
+      - name: Run tests with coverage
+        run: |
+          uv run pytest \
+            --cov=src/pi_assistant \
+            --cov-branch \
+            --cov-report=xml \
+            --ignore=tests/manual
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: true
