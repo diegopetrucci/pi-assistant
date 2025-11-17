@@ -109,6 +109,18 @@ uv run pi-assistant --force-always-on
 # Explicitly require the wake word when FORCE_ALWAYS_ON=1 is set in the env
 uv run pi-assistant --no-force-always-on
 
+# Force responses audio streaming (default)
+uv run pi-assistant --assistant-audio-mode responses
+
+# Fetch text first, then synthesize locally via the Audio API
+uv run pi-assistant --assistant-audio-mode local-tts
+
+# Inject a default simulated question once at startup (for silent testing)
+uv run pi-assistant --simulate-query
+
+# Inject a custom simulated question
+uv run pi-assistant --simulate-query "Hey Rhasspy, what's the weather?"
+
 # Test WebSocket connection to OpenAI (requires API key)
 uv run pi-assistant test-websocket
 
@@ -217,6 +229,15 @@ runs if neither the env var nor the defaults provide one.
 
 Update the TOML file for new defaults (which can be committed) and use env vars
 for per-device overrides.
+
+Set `ASSISTANT_TTS_RESPONSES_ENABLED=0` (or launch with `--assistant-audio-mode local-tts`)
+to prefer the text+local-TTS round-trip when you want to compare perceived latency against
+the streaming Responses audio path. Re-enable streaming with
+`ASSISTANT_TTS_RESPONSES_ENABLED=1` or `--assistant-audio-mode responses`.
+
+If you need to test without speaking, set `SIMULATED_QUERY_TEXT="Hey Rhasspy, is it going to rain today?"`
+in `.env` (or pass `--simulate-query` / `--simulate-query "custom prompt"`). The CLI injects the text once
+per `uv run pi-assistant` invocation and plays the resulting reply through the normal TTS path.
 
 To keep every interaction in English (or another fixed language), set both
 `TRANSCRIPTION_LANGUAGE` and `ASSISTANT_LANGUAGE` inside `.env`. The first value

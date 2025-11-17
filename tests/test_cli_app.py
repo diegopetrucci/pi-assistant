@@ -3,6 +3,7 @@ import os
 import sys
 import types
 from collections.abc import Awaitable, Callable
+from typing import Any, Optional, cast
 
 import pytest
 
@@ -10,12 +11,20 @@ os.environ.setdefault("OPENAI_API_KEY", "test-key")
 os.environ.setdefault("LOCATION_NAME", "Test City")
 
 if "audioop" not in sys.modules:
-    stub = types.SimpleNamespace(
-        ratecv=lambda audio_bytes, width, channels, src_rate, dst_rate, state: (audio_bytes, state),
-    )
-    sys.modules["audioop"] = stub  # pyright: ignore[reportArgumentType]
+    audioop_stub = types.ModuleType("audioop")
 
-from pi_assistant.cli.app import main, parse_args, run_transcription
+    def _ratecv(audio_bytes, width, channels, src_rate, dst_rate, state):
+        return audio_bytes, state
+
+    cast(Any, audioop_stub).ratecv = _ratecv
+    sys.modules["audioop"] = audioop_stub
+
+from pi_assistant.cli.app import (
+    SIMULATED_QUERY_FALLBACK,
+    main,
+    parse_args,
+    run_transcription,
+)
 
 
 def _run_parse(monkeypatch: pytest.MonkeyPatch, argv: list[str]):
@@ -37,6 +46,8 @@ def test_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert args.mode == "run"
     assert args.verbose is False
     assert args.force_always_on is None
+    assert args.assistant_audio_mode is None
+    assert args.simulate_query is None
 
 
 def test_parse_args_with_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -86,6 +97,24 @@ def test_parse_args_test_websocket_mode(monkeypatch: pytest.MonkeyPatch) -> None
     assert args.mode == "test-websocket"
 
 
+def test_parse_args_with_audio_mode_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _run_parse(monkeypatch, ["pi-assistant", "--assistant-audio-mode", "local-tts"])
+
+    assert args.assistant_audio_mode == "local-tts"
+
+
+def test_parse_args_simulate_query_uses_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _run_parse(monkeypatch, ["pi-assistant", "--simulate-query"])
+
+    assert args.simulate_query == SIMULATED_QUERY_FALLBACK
+
+
+def test_parse_args_simulate_query_custom_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _run_parse(monkeypatch, ["pi-assistant", "--simulate-query", "Hello there"])
+
+    assert args.simulate_query == "Hello there"
+
+
 class _StubAudioCapture:
     def __init__(self):
         self.loop = None
@@ -126,6 +155,7 @@ class _StubAssistant:
         self.resp_audio_supported = None
         self.warm_calls: list[str] = []
         self.cached_cues: dict[str, tuple[bytes, int]] = {}
+        self.generate_calls: list[str] = []
 
     async def verify_responses_audio_support(self) -> bool:
         self.verify_calls += 1
@@ -143,10 +173,22 @@ class _StubAssistant:
     def peek_phrase_audio(self, text: str):
         return self.cached_cues.get(text)
 
+    async def generate_reply(self, transcript: str):
+        self.generate_calls.append(transcript)
+        return types.SimpleNamespace(
+            text=f"Echo: {transcript}",
+            audio_bytes=None,
+            audio_sample_rate=None,
+        )
+
 
 class _StubSpeechPlayer:
     def __init__(self, default_sample_rate: int):
         self.sample_rate = default_sample_rate
+        self.play_calls: list[tuple[bytes, Optional[int]]] = []
+
+    async def play(self, audio_bytes: bytes, sample_rate: Optional[int] = None):
+        self.play_calls.append((audio_bytes, sample_rate))
 
 
 def _patch_run_transcription_deps(
@@ -158,18 +200,27 @@ def _patch_run_transcription_deps(
     run_audio_fn: Callable[..., Awaitable[None]] | None = None,
     receive_fn: Callable[..., Awaitable[None]] | None = None,
 ) -> dict[str, object]:
-    created = {}
+    created: dict[str, object] = {"assistant_kwargs": None}
     audio_capture = audio_capture or _StubAudioCapture()
     ws_client = ws_client or _StubWebSocketClient()
     assistant = assistant or _StubAssistant()
 
     monkeypatch.setattr("pi_assistant.cli.app.AudioCapture", lambda: audio_capture)
     monkeypatch.setattr("pi_assistant.cli.app.WebSocketClient", lambda: ws_client)
-    monkeypatch.setattr("pi_assistant.cli.app.LLMResponder", lambda: assistant)
+
+    def _create_assistant(**kwargs):
+        created["assistant_kwargs"] = kwargs
+        return assistant
+
+    monkeypatch.setattr("pi_assistant.cli.app.LLMResponder", _create_assistant)
     monkeypatch.setattr("pi_assistant.cli.app.TurnTranscriptAggregator", lambda: object())
-    monkeypatch.setattr(
-        "pi_assistant.cli.app.SpeechPlayer", lambda **kwargs: _StubSpeechPlayer(**kwargs)
-    )
+
+    def _create_speech_player(**kwargs):
+        player = _StubSpeechPlayer(**kwargs)
+        created["speech_player"] = player
+        return player
+
+    monkeypatch.setattr("pi_assistant.cli.app.SpeechPlayer", _create_speech_player)
 
     async def default_run_audio_controller(*args, **kwargs):
         kwargs["stop_signal"].set()
@@ -187,6 +238,7 @@ def _patch_run_transcription_deps(
     created["audio_capture"] = audio_capture
     created["ws_client"] = ws_client
     created["assistant"] = assistant
+    created["speech_player"] = created.get("speech_player")
     created["run_audio"] = run_audio
     created["receive"] = receive
     return created
@@ -203,17 +255,22 @@ async def test_run_transcription_success(monkeypatch: pytest.MonkeyPatch) -> Non
 
     deps = _patch_run_transcription_deps(monkeypatch, run_audio_fn=fake_run_audio_controller)
 
-    await run_transcription(force_always_on=True)
+    await run_transcription(force_always_on=True, assistant_audio_mode="responses")
 
-    audio = deps["audio_capture"]
-    ws_client = deps["ws_client"]
-    assistant = deps["assistant"]
+    audio = cast(_StubAudioCapture, deps["audio_capture"])
+    ws_client = cast(_StubWebSocketClient, deps["ws_client"])
+    assistant = cast(_StubAssistant, deps["assistant"])
+    assistant_kwargs = cast(Optional[dict[str, object]], deps["assistant_kwargs"])
 
-    assert audio.started and audio.loop is asyncio.get_running_loop()  # pyright: ignore[reportAttributeAccessIssue]
-    assert audio.stopped  # pyright: ignore[reportAttributeAccessIssue]
-    assert ws_client.connected and ws_client.closed  # pyright: ignore[reportAttributeAccessIssue]
+    assert audio.started and audio.loop is asyncio.get_running_loop()
+    assert audio.stopped
+    assert ws_client.connected and ws_client.closed
     assert run_audio_calls["force_always_on"] is True
-    assert assistant.verify_calls == 1  # pyright: ignore[reportAttributeAccessIssue]
+    assert assistant.verify_calls == 1
+    assert assistant_kwargs is not None
+    use_responses_audio = assistant_kwargs.get("use_responses_audio")
+    assert isinstance(use_responses_audio, bool)
+    assert use_responses_audio is True
 
 
 @pytest.mark.asyncio
@@ -225,10 +282,13 @@ async def test_run_transcription_keyboard_interrupt(monkeypatch: pytest.MonkeyPa
     ws_client = _InterruptWebSocket()
     deps = _patch_run_transcription_deps(monkeypatch, ws_client=ws_client)
 
-    await run_transcription(force_always_on=False)
+    await run_transcription(force_always_on=False, assistant_audio_mode="responses")
 
-    assert deps["audio_capture"].stopped is True  # pyright: ignore[reportAttributeAccessIssue]
-    assert deps["ws_client"].closed is True  # pyright: ignore[reportAttributeAccessIssue]
+    audio_capture = cast(_StubAudioCapture, deps["audio_capture"])
+    ws_client = cast(_StubWebSocketClient, deps["ws_client"])
+
+    assert audio_capture.stopped is True
+    assert ws_client.closed is True
 
 
 @pytest.mark.asyncio
@@ -237,21 +297,65 @@ async def test_run_transcription_propagates_errors(monkeypatch: pytest.MonkeyPat
     deps = _patch_run_transcription_deps(monkeypatch, ws_client=ws_client)
 
     with pytest.raises(RuntimeError, match="connect failed"):
-        await run_transcription()
+        await run_transcription(assistant_audio_mode="responses")
 
-    assert deps["audio_capture"].stopped is True  # pyright: ignore[reportAttributeAccessIssue]
-    assert deps["ws_client"].closed is True  # pyright: ignore[reportAttributeAccessIssue]
+    audio_capture = cast(_StubAudioCapture, deps["audio_capture"])
+    ws_client = cast(_StubWebSocketClient, deps["ws_client"])
+
+    assert audio_capture.stopped is True
+    assert ws_client.closed is True
+
+
+@pytest.mark.asyncio
+async def test_run_transcription_local_tts_mode_skips_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deps = _patch_run_transcription_deps(monkeypatch)
+
+    await run_transcription(force_always_on=False, assistant_audio_mode="local-tts")
+
+    assistant = cast(_StubAssistant, deps["assistant"])
+    assistant_kwargs = cast(Optional[dict[str, object]], deps["assistant_kwargs"])
+    assert assistant.verify_calls == 0
+    assert assistant_kwargs is not None
+    use_responses_audio = assistant_kwargs.get("use_responses_audio")
+    assert isinstance(use_responses_audio, bool)
+    assert use_responses_audio is False
+
+
+@pytest.mark.asyncio
+async def test_run_transcription_simulated_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    deps = _patch_run_transcription_deps(monkeypatch)
+
+    await run_transcription(
+        force_always_on=False,
+        assistant_audio_mode="responses",
+        simulate_query="Testing 123",
+    )
+
+    assistant = cast(_StubAssistant, deps["assistant"])
+    assert assistant.generate_calls == ["Testing 123"]
 
 
 def test_main_run_mode_uses_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
-    args = types.SimpleNamespace(mode="run", verbose=True, force_always_on=None)
+    args = types.SimpleNamespace(
+        mode="run",
+        verbose=True,
+        force_always_on=None,
+        assistant_audio_mode=None,
+        simulate_query=None,
+    )
     monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
     monkeypatch.setattr("pi_assistant.cli.app.FORCE_ALWAYS_ON", True, raising=False)
 
     calls: dict[str, object] = {}
 
-    async def fake_run_transcription(*, force_always_on: bool):
+    async def fake_run_transcription(
+        *, force_always_on: bool, assistant_audio_mode: Optional[str], simulate_query: Optional[str]
+    ):
         calls["force"] = force_always_on
+        calls["audio_mode"] = assistant_audio_mode
+        calls["simulate_query"] = simulate_query
 
     monkeypatch.setattr("pi_assistant.cli.app.run_transcription", fake_run_transcription)
     monkeypatch.setattr(
@@ -264,17 +368,29 @@ def test_main_run_mode_uses_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert calls["force"] is True
     assert calls["verbose"] is True
+    assert calls["audio_mode"] is None
+    assert calls["simulate_query"] is None
 
 
 def test_main_prefers_cli_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
-    args = types.SimpleNamespace(mode="run", verbose=False, force_always_on=False)
+    args = types.SimpleNamespace(
+        mode="run",
+        verbose=False,
+        force_always_on=False,
+        assistant_audio_mode=None,
+        simulate_query=None,
+    )
     monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
     monkeypatch.setattr("pi_assistant.cli.app.FORCE_ALWAYS_ON", True, raising=False)
 
     calls: dict[str, object] = {}
 
-    async def fake_run_transcription(*, force_always_on: bool):
+    async def fake_run_transcription(
+        *, force_always_on: bool, assistant_audio_mode: Optional[str], simulate_query: Optional[str]
+    ):
         calls["force"] = force_always_on
+        calls["audio_mode"] = assistant_audio_mode
+        calls["simulate_query"] = simulate_query
 
     monkeypatch.setattr("pi_assistant.cli.app.run_transcription", fake_run_transcription)
     monkeypatch.setattr("pi_assistant.cli.app.set_verbose_logging", lambda verbose: None)
@@ -283,10 +399,18 @@ def test_main_prefers_cli_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     main()
 
     assert calls["force"] is False
+    assert calls["audio_mode"] is None
+    assert calls["simulate_query"] is None
 
 
 def test_main_runs_audio_diagnostics(monkeypatch: pytest.MonkeyPatch) -> None:
-    args = types.SimpleNamespace(mode="test-audio", verbose=False, force_always_on=None)
+    args = types.SimpleNamespace(
+        mode="test-audio",
+        verbose=False,
+        force_always_on=None,
+        assistant_audio_mode=None,
+        simulate_query=None,
+    )
     monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
     monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
 
@@ -304,7 +428,13 @@ def test_main_runs_audio_diagnostics(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_main_runs_websocket_diagnostics(monkeypatch: pytest.MonkeyPatch) -> None:
-    args = types.SimpleNamespace(mode="test-websocket", verbose=False, force_always_on=None)
+    args = types.SimpleNamespace(
+        mode="test-websocket",
+        verbose=False,
+        force_always_on=None,
+        assistant_audio_mode=None,
+        simulate_query=None,
+    )
     monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
     monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
 
@@ -324,11 +454,19 @@ def test_main_runs_websocket_diagnostics(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_main_exits_on_unhandled_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    args = types.SimpleNamespace(mode="run", verbose=False, force_always_on=None)
+    args = types.SimpleNamespace(
+        mode="run",
+        verbose=False,
+        force_always_on=None,
+        assistant_audio_mode=None,
+        simulate_query=None,
+    )
     monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
     monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
 
-    async def fake_run_transcription(*, force_always_on: bool):
+    async def fake_run_transcription(
+        *, force_always_on: bool, assistant_audio_mode: Optional[str], simulate_query: Optional[str]
+    ):
         raise RuntimeError("boom")
 
     monkeypatch.setattr("pi_assistant.cli.app.run_transcription", fake_run_transcription)
@@ -347,3 +485,65 @@ def test_main_exits_on_unhandled_exception(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert exit_calls["code"] == 1
     assert excinfo.value.code == 1
+
+
+def test_main_passes_audio_mode_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    args = types.SimpleNamespace(
+        mode="run",
+        verbose=False,
+        force_always_on=None,
+        assistant_audio_mode="local-tts",
+        simulate_query=None,
+    )
+    monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
+    monkeypatch.setattr("pi_assistant.cli.app.FORCE_ALWAYS_ON", False, raising=False)
+    monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
+
+    calls: dict[str, object] = {}
+
+    async def fake_run_transcription(
+        *, force_always_on: bool, assistant_audio_mode: Optional[str], simulate_query: Optional[str]
+    ):
+        calls["force"] = force_always_on
+        calls["audio_mode"] = assistant_audio_mode
+        calls["simulate_query"] = simulate_query
+
+    monkeypatch.setattr("pi_assistant.cli.app.run_transcription", fake_run_transcription)
+    monkeypatch.setattr("pi_assistant.cli.app.set_verbose_logging", lambda verbose: None)
+
+    main()
+
+    assert calls["force"] is False
+    assert calls["audio_mode"] == "local-tts"
+    assert calls["simulate_query"] is None
+
+
+def test_main_passes_simulate_query_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    args = types.SimpleNamespace(
+        mode="run",
+        verbose=False,
+        force_always_on=None,
+        assistant_audio_mode=None,
+        simulate_query="Hello!",
+    )
+    monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
+    monkeypatch.setattr("pi_assistant.cli.app.FORCE_ALWAYS_ON", False, raising=False)
+    monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
+
+    calls: dict[str, object] = {}
+
+    async def fake_run_transcription(
+        *, force_always_on: bool, assistant_audio_mode: Optional[str], simulate_query: Optional[str]
+    ):
+        calls["force"] = force_always_on
+        calls["audio_mode"] = assistant_audio_mode
+        calls["simulate_query"] = simulate_query
+
+    monkeypatch.setattr("pi_assistant.cli.app.run_transcription", fake_run_transcription)
+    monkeypatch.setattr("pi_assistant.cli.app.set_verbose_logging", lambda verbose: None)
+
+    main()
+
+    assert calls["force"] is False
+    assert calls["audio_mode"] is None
+    assert calls["simulate_query"] == "Hello!"

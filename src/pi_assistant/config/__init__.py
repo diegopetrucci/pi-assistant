@@ -243,6 +243,7 @@ SESSION_CONFIG["input_audio_transcription"]["language"] = TRANSCRIPTION_LANGUAGE
 
 # Assistant / LLM Configuration
 _ASSISTANT = _DEFAULTS.get("assistant", {})
+_TESTING = _DEFAULTS.get("testing", {})
 _DEFAULT_ASSISTANT_MODEL = _ASSISTANT.get("model", _ASSISTANT_MODEL_CHOICES["mini"]["value"])
 ASSISTANT_MODEL = _resolve_assistant_model(_DEFAULT_ASSISTANT_MODEL)
 ASSISTANT_SYSTEM_PROMPT = os.getenv("ASSISTANT_SYSTEM_PROMPT", _ASSISTANT.get("system_prompt", ""))
@@ -260,6 +261,10 @@ ASSISTANT_TTS_VOICE = os.getenv("ASSISTANT_TTS_VOICE", _ASSISTANT.get("tts_voice
 ASSISTANT_TTS_FORMAT = os.getenv("ASSISTANT_TTS_FORMAT", _ASSISTANT.get("tts_format", "pcm"))
 ASSISTANT_TTS_SAMPLE_RATE = _env_int(
     "ASSISTANT_TTS_SAMPLE_RATE", _ASSISTANT.get("tts_sample_rate", 24000)
+)
+SIMULATED_QUERY_TEXT = os.getenv(
+    "SIMULATED_QUERY_TEXT",
+    _TESTING.get("simulate_query_text", ""),
 )
 ASSISTANT_LANGUAGE = _normalize_language(
     os.getenv("ASSISTANT_LANGUAGE"),

@@ -9,7 +9,7 @@ from typing import Optional, Tuple
 
 from openai import AsyncOpenAI, BadRequestError
 
-from pi_assistant.cli.logging_utils import verbose_print
+from pi_assistant.cli.logging_utils import console_print, verbose_print
 from pi_assistant.config import (
     ASSISTANT_LANGUAGE,
     ASSISTANT_MODEL,
@@ -126,13 +126,13 @@ class LLMResponder:
             request_kwargs["tools"] = [{"type": "web_search"}]
 
         extra_body = self._build_audio_extra_body()
-        print("[ASSISTANT] Awaiting OpenAI response...")
+        console_print("[ASSISTANT] Awaiting OpenAI response...")
         response = await self._send_response_request(request_kwargs, extra_body)
 
         text, audio_bytes, audio_format, sample_rate, chunk_count = self._extract_modalities(
             response, default_sample_rate=self._tts_sample_rate
         )
-        print(
+        console_print(
             "[ASSISTANT] Response received "
             f"(text={'yes' if text else 'no'}, audio_chunks={chunk_count})"
         )
@@ -144,7 +144,7 @@ class LLMResponder:
                     f"format={audio_format or 'unknown'})"
                 )
             else:
-                print("[ASSISTANT] No audio chunks returned; using text-only reply.")
+                console_print("[ASSISTANT] No audio chunks returned; using text-only reply.")
         if self._enable_tts and audio_bytes is None and text:
             fallback_audio, fallback_rate = await self._synthesize_audio(text)
             if fallback_audio:
@@ -227,6 +227,21 @@ class LLMResponder:
         return self._responses_audio_supported
 
     @property
+    def model_name(self) -> str:
+        """Return the configured assistant LLM model identifier."""
+
+        return self._model
+
+    @property
+    def enabled_tools(self) -> tuple[str, ...]:
+        """Return the tuple of assistant tools currently enabled."""
+
+        tools: list[str] = []
+        if self._enable_web_search:
+            tools.append("web_search")
+        return tuple(tools)
+
+    @property
     def tts_enabled(self) -> bool:
         return self._enable_tts
 
@@ -277,7 +292,7 @@ class LLMResponder:
         if self._audio_fallback_logged:
             return
         details = getattr(exc, "message", "") or "audio parameters not accepted"
-        print(
+        console_print(
             "[ASSISTANT] Responses API does not accept audio parameters yet; "
             f"falling back to text-only responses ({details})."
         )
