@@ -3,7 +3,7 @@ import math
 import numpy as np
 import pytest
 
-from pi_transcription.audio.resampler import LinearResampler
+from pi_assistant.audio.resampler import LinearResampler
 
 
 def pcm16(values):

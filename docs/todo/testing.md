@@ -4,7 +4,7 @@
 
 ### Untested Files (551 total lines)
 
-#### 1. `src/pi_transcription/cli/logging_utils.py` (38 lines)
+#### 1. `src/pi_assistant/cli/logging_utils.py` (38 lines)
 **Priority**: 🟢 **LOW**
 
 **Functions lacking tests**:
@@ -19,32 +19,32 @@
 ## 3. Edge Cases and Gaps in Existing Tests
 
 ### Configuration Module Edge Cases
-**File**: `src/pi_transcription/config/__init__.py`
+**File**: `src/pi_assistant/config/__init__.py`
 
 Missing tests for:
 - _none_ ✅
 
 ### Assistant Module Edge Cases
-**File**: `src/pi_transcription/assistant.py`
+**File**: `src/pi_assistant/assistant.py`
 
 Gaps identified:
 - _none so far_ (new gaps welcome)
 
 ### Audio Capture Edge Cases
-**File**: `src/pi_transcription/audio/capture.py`
+**File**: `src/pi_assistant/audio/capture.py`
 
 Missing coverage:
 - _none so far_
 
 ### Wake Word Engine Edge Cases
-**File**: `src/pi_transcription/wake_word.py`
+**File**: `src/pi_assistant/wake_word.py`
 
 Gaps:
 - ❌ `process_chunk()` with very large audio chunks
 - ❌ Model loading with corrupt model files (exception path covered but not tested)
 
 ### CLI Controller Edge Cases
-**File**: `src/pi_transcription/cli/controller.py`
+**File**: `src/pi_assistant/cli/controller.py`
 
 Critical gaps:
 - ❌ `run_audio_controller()` exception handling paths (marked `pragma: no cover`)
@@ -57,7 +57,7 @@ Critical gaps:
 - ❌ Task cleanup on cancellation
 
 ### WebSocket Client Edge Cases
-**File**: `src/pi_transcription/network/websocket_client.py`
+**File**: `src/pi_assistant/network/websocket_client.py`
 
 Missing:
 - ❌ `connect()` timeout behavior
@@ -68,7 +68,7 @@ Missing:
 - ❌ Multiple connection attempts
 
 ### CLI Events Edge Cases
-**File**: `src/pi_transcription/cli/events.py`
+**File**: `src/pi_assistant/cli/events.py`
 
 Gaps:
 - ❌ `handle_transcription_event()` with unknown event types
@@ -77,7 +77,7 @@ Gaps:
 - ❌ Malformed transcript text in stop command detection
 
 ### Speech Player Edge Cases
-**File**: `src/pi_transcription/audio/playback.py`
+**File**: `src/pi_assistant/audio/playback.py`
 
 Missing:
 - ❌ `_play_blocking()` exception path (marked `pragma: no cover`)
@@ -284,7 +284,7 @@ Missing:
 pytest
 
 # Run with coverage
-pytest --cov=src/pi_transcription --cov-report=html
+pytest --cov=src/pi_assistant --cov-report=html
 
 # Run specific test file
 pytest tests/test_assistant.py
@@ -308,7 +308,7 @@ pytest -v
 ```python
 import pytest
 from unittest.mock import Mock, patch
-from pi_transcription.module import function_to_test
+from pi_assistant.module import function_to_test
 
 def test_function_success_case():
     """Test normal operation of function."""
@@ -378,22 +378,22 @@ async def test_async_function():
 ## Appendix: File Reference
 
 ### Critical Untested Files
-- [ ] 1. `src/pi_transcription/config/__init__.py` (246 lines)
-- [ ] 2. `src/pi_transcription/cli/app.py` (165 lines)
-- [ ] 3. `src/pi_transcription/diagnostics.py` (102 lines)
-- [ ] 4. `src/pi_transcription/cli/logging_utils.py` (38 lines)
+- [ ] 1. `src/pi_assistant/config/__init__.py` (246 lines)
+- [ ] 2. `src/pi_assistant/cli/app.py` (165 lines)
+- [ ] 3. `src/pi_assistant/diagnostics.py` (102 lines)
+- [ ] 4. `src/pi_assistant/cli/logging_utils.py` (38 lines)
 
 ### Partially Tested Files Needing Expansion
-- [ ] 1. `src/pi_transcription/assistant.py`
-- [ ] 2. `src/pi_transcription/audio/capture.py`
-- [ ] 3. `src/pi_transcription/cli/controller.py`
-- [ ] 4. `src/pi_transcription/network/websocket_client.py`
-- [ ] 5. `src/pi_transcription/cli/events.py`
-- [ ] 6. `src/pi_transcription/audio/playback.py`
-- [ ] 7. `src/pi_transcription/wake_word.py`
+- [ ] 1. `src/pi_assistant/assistant.py`
+- [ ] 2. `src/pi_assistant/audio/capture.py`
+- [ ] 3. `src/pi_assistant/cli/controller.py`
+- [ ] 4. `src/pi_assistant/network/websocket_client.py`
+- [ ] 5. `src/pi_assistant/cli/events.py`
+- [ ] 6. `src/pi_assistant/audio/playback.py`
+- [ ] 7. `src/pi_assistant/wake_word.py`
 
 ### Well-Tested Files (Maintain Coverage)
-- [ ] 1. `src/pi_transcription/audio/resampler.py`
+- [ ] 1. `src/pi_assistant/audio/resampler.py`
 - [ ] 2. Test utilities and fixtures
 
 ---

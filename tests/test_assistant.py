@@ -6,10 +6,10 @@ from unittest.mock import patch
 
 import pytest
 
-from pi_transcription.assistant import (
+from pi_assistant.assistant import (
     BadRequestError as OpenAIBadRequestError,
 )
-from pi_transcription.assistant import (
+from pi_assistant.assistant import (
     LLMResponder,
     TurnTranscriptAggregator,
 )
