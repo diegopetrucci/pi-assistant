@@ -37,10 +37,10 @@ class TurnTranscriptAggregator:
             self._state = "active"
             verbose_print(f"{self._trace_label} {self._timestamp()} start turn")
 
-    async def append_transcript(self, item_id: Optional[str], text: str) -> None:
+    async def append_transcript(self, item_id: Optional[str], transcript: str) -> None:
         """Store a completed transcript fragment for the current turn."""
 
-        cleaned = text.strip()
+        cleaned = transcript.strip()
         if not cleaned:
             return
 

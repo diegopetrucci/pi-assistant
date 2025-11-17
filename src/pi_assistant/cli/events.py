@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 import re
 import sys
+from collections.abc import AsyncIterator
+from typing import Any, Protocol
 
-from pi_assistant.assistant import TurnTranscriptAggregator
-from pi_assistant.audio import SpeechPlayer
 from pi_assistant.cli.logging_utils import (
     CONTROL_LOG_LABEL,
     ERROR_LOG_LABEL,
@@ -16,9 +16,22 @@ from pi_assistant.cli.logging_utils import (
     VAD_LOG_LABEL,
     verbose_print,
 )
-from pi_assistant.network import WebSocketClient
 
 STOP_COMMANDS = ("hey jarvis stop", "jarvis stop")
+
+
+class _SpeechStopper(Protocol):
+    async def stop(self) -> bool: ...
+
+
+class _TranscriptBuffer(Protocol):
+    async def append_transcript(self, item_id: str | None, transcript: str) -> None: ...
+
+    async def clear_current_turn(self, reason: str) -> None: ...
+
+
+class _EventStreamClient(Protocol):
+    def receive_events(self) -> AsyncIterator[dict[str, Any]]: ...
 
 
 def handle_transcription_event(event: dict) -> None:
@@ -60,7 +73,7 @@ def _normalize_command(text: str) -> str:
     return " ".join(cleaned.split())
 
 
-async def maybe_stop_playback(transcript: str, speech_player: SpeechPlayer) -> bool:
+async def maybe_stop_playback(transcript: str, speech_player: _SpeechStopper) -> bool:
     """Stop assistant playback if a stop command is detected in the transcript."""
 
     normalized = _normalize_command(transcript)
@@ -75,9 +88,9 @@ async def maybe_stop_playback(transcript: str, speech_player: SpeechPlayer) -> b
 
 
 async def receive_transcription_events(
-    ws_client: WebSocketClient,
-    transcript_buffer: TurnTranscriptAggregator,
-    speech_player: SpeechPlayer,
+    ws_client: _EventStreamClient,
+    transcript_buffer: _TranscriptBuffer,
+    speech_player: _SpeechStopper,
     *,
     stop_signal: asyncio.Event,
     speech_stopped_signal: asyncio.Event,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from typing import Optional
 
 import numpy as np
@@ -113,10 +114,14 @@ class SpeechPlayer:
         if not info:
             return None
         rate = info.get("default_samplerate")
-        try:
-            return int(rate)  # pyright: ignore[reportArgumentType]
-        except (TypeError, ValueError):
-            return None
+        if isinstance(rate, (int, float)):
+            return int(rate)
+        if isinstance(rate, str):
+            try:
+                return int(float(rate))
+            except (ValueError, TypeError):
+                return None
+        return None
 
     def _is_rate_supported(self, rate: int) -> bool:
         try:
@@ -125,13 +130,25 @@ class SpeechPlayer:
         except Exception:
             return False
 
-    def _output_device_info(self) -> dict:
+    def _output_device_info(self) -> dict[str, object]:
         try:
             if self._output_device is None:
-                return sd.query_devices(kind="output")  # pyright: ignore[reportReturnType]
-            return sd.query_devices(self._output_device)  # pyright: ignore[reportReturnType]
+                raw = sd.query_devices(kind="output")
+            else:
+                raw = sd.query_devices(self._output_device)
         except Exception:
             return {}
+        return self._device_info_dict(raw)
+
+    @staticmethod
+    def _device_info_dict(info: object) -> dict[str, object]:
+        if isinstance(info, dict):
+            return dict(info)
+        if isinstance(info, Mapping):
+            return dict(info.items())
+        if hasattr(info, "__dict__"):
+            return dict(vars(info))
+        return {}
 
     def _log_playback_override(self, requested: int, selected: int) -> None:
         if self._override_logged:

@@ -4,20 +4,46 @@ Wake word detection helpers built around the openWakeWord library.
 
 from __future__ import annotations
 
+import importlib
 import logging
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Mapping, Optional, Protocol, cast
 
 from pi_assistant.audio.resampler import LinearResampler
 
-try:
-    from openwakeword.model import Model  # pyright: ignore[reportMissingTypeStubs]
+
+class WakeWordModel(Protocol):
+    models: Mapping[str, object]
+
+    def predict(self, audio_bytes: Any) -> Mapping[str, float]: ...
+
+
+ModelFactory = Callable[..., WakeWordModel]
+
+_IMPORT_ERROR: Exception | None = None
+try:  # pragma: no cover - exercised via unit tests with the real dependency
+    _MODEL_FACTORY = cast(
+        ModelFactory,
+        importlib.import_module("openwakeword.model").Model,
+    )
 except Exception as exc:  # pragma: no cover - handled downstream
-    Model = None
+    _MODEL_FACTORY = None
     _IMPORT_ERROR = exc
+
+Model = _MODEL_FACTORY
+
+
+def _require_model_factory() -> ModelFactory:
+    factory = Model or _MODEL_FACTORY
+    if factory is None:
+        raise RuntimeError(
+            "openwakeword is not installed. Install the dependency or use "
+            "--force-always-on to bypass wake-word gating."
+        ) from _IMPORT_ERROR
+    return factory
 
 
 class StreamState(Enum):
@@ -81,9 +107,9 @@ class WakeWordEngine:
 
     def __init__(
         self,
-        model_path: Path,
+        model_path: Path | str,
         *,
-        fallback_model_path: Optional[Path] = None,
+        fallback_model_path: Optional[Path | str] = None,
         melspec_model_path: Optional[Path] = None,
         embedding_model_path: Optional[Path] = None,
         source_sample_rate: int = 24000,
@@ -91,12 +117,6 @@ class WakeWordEngine:
         threshold: float = 0.5,
         consecutive_required: int = 2,
     ):
-        if Model is None:
-            raise RuntimeError(
-                "openwakeword is not installed. Install the dependency or use "
-                "--force-always-on to bypass wake-word gating."
-            ) from _IMPORT_ERROR
-
         self.threshold = threshold
         self.consecutive_required = max(1, consecutive_required)
         self._consecutive_hits = 0
@@ -106,17 +126,19 @@ class WakeWordEngine:
             fallback_model_path,
             melspec_model_path=melspec_model_path,
             embedding_model_path=embedding_model_path,
+            factory=_require_model_factory(),
         )
         self._model_label = next(iter(self._model.models.keys()))
 
     def _load_model(
         self,
-        primary: Path,
-        fallback: Optional[Path],
+        primary: Path | str,
+        fallback: Optional[Path | str],
         *,
         melspec_model_path: Optional[Path],
         embedding_model_path: Optional[Path],
-    ) -> Model:  # pyright: ignore[reportInvalidTypeForm]
+        factory: ModelFactory,
+    ) -> WakeWordModel:
         """Load a TFLite model, falling back to ONNX when needed."""
 
         errors = []
@@ -137,7 +159,7 @@ class WakeWordEngine:
                 ):
                     extra_kwargs["melspec_model_path"] = str(melspec_model_path)
                     extra_kwargs["embedding_model_path"] = str(embedding_model_path)
-                return Model(  # pyright: ignore[reportOptionalCall]
+                return factory(
                     wakeword_models=[str(resolved)],
                     inference_framework=inference,
                     **extra_kwargs,

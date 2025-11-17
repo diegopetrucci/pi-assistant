@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import AsyncIterator
 
 import pytest
 
@@ -20,7 +21,7 @@ async def test_maybe_stop_playback_detects_stop_command(monkeypatch):
             halted.set()
             return True
 
-    result = await events.maybe_stop_playback("Hey jarvis stop please", DummySpeechPlayer())  # pyright: ignore[reportArgumentType]
+    result = await events.maybe_stop_playback("Hey jarvis stop please", DummySpeechPlayer())
 
     assert result is True
     assert halted.is_set()
@@ -32,7 +33,7 @@ async def test_maybe_stop_playback_ignores_other_text():
         async def stop(self):
             raise AssertionError("stop should not be called")
 
-    result = await events.maybe_stop_playback("No command here", DummySpeechPlayer())  # pyright: ignore[reportArgumentType]
+    result = await events.maybe_stop_playback("No command here", DummySpeechPlayer())
 
     assert result is False
 
@@ -42,10 +43,10 @@ class DummyTranscriptBuffer:
         self.appended = []
         self.cleared = []
 
-    async def append_transcript(self, item_id, transcript):
+    async def append_transcript(self, item_id: str | None, transcript: str) -> None:
         self.appended.append((item_id, transcript))
 
-    async def clear_current_turn(self, reason):
+    async def clear_current_turn(self, reason: str) -> None:
         self.cleared.append(reason)
 
 
@@ -54,16 +55,16 @@ class DummySpeechPlayer:
         self.stop_calls = 0
         self._stop_result = stop_result
 
-    async def stop(self):
+    async def stop(self) -> bool:
         self.stop_calls += 1
         return self._stop_result
 
 
 class FakeWebSocketClient:
-    def __init__(self, events):
+    def __init__(self, events: list[dict]):
         self._events = events
 
-    async def receive_events(self):
+    async def receive_events(self) -> AsyncIterator[dict]:
         for event in self._events:
             yield event
 
@@ -85,9 +86,9 @@ async def test_receive_events_appends_transcripts_and_flags_speech_stop(monkeypa
     speech_stopped_signal = asyncio.Event()
 
     await events.receive_transcription_events(
-        ws_client,  # pyright: ignore[reportArgumentType]
-        buffer,  # pyright: ignore[reportArgumentType]
-        speech_player,  # pyright: ignore[reportArgumentType]
+        ws_client,
+        buffer,
+        speech_player,
         stop_signal=stop_signal,
         speech_stopped_signal=speech_stopped_signal,
     )
@@ -113,9 +114,9 @@ async def test_receive_events_handles_stop_command(monkeypatch):
     speech_stopped_signal = asyncio.Event()
 
     await events.receive_transcription_events(
-        ws_client,  # pyright: ignore[reportArgumentType]
-        buffer,  # pyright: ignore[reportArgumentType]
-        speech_player,  # pyright: ignore[reportArgumentType]
+        ws_client,
+        buffer,
+        speech_player,
         stop_signal=stop_signal,
         speech_stopped_signal=speech_stopped_signal,
     )

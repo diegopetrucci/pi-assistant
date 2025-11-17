@@ -99,10 +99,14 @@ def test_callback_warns_when_queue_full(monkeypatch):
     capture.loop = type("Loop", (), {"call_soon_threadsafe": lambda self, cb, *args: cb(*args)})()
 
     class FullQueue:
-        def put_nowait(self, _):
+        async def get(self):
+            return b""
+
+        def put_nowait(self, item: bytes):
+            del item
             raise asyncio.QueueFull
 
-    capture.audio_queue = FullQueue()  # pyright: ignore[reportAttributeAccessIssue]
+    capture.audio_queue = FullQueue()
     audio_chunk = np.zeros((4,), dtype=np.int16)
 
     stderr = io.StringIO()
@@ -118,10 +122,14 @@ def test_callback_logs_status(monkeypatch):
     capture.loop = type("Loop", (), {"call_soon_threadsafe": lambda self, cb, *args: cb(*args)})()
 
     class Queue:
-        def put_nowait(self, _):
-            pass
+        async def get(self):
+            return b""
 
-    capture.audio_queue = Queue()  # pyright: ignore[reportAttributeAccessIssue]
+        def put_nowait(self, item: bytes):
+            del item
+            return None
+
+    capture.audio_queue = Queue()
     audio_chunk = np.zeros((4,), dtype=np.int16)
 
     stderr = io.StringIO()

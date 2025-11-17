@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Literal, Optional, Tuple, cast
 
 from openai import AsyncOpenAI, BadRequestError
 
@@ -24,6 +24,8 @@ from pi_assistant.config import (
     LOCATION_NAME,
     OPENAI_API_KEY,
 )
+
+AudioResponseFormat = Literal["mp3", "opus", "aac", "flac", "wav", "pcm"]
 
 
 @dataclass
@@ -63,7 +65,7 @@ class LLMResponder:
         self._enable_tts = enable_tts
         self._tts_model = tts_model
         self._tts_voice = tts_voice
-        self._tts_format = tts_format
+        self._tts_format: AudioResponseFormat = self._normalize_response_format(tts_format)
         self._tts_sample_rate = tts_sample_rate
         self._language = language.strip() if language else ""
         self._responses_audio_requested = enable_tts and use_responses_audio
@@ -298,6 +300,17 @@ class LLMResponder:
         )
         self._audio_fallback_logged = True
 
+    def _normalize_response_format(self, requested: str) -> AudioResponseFormat:
+        allowed: tuple[AudioResponseFormat, ...] = ("mp3", "opus", "aac", "flac", "wav", "pcm")
+        normalized = (requested or "").strip().lower()
+        if normalized in allowed:
+            return cast(AudioResponseFormat, normalized)
+        console_print(
+            "[ASSISTANT] Unknown TTS format "
+            f"'{requested or 'N/A'}'; defaulting to 'mp3' for compatibility."
+        )
+        return "mp3"
+
     async def _synthesize_audio(self, text: str) -> tuple[Optional[bytes], Optional[int]]:
         if not text or not self._enable_tts:
             return None, None
@@ -306,7 +319,7 @@ class LLMResponder:
                 model=self._tts_model,
                 voice=self._tts_voice,
                 input=text,
-                response_format=self._tts_format,  # pyright: ignore[reportArgumentType]
+                response_format=self._tts_format,
             )
             audio_bytes = await response.aread()
         except Exception:

@@ -5,6 +5,8 @@ Handles audio capture from USB microphone
 
 import asyncio
 import sys
+from collections.abc import Mapping
+from typing import Protocol, cast
 
 from pi_assistant.cli.logging_utils import verbose_print
 from pi_assistant.config import (
@@ -19,11 +21,19 @@ from pi_assistant.config import (
 from ._sounddevice import sounddevice as sd
 
 
+class _AudioQueue(Protocol):
+    async def get(self) -> bytes: ...
+
+    def put_nowait(self, item: bytes) -> None: ...
+
+
 class AudioCapture:
     """Handles audio capture from USB microphone"""
 
     def __init__(self):
-        self.audio_queue = asyncio.Queue(maxsize=AUDIO_QUEUE_MAX_SIZE)
+        self.audio_queue: _AudioQueue = cast(
+            _AudioQueue, asyncio.Queue(maxsize=AUDIO_QUEUE_MAX_SIZE)
+        )
         self.stream = None
         self.loop = None
         self.callback_count = 0  # Debug counter
@@ -56,8 +66,11 @@ class AudioCapture:
 
         # Put audio data in queue (non-blocking)
         # If queue is full, skip this chunk to prevent blocking
+        loop = self.loop
+        if loop is None:
+            return
         try:
-            self.loop.call_soon_threadsafe(self.audio_queue.put_nowait, audio_bytes)  # pyright: ignore[reportOptionalMemberAccess]
+            loop.call_soon_threadsafe(self.audio_queue.put_nowait, audio_bytes)
         except asyncio.QueueFull:
             print("Warning: Audio queue full, dropping frame", file=sys.stderr)
 
@@ -183,8 +196,9 @@ class AudioCapture:
                 "Run `arecord -l` to verify the USB microphone is attached."
             ) from exc
 
-        for idx, info in enumerate(devices):
-            if info.get("max_input_channels", 0) >= CHANNELS:  # pyright: ignore[reportAttributeAccessIssue]
+        for idx, entry in enumerate(self._iter_device_records(devices)):
+            max_channels = entry.get("max_input_channels")
+            if isinstance(max_channels, (int, float)) and int(max_channels) >= CHANNELS:
                 return idx
 
         raise RuntimeError(
@@ -197,9 +211,30 @@ class AudioCapture:
             return "system default"
 
         try:
-            info = sd.query_devices(device)
-            name = info.get("name", "Unknown device")  # pyright: ignore[reportAttributeAccessIssue]
-            index = info.get("index", device if isinstance(device, int) else "?")  # pyright: ignore[reportAttributeAccessIssue]
+            info = self._device_info_dict(sd.query_devices(device))
+            name_obj = info.get("name")
+            name = str(name_obj) if name_obj not in (None, "") else "Unknown device"
+            idx_obj = info.get("index")
+            index = (
+                idx_obj if isinstance(idx_obj, int) else device if isinstance(device, int) else "?"
+            )
             return f"{name} (id {index})"
         except Exception:
             return str(device)
+
+    def _iter_device_records(self, devices: object) -> list[dict[str, object]]:
+        if isinstance(devices, list):
+            return [self._device_info_dict(item) for item in devices]
+        if isinstance(devices, tuple):
+            return [self._device_info_dict(item) for item in devices]
+        return [self._device_info_dict(devices)]
+
+    @staticmethod
+    def _device_info_dict(info: object) -> dict[str, object]:
+        if isinstance(info, dict):
+            return dict(info)
+        if isinstance(info, Mapping):
+            return dict(info.items())
+        if hasattr(info, "__dict__"):
+            return dict(vars(info))
+        return {}

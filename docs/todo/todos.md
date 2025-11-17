@@ -2,6 +2,7 @@
 
 Required:
 - [ ] update the readme, agents, etc
+- [ ] fix hey x stop
 - [ ] Drop "hey wakeword" from user message
 - [ ] Don't wait for sentence to finish, stream / transcribe in smaller chunks
 - [ ] Measure real reply latency for each assistant model and update onboarding copy
