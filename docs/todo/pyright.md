@@ -4,12 +4,12 @@ date: 2024-11-27
 summary: Checklist of current Pyright errors and warnings to unblock the CI job.
 ---
 
-- [ ] `src/pi_assistant/__init__.py:4` — remove or implement `audio` before listing it in `__all__`.
-- [ ] `src/pi_assistant/__init__.py:5` — remove or implement `cli` before listing it in `__all__`.
-- [ ] `src/pi_assistant/__init__.py:6` — remove or implement `config` before listing it in `__all__`.
-- [ ] `src/pi_assistant/__init__.py:7` — remove or implement `diagnostics` before listing it in `__all__`.
+- [x] `src/pi_assistant/__init__.py:4` — import `audio` so `__all__` only lists defined names.
+- [x] `src/pi_assistant/__init__.py:5` — import `cli` so `__all__` only lists defined names.
+- [x] `src/pi_assistant/__init__.py:6` — import `config` so `__all__` only lists defined names.
+- [x] `src/pi_assistant/__init__.py:7` — import `diagnostics` so `__all__` only lists defined names.
 - [ ] `src/pi_assistant/assistant/llm.py:274` — ensure `response_format` is a valid literal (`mp3`, `opus`, `aac`, `flac`, `wav`, `pcm`) when calling `client.responses.create`.
-- [ ] `src/pi_assistant/assistant/transcript.py:108` — `_as_full_text` must only return `str | None`.
+- [x] `src/pi_assistant/assistant/transcript.py:108` — `_maybe_finalize` now returns `tuple[bool, str | None]`, ensuring callers only see `str | None`.
 - [ ] `src/pi_assistant/audio/capture.py:60` — guard `loop` before `call_soon_threadsafe`.
 - [ ] `src/pi_assistant/audio/capture.py:187` — stop calling `.get()` on the string `device_filter`.
 - [ ] `src/pi_assistant/audio/capture.py:201` — device listing code should use structured types instead of calling `.get()` on the `DeviceList`.

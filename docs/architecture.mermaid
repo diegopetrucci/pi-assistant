@@ -1,0 +1,21 @@
+flowchart TB
+    Config[["config/defaults.toml\n+ env vars"]] --> Capture
+    Config --> Controller
+    Config --> WSClient
+    Config --> Responder
+
+    Mic((USB Mic)) -->|PCM16 24kHz| Capture["pi_assistant.audio.AudioCapture"]
+    Capture -->|async queue| Controller["CLI audio controller\n(run_audio_controller)"]
+    Controller --> PreRoll["PreRollBuffer\n+ WakeWordEngine"]
+    PreRoll --> Controller
+    Controller --> Resampler["LinearResampler"]
+    Resampler -->|base64 chunks| WSClient["network.WebSocketClient"]
+    WSClient --> OpenAI[("OpenAI Realtime API\nturn detection + VAD")]
+
+    OpenAI --> Events["receive_transcription_events"]
+    Events --> Buffer["TurnTranscriptAggregator"]
+    Events -->|stop commands| Controller
+    Buffer -->|finalize turn| Responder["assistant.LLMResponder\n(Responses API)"]
+    Responder --> Speech["SpeechPlayer"]
+    Speech --> User((Speaker / LED cue))
+    Responder --> Console["CLI transcript + logs"]

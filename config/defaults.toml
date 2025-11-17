@@ -72,6 +72,7 @@ language = "en"
 system_prompt = "You are an ai assistant. Your user talks to you via a raspberry pi via voice, so the user's text might not always be the best quality as it's transcribed via microphone audio. Make your answers super, super short and to the point, unless the user asks you not to. Do not ask any further questions. Use metric units, not imperial. Do not reply with both."
 web_search_enabled = true
 tts_enabled = true
+tts_responses_enabled = true
 tts_model = "gpt-4o-mini-tts"
 tts_voice = "alloy"
 tts_format = "pcm"
@@ -80,6 +81,9 @@ tts_sample_rate = 24000
 [ux]
 confirmation_cue_enabled = true
 confirmation_cue_text = "Got it."
+
+[testing]
+simulate_query_text = ""
 
 [device]
 location_name = ""

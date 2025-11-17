@@ -80,38 +80,34 @@ class TurnTranscriptAggregator:
 
         wait_interval = self._drain_timeout if self._drain_timeout > 0 else 0.1
         total_wait = 0.0
-        ready_but_empty = object()
 
-        async def _maybe_finalize() -> Optional[str]:
+        async def _maybe_finalize() -> tuple[bool, Optional[str]]:
             async with self._lock:
                 ready = bool(self._segments) or total_wait >= self._max_finalize_wait
-                if ready:
-                    transcript = " ".join(self._segments).strip()
-                    self._segments.clear()
-                    self._seen_items.clear()
-                    self._state = "idle"
-                    snippet = (
-                        (transcript[:80] + "…")
-                        if transcript and len(transcript) > 80
-                        else transcript
-                    )
-                    reason = (
-                        "timeout"
-                        if (not transcript and total_wait >= self._max_finalize_wait)
-                        else "complete"
-                    )
-                    verbose_print(
-                        f"{self._trace_label} {self._timestamp()} finalize done "
-                        f"segments_cleared={pending_segments} wait={total_wait:.3f}s "
-                        f"mode={reason} transcript={snippet!r}"
-                    )
-                    return transcript or ready_but_empty  # pyright: ignore[reportReturnType]
-                return None
+                if not ready:
+                    return False, None
+                transcript = " ".join(self._segments).strip()
+                self._segments.clear()
+                self._seen_items.clear()
+                self._state = "idle"
+                snippet = (
+                    (transcript[:80] + "…") if transcript and len(transcript) > 80 else transcript
+                )
+                reason = (
+                    "timeout"
+                    if (not transcript and total_wait >= self._max_finalize_wait)
+                    else "complete"
+                )
+                verbose_print(
+                    f"{self._trace_label} {self._timestamp()} finalize done "
+                    f"segments_cleared={pending_segments} wait={total_wait:.3f}s "
+                    f"mode={reason} transcript={snippet!r}"
+                )
+                transcript_value = transcript if transcript else None
+                return True, transcript_value
 
-        maybe_transcript = await _maybe_finalize()
-        if maybe_transcript is ready_but_empty:
-            return None
-        if maybe_transcript is not None:
+        finalized, maybe_transcript = await _maybe_finalize()
+        if finalized:
             return maybe_transcript
 
         while True:
@@ -123,10 +119,8 @@ class TurnTranscriptAggregator:
             if wait_duration > 0:
                 await asyncio.sleep(wait_duration)
                 total_wait += wait_duration
-            maybe_transcript = await _maybe_finalize()
-            if maybe_transcript is ready_but_empty:
-                return None
-            if maybe_transcript is not None:
+            finalized, maybe_transcript = await _maybe_finalize()
+            if finalized:
                 return maybe_transcript
 
     async def clear_current_turn(self, reason: str = "") -> None:

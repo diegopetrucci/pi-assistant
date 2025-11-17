@@ -2,9 +2,11 @@ import asyncio
 import base64
 import unittest
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import patch
 
 import pytest
+from openai import AsyncOpenAI
 
 from pi_assistant.assistant import (
     BadRequestError as OpenAIBadRequestError,
@@ -297,11 +299,18 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
 
     def test_build_audio_extra_body_respects_tts_flags(self):
         client = FakeOpenAIClient({"output": []})
-        responder = LLMResponder(client=client, enable_tts=False)  # pyright: ignore[reportArgumentType]
+        responder = LLMResponder(client=cast(AsyncOpenAI, client), enable_tts=False)
         self.assertIsNone(responder._build_audio_extra_body())
 
+        responder_local_mode = LLMResponder(
+            client=cast(AsyncOpenAI, client),
+            enable_tts=True,
+            use_responses_audio=False,
+        )
+        self.assertIsNone(responder_local_mode._build_audio_extra_body())
+
         responder_tts = LLMResponder(
-            client=client,  # pyright: ignore[reportArgumentType]
+            client=cast(AsyncOpenAI, client),
             enable_tts=True,
             use_responses_audio=True,
             tts_voice="robot",
@@ -316,7 +325,11 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_send_response_request_retries_without_audio_on_known_error(self):
         client = FakeOpenAIClient({"output": []})
-        responder = LLMResponder(client=client, enable_tts=True, use_responses_audio=True)  # pyright: ignore[reportArgumentType]
+        responder = LLMResponder(
+            client=cast(AsyncOpenAI, client),
+            enable_tts=True,
+            use_responses_audio=True,
+        )
         responder.set_responses_audio_supported(True)
         client.error_to_raise = DummyBadRequest(  # pyright: ignore[reportAttributeAccessIssue]
             message="Unknown parameter audio",
@@ -364,7 +377,7 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
     async def test_verify_responses_audio_support_success(self):
         client = FakeOpenAIClient({"output": []})
         responder = LLMResponder(
-            client=client,  # pyright: ignore[reportArgumentType]
+            client=cast(AsyncOpenAI, client),
             enable_tts=True,
             use_responses_audio=True,
         )
@@ -408,9 +421,23 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(client.calls), 1)
 
+    async def test_verify_responses_audio_support_skips_when_mode_disabled(self):
+        client = FakeOpenAIClient({"output": []})
+        responder = LLMResponder(
+            client=cast(AsyncOpenAI, client),
+            enable_tts=True,
+            use_responses_audio=False,
+        )
+
+        supported = await responder.verify_responses_audio_support()
+
+        self.assertFalse(supported)
+        self.assertFalse(responder.responses_audio_supported)
+        self.assertEqual(len(client.calls), 0)
+
     async def test_synthesize_audio_handles_exceptions(self):
         client = FakeOpenAIClient({"output": []})
-        responder = LLMResponder(client=client, enable_tts=True)  # pyright: ignore[reportArgumentType]
+        responder = LLMResponder(client=cast(AsyncOpenAI, client), enable_tts=True)
         client.audio_error_to_raise = RuntimeError("audio synth failure")  # pyright: ignore[reportAttributeAccessIssue]
 
         audio_bytes, sample_rate = await responder._synthesize_audio("hello")

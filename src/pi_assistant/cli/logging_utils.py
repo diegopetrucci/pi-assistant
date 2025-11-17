@@ -207,6 +207,15 @@ def verbose_print(*args, **kwargs) -> None:
         print(f"[{timestamp}]", **kwargs)
 
 
+def console_print(*args, **kwargs) -> None:
+    """Print to stdout/stderr, adding timestamps when verbose logging is enabled."""
+
+    if _VERBOSE_LOGGING:
+        verbose_print(*args, **kwargs)
+    else:
+        print(*args, **kwargs)
+
+
 def log_state_transition(previous: Optional[StreamState], new: StreamState, reason: str) -> None:
     """Emit a consistent log for controller state changes."""
 
