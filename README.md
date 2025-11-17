@@ -121,8 +121,13 @@ uv run python start.py --help
 
 ### Capturing Verbose Logs Locally
 
-Verbose logs are captured by default: every `uv run pi-assistant` session writes an ISO-8601–named file (e.g., `logs/2024-11-30T14-03-12.123.log`) under `logs/`, timestamps mirror console output, and ANSI colors are stripped for readability. Override the folder with `VERBOSE_LOG_DIRECTORY=/path/to/dir` or disable capture entirely via `VERBOSE_LOG_CAPTURE_ENABLED=0` if you need to conserve space on constrained devices.
+Verbose logs are captured by default. Each `uv run pi-assistant` session:
 
+- Writes a log file named with an ISO-8601 timestamp (e.g., `logs/2024-11-30T14-03-12.123.log`) under the `logs/` directory.
+- Mirrors console output timestamps in the log.
+- Strips ANSI colors for readability.
+
+You can override the log folder with `VERBOSE_LOG_DIRECTORY=/path/to/dir`, or disable capture entirely via `VERBOSE_LOG_CAPTURE_ENABLED=0` to conserve space on constrained devices.
 ## Code Quality
 
 Ruff is configured via `ruff.toml` to handle both formatting and linting.
