@@ -4,47 +4,7 @@
 
 ### Untested Files (551 total lines)
 
-#### 1. `src/pi_transcription/config/__init__.py` (246 lines)
-**Priority**: ⚠️ **HIGHEST - CRITICAL**
-
-**Functions lacking tests**:
-- [ ] `_env_bool()` - Boolean environment variable parsing
-- [ ] `_env_int()` - Integer environment variable parsing
-- [ ] `_env_float()` - Float environment variable parsing
-- [ ] `_env_path()` - Path environment variable parsing
-- [ ] `_prompt_for_api_key()` - Interactive API key prompting
-- [ ] `_persist_env_value()` - .env file persistence
-- [ ] `_prompt_for_location_name()` - Interactive location prompting
-- [ ] `get_config()` - Main configuration loader
-
-**Why critical**: Foundation for entire app configuration - errors here break everything
-
-**Risk level**: Very High
-
-#### 2. `src/pi_transcription/cli/app.py` (165 lines)
-**Priority**: ⚠️ **VERY HIGH - CRITICAL**
-
-**Functions lacking tests**:
-- [ ] `parse_args()` - CLI argument parsing
-- [ ] `run_transcription()` - Main application orchestration
-- [ ] `main()` - Entry point
-
-**Why critical**: Entry point for entire application, orchestrates all components
-
-**Risk level**: Very High
-
-#### 3. `src/pi_transcription/diagnostics.py` (102 lines)
-**Priority**: 🟡 **MEDIUM**
-
-**Functions lacking tests**:
-- [ ] `test_audio_capture()` - Hardware audio validation
-- [ ] `test_websocket_client()` - Network connection validation
-
-**Why critical**: Diagnostic utilities for hardware validation
-
-**Risk level**: High - used for troubleshooting
-
-#### 4. `src/pi_transcription/cli/logging_utils.py` (38 lines)
+#### 1. `src/pi_transcription/cli/logging_utils.py` (38 lines)
 **Priority**: 🟢 **LOW**
 
 **Functions lacking tests**:
@@ -132,80 +92,22 @@ Missing:
 
 ### Priority 1: 🔴 CRITICAL (Start Here)
 
-#### 1. Configuration Module (`config/__init__.py`)
-**Estimated effort**: 2-3 days
-
-**Tests needed**:
-- [ ] Test all environment variable parsing functions
--  - [x] `_env_bool()` with valid/invalid values
--  - [x] `_env_int()` with valid/invalid/overflow values
--  - [x] `_env_float()` with valid/invalid/special values
--  - [x] `_env_path()` with absolute/relative/`~` paths
-- [x] Test path resolution with various inputs
-- [x] Test .env file persistence
-  - [x] Create new .env file
-  - [x] Update existing .env file
-  - [x] Handle permission errors
-- [x] Test API key validation
-- [x] Mock interactive prompts
-  - [x] API key prompting
-  - [x] Location name prompting
-
-#### 2. Main Application Entry Point (`cli/app.py`)
-**Estimated effort**: 1-2 days
-
-**Tests needed**:
-- [ ] Test `parse_args()` with various CLI flag combinations
-  - [x] All valid flag combinations
-  - [x] Invalid flag combinations
-  - [x] Missing required arguments (N/A — parser has no required positional args)
-- [ ] Test `run_transcription()` initialization flow
-  - [x] Successful startup
-  - [x] Component initialization failures
-- [x] Test graceful shutdown on KeyboardInterrupt
-- [x] Test error propagation from components
-- [x] Mock all external dependencies
-
-#### 3. Audio Capture Error Paths (`audio/capture.py`)
+#### 1. Audio Capture Error Paths (`audio/capture.py`)
 **Estimated effort**: 1 day
 
 **Tests needed**:
 - [ ] Test device initialization failures
-- [x] Test device initialization failures
 - [ ] Test all device selection edge cases
-  - [x] When override device doesn't exist
-  - [x] When no devices available
-  - [x] When query_devices() raises exception
-- [x] Test `stop_stream()` when stream is None
-- [x] Test callback status warnings
 
 ### Priority 2: 🟡 HIGH (Important for Robustness)
 
-#### 4. WebSocket Connection Edge Cases (`network/websocket_client.py`)
+#### 1. WebSocket Connection Edge Cases (`network/websocket_client.py`)
 **Estimated effort**: 1-2 days
 
 **Tests needed**:
 - [ ] Test connection timeouts
-- [x] Test connection timeouts
-- [x] Test reconnection scenarios
-- [x] Test malformed server responses
-- [x] Test error event handling
-- [x] Test `send_audio_chunk()` when not connected
-- [x] Test multiple connection attempts
 
-#### 5. CLI Controller Exception Handling (`cli/controller.py`)
-**Estimated effort**: 2-3 days
-
-**Tests needed**:
-- [x] Test concurrent state transitions
-- [x] Test all cancellation paths
-- [x] Test resource cleanup
-- [x] Test edge cases in auto-stop logic
-- [x] Test retrigger scenarios
-- [x] Test concurrent wake word triggers
-- [x] Test stop signal during pre-roll flush
-
-#### 6. Assistant API Error Handling (`assistant.py`)
+#### 2. Assistant API Error Handling (`assistant.py`)
 **Estimated effort**: 1-2 days
 
 **Tests needed**:
@@ -218,16 +120,7 @@ Missing:
 
 ### Priority 3: 🟢 MEDIUM (Nice to Have)
 
-#### 7. Diagnostics Module (`diagnostics.py`)
-**Estimated effort**: 0.5-1 day
-
-**Tests needed**:
-- [ ] Test `test_audio_capture()` function
-- [ ] Test `test_websocket_client()` function
-- [ ] Mock hardware dependencies
-- [ ] Test timeout behaviors
-
-#### 8. Wake Word Edge Cases (`wake_word.py`)
+#### 1. Wake Word Edge Cases (`wake_word.py`)
 **Estimated effort**: 1 day
 
 **Tests needed**:
@@ -237,7 +130,7 @@ Missing:
 - [ ] Test `PreRollBuffer` with invalid max_seconds
 - [ ] Test very large audio chunks
 
-#### 9. Integration Tests
+#### 2. Integration Tests
 **Estimated effort**: 2-3 days
 
 **Tests needed**:
@@ -292,45 +185,38 @@ Missing:
 ## 6. Recommended Testing Strategy
 
 ### Phase 1: Critical Gaps (Weeks 1-2)
-**Goal**: Cover the most critical untested code
+**Goal**: Finish the outstanding blockers that still lack basic regression coverage.
 
-1. **Week 1**: Configuration module
-   - [ ] Create `tests/test_config.py`
-   - [ ] Test all environment variable parsing functions
-   - [ ] Test .env file persistence
-   - [ ] Test interactive prompts (mocked)
-   - [ ] **Target**: 90%+ coverage of `config/__init__.py`
+1. **Week 1**: Audio capture + logging
+   - [ ] Cover device initialization/selection failures in `audio/capture.py`.
+   - [ ] Exercise `cli/logging_utils.log_state_transition()` with representative inputs.
+   - [ ] **Target**: Remove remaining “no tests” entries for audio + logging helpers.
 
-2. **Week 2**: Entry points and error paths
-   - [ ] Create `tests/test_app.py`
-   - [ ] Test CLI argument parsing
-   - [ ] Test main application flow
-   - [ ] Add audio capture error path tests
-   - [ ] **Target**: 80%+ coverage of `cli/app.py`
+2. **Week 2**: Realtime connectivity
+   - [ ] Simulate WebSocket connection timeouts/drops in `network/websocket_client.py`.
+   - [ ] Add negative-path tests for assistant synthesis/network failures.
+   - [ ] **Target**: Reduce crash-only code paths in networking + assistant layers.
 
 ### Phase 2: Robustness (Weeks 3-4)
-**Goal**: Improve error handling and edge case coverage
+**Goal**: Broaden error-path coverage for language + wake-word subsystems.
 
-3. **Week 3**: Network and async edge cases
-   - [ ] Expand WebSocket client tests
-   - [ ] Add CLI controller concurrent tests
-   - [ ] Test async error handling
-   - [ ] **Target**: Remove most `pragma: no cover` comments
+3. **Week 3**: Wake word + speech playback
+   - [ ] Stress-test `wake_word.py` with oversize, zero-length, and corrupt buffers.
+   - [ ] Cover playback failure scenarios (invalid sample rates, device issues).
+   - [ ] **Target**: Confidence in on-device gating + playback fallbacks.
 
-4. **Week 4**: Assistant and integration
-   - [ ] Add assistant edge case tests
-   - [ ] Create integration test suite
-   - [ ] Test state machine transitions
-   - [ ] **Target**: End-to-end scenarios covered
+4. **Week 4**: Integration + controller flows
+   - [ ] Build an integration harness from audio ingest through transcription events.
+   - [ ] Exercise stop/retrigger boundaries and multi-turn cleanup in the controller.
+   - [ ] **Target**: Stable end-to-end regression that survives retries/cancellations.
 
 ### Phase 3: Polish (Week 5)
-**Goal**: Achieve comprehensive coverage
+**Goal**: Lock in coverage goals and regression tooling.
 
-5. **Week 5**: Final coverage push
-   - [ ] Add diagnostics tests
-   - [ ] Add performance/stress tests
-   - [ ] Fill remaining coverage gaps
-   - [ ] **Target**: 85%+ overall code coverage
+5. **Week 5**: Coverage consolidation
+   - [ ] Backfill assistant edge cases (rate limits, large transcripts, empty turns).
+   - [ ] Add state-machine + queue stress tests for async/race conditions.
+   - [ ] **Target**: Sustain 85%+ overall coverage with CI gating.
 
 ---
 
@@ -373,9 +259,9 @@ Missing:
 ## 9. Tools and Infrastructure
 
 ### Required Tools
-- [x] pytest
-- [x] pytest-asyncio
-- [x] pytest-cov
+- pytest
+- pytest-asyncio
+- pytest-cov
 - [ ] pytest-timeout (for timeout testing)
 - [ ] pytest-mock (enhanced mocking)
 - [ ] hypothesis (property-based testing)
