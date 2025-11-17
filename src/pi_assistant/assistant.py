@@ -388,7 +388,11 @@ class LLMResponder:
         else:  # pragma: no cover - fallback for unexpected response shape
             data = response
 
-        output = data.get("output", []) if isinstance(data, dict) else []
+        output: list = []
+        if isinstance(data, dict):
+            raw_output = data.get("output")
+            if isinstance(raw_output, list):
+                output = raw_output
         fragments: list[str] = []
         audio_chunks: list[bytes] = []
         audio_format: Optional[str] = None
@@ -396,14 +400,23 @@ class LLMResponder:
         audio_chunk_count = 0
 
         for block in output:
-            for content in block.get("content", []):
+            if not isinstance(block, dict):
+                continue
+            contents = block.get("content")
+            if not isinstance(contents, list):
+                continue
+            for content in contents:
+                if not isinstance(content, dict):
+                    continue
                 content_type = content.get("type")
                 if content_type == "output_text":
                     text = content.get("text", "").strip()
                     if text:
                         fragments.append(text)
                 elif content_type == "output_audio":
-                    audio_blob = content.get("audio", {})
+                    audio_blob = content.get("audio") or {}
+                    if not isinstance(audio_blob, dict):
+                        continue
                     b64_data = audio_blob.get("data")
                     if not b64_data:
                         continue

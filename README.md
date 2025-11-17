@@ -54,12 +54,6 @@ uv run pre-commit install
 
 `uv sync` creates a managed `.venv/` if one does not already exist and keeps it up to date as dependencies change.
 
-Need to hand a `requirements.txt` to another system? Export one on demand:
-
-```bash
-uv export --format requirements-txt > requirements.txt
-```
-
 ### Optional: Pin repository-local Python 3.11
 
 If your Raspberry Pi workflow needs Python 3.11 without touching the system installation, let `uv` download a portable interpreter that only applies inside this repo:
