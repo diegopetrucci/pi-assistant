@@ -124,6 +124,8 @@ class _StubAssistant:
         self._supports_audio = supports_audio
         self.verify_calls = 0
         self.resp_audio_supported = None
+        self.warm_calls: list[str] = []
+        self.cached_cues: dict[str, tuple[bytes, int]] = {}
 
     async def verify_responses_audio_support(self) -> bool:
         self.verify_calls += 1
@@ -133,6 +135,13 @@ class _StubAssistant:
 
     def set_responses_audio_supported(self, value: bool) -> None:
         self.resp_audio_supported = value
+
+    async def warm_phrase_audio(self, text: str):
+        self.warm_calls.append(text)
+        return self.cached_cues.get(text)
+
+    def peek_phrase_audio(self, text: str):
+        return self.cached_cues.get(text)
 
 
 class _StubSpeechPlayer:

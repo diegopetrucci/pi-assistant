@@ -17,7 +17,12 @@ from pi_assistant.cli.logging_utils import (
     ERROR_LOG_LABEL,
     set_verbose_logging,
 )
-from pi_assistant.config import ASSISTANT_TTS_SAMPLE_RATE, FORCE_ALWAYS_ON
+from pi_assistant.config import (
+    ASSISTANT_TTS_SAMPLE_RATE,
+    CONFIRMATION_CUE_ENABLED,
+    CONFIRMATION_CUE_TEXT,
+    FORCE_ALWAYS_ON,
+)
 from pi_assistant.diagnostics import test_audio_capture, test_websocket_client
 from pi_assistant.network import WebSocketClient
 
@@ -35,6 +40,16 @@ async def run_transcription(force_always_on: bool = False) -> None:
     transcript_buffer = TurnTranscriptAggregator()
     assistant = LLMResponder()
     speech_player = SpeechPlayer(default_sample_rate=ASSISTANT_TTS_SAMPLE_RATE)
+    if assistant.tts_enabled and CONFIRMATION_CUE_ENABLED and CONFIRMATION_CUE_TEXT:
+        cue_task = asyncio.create_task(assistant.warm_phrase_audio(CONFIRMATION_CUE_TEXT))
+
+        def _log_cue_error(fut: asyncio.Task):
+            try:
+                fut.result()
+            except Exception:
+                pass
+
+        cue_task.add_done_callback(_log_cue_error)
 
     responses_audio_enabled = False
     if assistant.tts_enabled:

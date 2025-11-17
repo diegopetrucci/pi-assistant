@@ -76,5 +76,9 @@ tts_voice = "alloy"
 tts_format = "pcm"
 tts_sample_rate = 24000
 
+[ux]
+confirmation_cue_enabled = true
+confirmation_cue_text = "Got it."
+
 [device]
 location_name = ""

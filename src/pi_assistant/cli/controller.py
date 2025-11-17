@@ -21,10 +21,13 @@ from pi_assistant.cli.logging_utils import (
     verbose_print,
 )
 from pi_assistant.config import (
+    ASSISTANT_TTS_SAMPLE_RATE,
     AUTO_STOP_ENABLED,
     AUTO_STOP_MAX_SILENCE_SECONDS,
     AUTO_STOP_SILENCE_THRESHOLD,
     CHANNELS,
+    CONFIRMATION_CUE_ENABLED,
+    CONFIRMATION_CUE_TEXT,
     PREROLL_DURATION_SECONDS,
     SAMPLE_RATE,
     STREAM_SAMPLE_RATE,
@@ -61,6 +64,33 @@ def calculate_rms(audio_bytes: bytes) -> float:
     return float(np.sqrt(np.mean(float_samples**2)))
 
 
+def _maybe_schedule_confirmation_cue(
+    assistant: LLMResponder,
+    speech_player: SpeechPlayer,
+) -> None:
+    """Play a cached 'Got it' cue without blocking the main turn flow."""
+
+    if not (assistant.tts_enabled and CONFIRMATION_CUE_ENABLED and CONFIRMATION_CUE_TEXT):
+        return
+
+    cached = assistant.peek_phrase_audio(CONFIRMATION_CUE_TEXT)
+    if not cached:
+        asyncio.create_task(assistant.warm_phrase_audio(CONFIRMATION_CUE_TEXT))
+        return
+    audio_bytes, sample_rate = cached
+    task = asyncio.create_task(
+        speech_player.play(audio_bytes, sample_rate=sample_rate or ASSISTANT_TTS_SAMPLE_RATE)
+    )
+
+    def _log_task_error(fut: asyncio.Task):
+        try:
+            fut.result()
+        except Exception as exc:  # pragma: no cover - host audio failure
+            verbose_print(f"{CONTROL_LOG_LABEL} Confirmation cue failed: {exc}")
+
+    task.add_done_callback(_log_task_error)
+
+
 async def finalize_turn_and_respond(
     transcript_buffer: TurnTranscriptAggregator,
     assistant: LLMResponder,
@@ -71,6 +101,8 @@ async def finalize_turn_and_respond(
     transcript = await transcript_buffer.finalize_turn()
     if not transcript:
         return
+
+    _maybe_schedule_confirmation_cue(assistant, speech_player)
 
     verbose_print(f"{TURN_LOG_LABEL} Sending transcript to assistant: {transcript}")
 
