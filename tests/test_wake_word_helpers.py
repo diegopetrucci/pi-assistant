@@ -24,10 +24,13 @@ class DummyResampler:
 
     def __init__(self, *args, **kwargs):
         self.calls = []
+        self.next_output = kwargs.get("next_output")
         DummyResampler.last_instance = self
 
     def process(self, audio_bytes):
         self.calls.append(audio_bytes)
+        if self.next_output is not None:
+            return self.next_output
         if not audio_bytes:
             return np.array([], dtype=np.int16)
         return np.array([1, -1], dtype=np.int16)
@@ -60,6 +63,32 @@ def test_preroll_buffer_clear_resets_state():
     buffer.add(b"abc")
     buffer.clear()
     assert buffer.flush() == b""
+
+
+def test_preroll_buffer_rejects_invalid_max_seconds():
+    with pytest.raises(ValueError):
+        wake_word.PreRollBuffer(max_seconds=-0.1, sample_rate=1000)
+    with pytest.raises(ValueError):
+        wake_word.PreRollBuffer(max_seconds=0, sample_rate=1000)
+
+
+def test_wake_word_engine_handles_zero_size_resampler_output(tmp_path, monkeypatch):
+    model_path = tmp_path / "model.tflite"
+    model_path.write_text("dummy")
+    monkeypatch.setattr(
+        wake_word,
+        "LinearResampler",
+        lambda *args, **kwargs: DummyResampler(
+            *args, **kwargs, next_output=np.array([], dtype=np.int16)
+        ),
+    )
+    engine = wake_word.WakeWordEngine(model_path)
+    dummy_model = DummyModel.instances[-1]
+    dummy_model.predictions = [0.9]
+
+    result = engine.process_chunk(b"")
+
+    assert result.triggered is False
 
 
 def test_wake_word_engine_triggers_after_consecutive_hits(tmp_path):
@@ -124,3 +153,13 @@ def test_load_model_uses_fallback_when_primary_missing(tmp_path):
     assert dummy_model.kwargs["melspec_model_path"] == str(melspec)
     assert dummy_model.kwargs["embedding_model_path"] == str(embedding)
     assert isinstance(engine, wake_word.WakeWordEngine)
+
+
+def test_wake_word_engine_raises_when_no_models_available(tmp_path):
+    primary = tmp_path / "missing_primary.tflite"
+    fallback = tmp_path / "missing_fallback.tflite"
+
+    with pytest.raises(RuntimeError) as excinfo:
+        wake_word.WakeWordEngine(primary, fallback_model_path=fallback)
+
+    assert "Missing model file" in str(excinfo.value)

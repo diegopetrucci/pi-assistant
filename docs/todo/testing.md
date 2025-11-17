@@ -62,48 +62,26 @@
 **File**: `src/pi_transcription/config/__init__.py`
 
 Missing tests for:
-- ❌ `_env_bool()` with various truthy/falsy values ("1", "true", "yes", "on", "0", "false", etc.)
-- ❌ `_env_int()` with invalid strings, None, overflow values
-- ❌ `_env_float()` with invalid strings, scientific notation, infinity
-- ❌ `_env_path()` with relative paths, `~` expansion, missing parent directories
-- ❌ `_prompt_for_api_key()` interactive behavior (non-interactive fallback tested, but not full flow)
-- ❌ `_persist_env_value()` with existing file, new file, permission errors
-- ❌ `_prompt_for_location_name()` interactive flows
-- ❌ Missing OPENAI_API_KEY validation error
+- _none_ ✅
 
 ### Assistant Module Edge Cases
 **File**: `src/pi_transcription/assistant.py`
 
 Gaps identified:
-- ❌ `TurnTranscriptAggregator.finalize_turn()` race condition when segments arrive during finalization loop
-- ❌ Empty transcript handling after whitespace stripping
-- ❌ Very large transcript accumulation (memory/performance test)
-- ✅ `LLMResponder.verify_responses_audio_support()` when API changes behavior
-- ❌ `_synthesize_audio()` exception handling (marked with generic `except Exception`)
-- ❌ Multiple concurrent `generate_reply()` calls
-- ❌ System prompt with special characters or very long text
-- ❌ Location name with special characters
+- _none so far_ (new gaps welcome)
 
 ### Audio Capture Edge Cases
 **File**: `src/pi_transcription/audio/capture.py`
 
 Missing coverage:
-- ✅ `start_stream()` exception path when device initialization fails
-- ✅ `stop_stream()` when stream is None
-- ✅ Callback status warnings (tested print, but not actual status handling)
-- ✅ Device selection when all methods fail
-- ✅ `_parse_device_override()` with whitespace-only strings
-- ✅ `_first_available_input_device()` when query_devices() raises exception
+- _none so far_
 
 ### Wake Word Engine Edge Cases
 **File**: `src/pi_transcription/wake_word.py`
 
 Gaps:
-- ❌ `PreRollBuffer` with zero or negative max_seconds
-- ❌ `WakeWordEngine` when both primary and fallback models fail to load
 - ❌ `process_chunk()` with very large audio chunks
 - ❌ Model loading with corrupt model files (exception path covered but not tested)
-- ❌ Resampler returning zero-size array handling
 
 ### CLI Controller Edge Cases
 **File**: `src/pi_transcription/cli/controller.py`

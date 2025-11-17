@@ -85,6 +85,59 @@ class TurnTranscriptAggregatorTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, "second")
 
+    async def test_append_transcript_ignores_whitespace_only_segments(self):
+        aggregator = TurnTranscriptAggregator(drain_timeout_seconds=0.0)
+        await aggregator.start_turn()
+        await aggregator.append_transcript("first", "   ")
+        await aggregator.append_transcript("second", "\t")
+        await aggregator.append_transcript(None, "Valid")
+
+        result = await aggregator.finalize_turn()
+
+        self.assertEqual(result, "Valid")
+
+    async def test_finalize_turn_handles_very_large_transcript(self):
+        aggregator = TurnTranscriptAggregator(
+            drain_timeout_seconds=0.0,
+            max_finalize_wait_seconds=0.0,
+        )
+        await aggregator.start_turn()
+        large_segment = "chunk" * 10000
+        await aggregator.append_transcript(None, large_segment)
+        await aggregator.append_transcript(None, "tail")
+
+        result = await aggregator.finalize_turn()
+
+        self.assertTrue(result.endswith("tail"))
+        self.assertEqual(len(result), len(("chunk" * 10000) + " tail"))
+
+    async def test_finalize_turn_drops_segments_arriving_after_completion(self):
+        aggregator = TurnTranscriptAggregator(
+            drain_timeout_seconds=0.01,
+            max_finalize_wait_seconds=0.02,
+        )
+        await aggregator.start_turn()
+        seen_append_count = 0
+
+        async def delayed_append(text, delay):
+            nonlocal seen_append_count
+            await asyncio.sleep(delay)
+            await aggregator.append_transcript(None, text)
+            seen_append_count += 1
+
+        appenders = [
+            asyncio.create_task(delayed_append("Hello", 0.0)),
+            asyncio.create_task(delayed_append("world", 0.005)),
+            asyncio.create_task(delayed_append("late chunk", 0.05)),
+        ]
+
+        finalize_task = asyncio.create_task(aggregator.finalize_turn())
+        await asyncio.gather(finalize_task, *appenders)
+
+        self.assertEqual(finalize_task.result(), "Hello world")
+        self.assertEqual(seen_append_count, 3)
+        self.assertEqual(aggregator._segments, [])
+
 
 class FakeResponse:
     def __init__(self, payload):
@@ -121,6 +174,10 @@ class FakeAudioSpeechAPI:
 
     async def create(self, **payload):
         self._outer.audio_calls.append(payload)
+        if self._outer.audio_error_to_raise is not None:
+            exc = self._outer.audio_error_to_raise
+            self._outer.audio_error_to_raise = None
+            raise exc
         return FakeAudioResponse(self._outer.audio_payload)
 
 
@@ -133,6 +190,7 @@ class FakeOpenAIClient:
         self.audio_payload = b""
         self.audio = SimpleNamespace(speech=FakeAudioSpeechAPI(self))
         self.error_to_raise = None
+        self.audio_error_to_raise = None
 
 
 class DummyBadRequest(OpenAIBadRequestError):
@@ -349,6 +407,105 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
             await responder.verify_responses_audio_support()
 
         self.assertEqual(len(client.calls), 1)
+
+    async def test_synthesize_audio_handles_exceptions(self):
+        client = FakeOpenAIClient({"output": []})
+        responder = LLMResponder(client=client, enable_tts=True)
+        client.audio_error_to_raise = RuntimeError("audio synth failure")
+
+        audio_bytes, sample_rate = await responder._synthesize_audio("hello")
+
+        self.assertIsNone(audio_bytes)
+        self.assertIsNone(sample_rate)
+        self.assertEqual(len(client.audio_calls), 1)
+
+    async def test_generate_reply_can_run_concurrently(self):
+        payload = {
+            "output": [
+                {"content": [{"type": "output_text", "text": "Hello"}]},
+            ]
+        }
+        client = FakeOpenAIClient(payload)
+        responder = LLMResponder(client=client, enable_web_search=False)
+
+        async def run_after_delay(text, delay):
+            await asyncio.sleep(delay)
+            return await responder.generate_reply(text)
+
+        task1 = asyncio.create_task(run_after_delay("Query one", 0.01))
+        task2 = asyncio.create_task(run_after_delay("Query two", 0.0))
+
+        replies = await asyncio.gather(task1, task2)
+
+        self.assertTrue(all(reply and reply.text == "Hello" for reply in replies))
+        self.assertEqual(len(client.calls), 2)
+
+    async def test_generate_reply_includes_system_and_location_prompts(self):
+        payload = {
+            "output": [
+                {"content": [{"type": "output_text", "text": "Ack"}]},
+            ]
+        }
+        client = FakeOpenAIClient(payload)
+        responder = LLMResponder(
+            client=client,
+            enable_web_search=False,
+            system_prompt="Use markdown & emojis 😊",
+            location_name="São Paulo, BR",
+        )
+
+        await responder.generate_reply("Status?")
+
+        self.assertEqual(len(client.calls), 1)
+        sent = client.calls[0]
+        system_entries = [msg for msg in sent["input"] if msg["role"] == "system"]
+        self.assertEqual(len(system_entries), 2)
+        self.assertIn("markdown & emojis 😊", system_entries[0]["content"][0]["text"])
+        self.assertIn("São Paulo, BR", system_entries[1]["content"][0]["text"])
+
+    async def test_generate_reply_handles_location_with_special_characters(self):
+        payload = {
+            "output": [
+                {"content": [{"type": "output_text", "text": "OK"}]},
+            ]
+        }
+        client = FakeOpenAIClient(payload)
+        responder = LLMResponder(
+            client=client,
+            enable_web_search=False,
+            system_prompt="",
+            location_name="München 🏰 / 東京",
+        )
+
+        await responder.generate_reply("Where am I?")
+
+        self.assertEqual(len(client.calls), 1)
+        sent = client.calls[0]
+        system_entries = [msg for msg in sent["input"] if msg["role"] == "system"]
+        self.assertEqual(len(system_entries), 1)
+        self.assertIn("München 🏰 / 東京", system_entries[0]["content"][0]["text"])
+
+    async def test_generate_reply_truncates_very_long_system_prompt(self):
+        payload = {
+            "output": [
+                {"content": [{"type": "output_text", "text": "OK"}]},
+            ]
+        }
+        client = FakeOpenAIClient(payload)
+        responder = LLMResponder(
+            client=client,
+            enable_web_search=False,
+            system_prompt="X" * 5000,
+            location_name="",
+        )
+
+        await responder.generate_reply("Check prompt length")
+
+        self.assertEqual(len(client.calls), 1)
+        sent = client.calls[0]
+        system_entries = [msg for msg in sent["input"] if msg["role"] == "system"]
+        self.assertEqual(len(system_entries), 1)
+        self.assertEqual(len(system_entries[0]["content"][0]["text"]), 5000)
 
     def test_extract_modalities_combines_text_and_audio_chunks(self):
         payload = {
