@@ -28,6 +28,20 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      - name: Verify version consistency
+        run: |
+          TAG_REF="${{ github.ref }}"
+          TAG_VERSION_V="${TAG_REF#refs/tags/}"
+          TAG_VERSION="${TAG_VERSION_V#v}"
+
+          PROJECT_VERSION=$(grep -oP 'version = "\K[^"]+' pyproject.toml)
+
+          if [ "$TAG_VERSION" != "$PROJECT_VERSION" ]; then
+            echo "Error: Tag version ($TAG_VERSION) does not match pyproject.toml version ($PROJECT_VERSION)."
+            exit 1
+          fi
+          echo "Version check passed: $TAG_VERSION"
+
       - name: Build artifacts
         run: uv build
 
