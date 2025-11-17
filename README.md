@@ -118,6 +118,10 @@ uv run pi-assistant test-audio
 uv run python start.py --help
 ```
 
+### Capturing Verbose Logs Locally
+
+Verbose logs are captured by default: every `uv run pi-assistant` session writes an ISO-8601–named file (e.g., `logs/2024-11-30T14-03-12.123.log`) under `logs/`, timestamps mirror console output, and ANSI colors are stripped for readability. Override the folder with `VERBOSE_LOG_DIRECTORY=/path/to/dir` or disable capture entirely via `VERBOSE_LOG_CAPTURE_ENABLED=0` if you need to conserve space on constrained devices.
+
 ## Code Quality
 
 Ruff is configured via `ruff.toml` to handle both formatting and linting.
@@ -197,6 +201,7 @@ environment-variable overrides:
 - Language locks: `TRANSCRIPTION_LANGUAGE` (forced speech-recognition hint) and
   `ASSISTANT_LANGUAGE` (LLM output language), both defaulting to `"en"`
 - Wake-word overrides (see below): `WAKE_WORD_*`, `FORCE_ALWAYS_ON`
+- Verbose logging capture (enabled by default): `VERBOSE_LOG_CAPTURE_ENABLED`, `VERBOSE_LOG_DIRECTORY`
 
 If you want the assistant to know its real-world context, set
 `LOCATION_NAME="London, UK"` (or edit `device.location_name` in `config/defaults.toml`).

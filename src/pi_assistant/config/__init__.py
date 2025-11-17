@@ -56,7 +56,11 @@ def _env_float(name: str, default: float) -> float:
 
 def _env_path(name: str, default: str) -> Path:
     raw = os.getenv(name, default)
-    path = Path(raw).expanduser()
+    return _coerce_path(raw)
+
+
+def _coerce_path(value: str | Path) -> Path:
+    path = Path(value).expanduser()
     if not path.is_absolute():
         path = (PROJECT_ROOT / path).resolve()
     return path
@@ -312,6 +316,21 @@ def _resolve_location_name() -> str:
 
 
 LOCATION_NAME = _resolve_location_name()
+
+_LOGGING = _DEFAULTS.get("logging", {})
+VERBOSE_LOG_CAPTURE_ENABLED = _env_bool(
+    "VERBOSE_LOG_CAPTURE_ENABLED", _LOGGING.get("verbose_capture_enabled", False)
+)
+if VERBOSE_LOG_CAPTURE_ENABLED:
+    _DEFAULT_VERBOSE_DIR = _LOGGING.get("verbose_log_directory")
+    if isinstance(_DEFAULT_VERBOSE_DIR, str) and _DEFAULT_VERBOSE_DIR.strip():
+        default_verbose_dir = _DEFAULT_VERBOSE_DIR.strip()
+    else:
+        default_verbose_dir = "logs"
+
+    VERBOSE_LOG_DIRECTORY = _env_path("VERBOSE_LOG_DIRECTORY", default_verbose_dir)
+else:
+    VERBOSE_LOG_DIRECTORY = None
 
 # Auto-stop Configuration
 _AUTO_STOP = _DEFAULTS["auto_stop"]

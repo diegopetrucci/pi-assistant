@@ -211,6 +211,7 @@ __marimo__/
 test_recording.wav
 *.wav
 test.wav
+logs/
 
 # But keep test scripts (these are tracked)
 !test_audio.py
