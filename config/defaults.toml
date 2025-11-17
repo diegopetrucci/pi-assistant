@@ -18,7 +18,6 @@ silence_threshold = 500
 max_silence_seconds = 2.0
 
 [wake_word]
-default_model_name = "hey_rhasspy"
 model_path = "models/hey_jarvis_v0.1.onnx"
 fallback_model_path = "models/hey_jarvis_v0.1.tflite"
 melspec_model_path = "models/melspectrogram.onnx"
