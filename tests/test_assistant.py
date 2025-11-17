@@ -459,9 +459,10 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(client.calls), 1)
         sent = client.calls[0]
         system_entries = [msg for msg in sent["input"] if msg["role"] == "system"]
-        self.assertEqual(len(system_entries), 2)
+        self.assertEqual(len(system_entries), 3)
         self.assertIn("markdown & emojis 😊", system_entries[0]["content"][0]["text"])
         self.assertIn("São Paulo, BR", system_entries[1]["content"][0]["text"])
+        self.assertIn("Respond strictly in en", system_entries[2]["content"][0]["text"])
 
     async def test_generate_reply_handles_location_with_special_characters(self):
         payload = {
@@ -482,8 +483,9 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(client.calls), 1)
         sent = client.calls[0]
         system_entries = [msg for msg in sent["input"] if msg["role"] == "system"]
-        self.assertEqual(len(system_entries), 1)
+        self.assertEqual(len(system_entries), 2)
         self.assertIn("München 🏰 / 東京", system_entries[0]["content"][0]["text"])
+        self.assertIn("Respond strictly in en", system_entries[1]["content"][0]["text"])
 
     async def test_generate_reply_truncates_very_long_system_prompt(self):
         payload = {
@@ -504,8 +506,9 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(client.calls), 1)
         sent = client.calls[0]
         system_entries = [msg for msg in sent["input"] if msg["role"] == "system"]
-        self.assertEqual(len(system_entries), 1)
+        self.assertEqual(len(system_entries), 2)
         self.assertEqual(len(system_entries[0]["content"][0]["text"]), 5000)
+        self.assertIn("Respond strictly in en", system_entries[1]["content"][0]["text"])
 
     def test_extract_modalities_combines_text_and_audio_chunks(self):
         payload = {

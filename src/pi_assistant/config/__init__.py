@@ -62,6 +62,15 @@ def _env_path(name: str, default: str) -> Path:
     return path
 
 
+def _normalize_language(value: str | None, fallback: str = "en") -> str:
+    """Return a normalized language tag, defaulting to ``fallback`` when empty."""
+
+    if value is None:
+        return fallback
+    trimmed = value.strip()
+    return trimmed or fallback
+
+
 # Audio Configuration
 _AUDIO = _DEFAULTS["audio"]
 SAMPLE_RATE = _env_int("SAMPLE_RATE", _AUDIO["sample_rate"])
@@ -221,6 +230,12 @@ WEBSOCKET_HEADERS = {
 # Session Configuration for OpenAI Realtime API (Transcription mode)
 SESSION_CONFIG = copy.deepcopy(_DEFAULTS["session"])
 SESSION_CONFIG["input_audio_transcription"]["model"] = OPENAI_MODEL
+_INPUT_TRANSCRIPTION_DEFAULTS = _DEFAULTS["session"]["input_audio_transcription"]
+TRANSCRIPTION_LANGUAGE = _normalize_language(
+    os.getenv("TRANSCRIPTION_LANGUAGE"),
+    _INPUT_TRANSCRIPTION_DEFAULTS.get("language", "en"),
+)
+SESSION_CONFIG["input_audio_transcription"]["language"] = TRANSCRIPTION_LANGUAGE
 
 # Assistant / LLM Configuration
 _ASSISTANT = _DEFAULTS.get("assistant", {})
@@ -241,6 +256,10 @@ ASSISTANT_TTS_VOICE = os.getenv("ASSISTANT_TTS_VOICE", _ASSISTANT.get("tts_voice
 ASSISTANT_TTS_FORMAT = os.getenv("ASSISTANT_TTS_FORMAT", _ASSISTANT.get("tts_format", "pcm"))
 ASSISTANT_TTS_SAMPLE_RATE = _env_int(
     "ASSISTANT_TTS_SAMPLE_RATE", _ASSISTANT.get("tts_sample_rate", 24000)
+)
+ASSISTANT_LANGUAGE = _normalize_language(
+    os.getenv("ASSISTANT_LANGUAGE"),
+    _ASSISTANT.get("language", TRANSCRIPTION_LANGUAGE),
 )
 
 _UX = _DEFAULTS.get("ux", {})
