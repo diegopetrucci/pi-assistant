@@ -1075,11 +1075,14 @@ async def test_wake_phrase_override_cancels_pending_responses(monkeypatch):
     wake_engine.allow_retry = True
     capture.queue.put_nowait(loud_chunk)
 
-    for _ in range(100):
-        await asyncio.sleep(0.01)
-        if transcript_buffer.started >= 2 and scheduled[0].cancelled():
-            break
-    else:
+    try:
+
+        async def wait_for_cancellation() -> None:
+            while not (transcript_buffer.started >= 2 and scheduled[0].cancelled()):
+                await asyncio.sleep(0.01)
+
+        await asyncio.wait_for(wait_for_cancellation(), timeout=1.0)
+    except asyncio.TimeoutError:
         pytest.fail("pending response was not cancelled after wake override")
 
     capture.queue.put_nowait(silence_chunk)

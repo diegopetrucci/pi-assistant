@@ -83,3 +83,7 @@ confirmation_cue_text = "Got it."
 
 [device]
 location_name = ""
+
+[logging]
+verbose_capture_enabled = true
+verbose_log_directory = "logs"
