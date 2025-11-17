@@ -176,13 +176,26 @@ async def run_audio_controller(
     silence_duration = 0.0
     heard_speech = False
     retrigger_budget = 0
+    awaiting_server_stop = False
+    pending_finalize_reason: Optional[str] = None
     response_tasks: Set[asyncio.Task] = set()
 
     if state == StreamState.STREAMING:
         await transcript_buffer.start_turn()
 
-    def _transition_stream_to_listening(reason: str) -> None:
+    def _schedule_response_task(reason: str) -> None:
+        task = schedule_turn_response(transcript_buffer, assistant, speech_player)
+        response_tasks.add(task)
+
+        def _discard_on_completion(fut: asyncio.Task, s=response_tasks):
+            s.discard(fut)
+
+        task.add_done_callback(_discard_on_completion)
+        verbose_print(f"{TURN_LOG_LABEL} Scheduled assistant reply ({reason}).")
+
+    def _transition_stream_to_listening(reason: str, *, defer_finalize: bool = False) -> None:
         nonlocal state, heard_speech, silence_duration, retrigger_budget
+        nonlocal awaiting_server_stop, pending_finalize_reason
         if state != StreamState.STREAMING:
             return
         previous_state = state
@@ -196,9 +209,23 @@ async def run_audio_controller(
             wake_engine.reset_detection()
         if stream_resampler:
             stream_resampler.reset()
-        task = schedule_turn_response(transcript_buffer, assistant, speech_player)
-        response_tasks.add(task)
-        task.add_done_callback(lambda fut, s=response_tasks: s.discard(fut))
+        if defer_finalize:
+            awaiting_server_stop = True
+            pending_finalize_reason = reason
+            verbose_print(f"{TURN_LOG_LABEL} Awaiting server confirmation before finalizing turn.")
+            return
+        awaiting_server_stop = False
+        pending_finalize_reason = None
+        _schedule_response_task(reason)
+
+    def _complete_deferred_finalize(fallback_reason: str) -> None:
+        nonlocal awaiting_server_stop, pending_finalize_reason
+        if not awaiting_server_stop:
+            return
+        reason = pending_finalize_reason or fallback_reason
+        awaiting_server_stop = False
+        pending_finalize_reason = None
+        _schedule_response_task(reason)
 
     try:
         while True:
@@ -207,7 +234,10 @@ async def run_audio_controller(
 
             if not force_always_on and speech_stopped_signal.is_set():
                 speech_stopped_signal.clear()
-                _transition_stream_to_listening("server speech stop event")
+                if awaiting_server_stop:
+                    _complete_deferred_finalize("server speech stop event")
+                else:
+                    _transition_stream_to_listening("server speech stop event")
 
             if state == StreamState.LISTENING:
                 pre_roll.add(audio_bytes)
@@ -229,6 +259,8 @@ async def run_audio_controller(
                         wake_engine.reset_detection()
                     if stream_resampler:
                         stream_resampler.reset()
+                    awaiting_server_stop = False
+                    pending_finalize_reason = None
                     await transcript_buffer.clear_current_turn("manual stop command")
                 continue
 
@@ -243,6 +275,11 @@ async def run_audio_controller(
 
             skip_current_chunk = False
             if wake_engine and detection.triggered:
+                if awaiting_server_stop:
+                    verbose_print(
+                        f"{WAKE_LOG_LABEL} Wake phrase ignored; prior turn awaiting server stop."
+                    )
+                    continue
                 if state == StreamState.LISTENING:
                     previous_state = state
                     state = StreamState.STREAMING
@@ -289,7 +326,16 @@ async def run_audio_controller(
                     silence_duration += chunk_duration
                     if silence_duration >= AUTO_STOP_MAX_SILENCE_SECONDS:
                         if retrigger_budget == 0:
-                            _transition_stream_to_listening("silence detected")
+                            if awaiting_server_stop:
+                                message = (
+                                    f"{TURN_LOG_LABEL} Silence timer fired but awaiting server "
+                                    "stop; skipping duplicate close request."
+                                )
+                                verbose_print(message)
+                            else:
+                                _transition_stream_to_listening(
+                                    "silence detected", defer_finalize=True
+                                )
                         else:
                             verbose_print(
                                 f"{TURN_LOG_LABEL} Silence detected but "

@@ -2,9 +2,6 @@
 
 Investigating cases where wake and transcript logs appear but no turn is finalized.
 
-- **Turn drains before transcript arrives**  
-  `finalize_turn()` currently waits only 350 ms before clearing buffered segments (`src/pi_transcription/assistant.py`). When `input_audio_buffer.speech_stopped` fires and `_transition_stream_to_listening()` runs, the turn ends immediately. If the corresponding `conversation.item.input_audio_transcription.completed` event arrives after the drain window, the aggregator is already idle and drops the transcript.
-
 - **Stream never returns to LISTENING**  
   The assistant response is scheduled only when `_transition_stream_to_listening()` executes (`src/pi_transcription/cli/controller.py`). If the server never sends `input_audio_buffer.speech_stopped`, or wake retriggers keep `retrigger_budget > 0`, auto-stop logic refuses to close the stream. Transcripts appear in the log, but no turn finalizes because the controller stays in STREAMING.
 
