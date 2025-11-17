@@ -3,6 +3,7 @@
 Required:
 - [ ] Don't wait for sentence to finish, stream / transcribe in smaller chunks
 - [ ] let user pick name
+- [ ] Measure real reply latency for each assistant model and update onboarding copy
 
 Maybe:
 - [ ] Option to reduce debug logs

@@ -133,6 +133,80 @@ def _persist_api_key(api_key: str) -> None:
     _persist_env_value("OPENAI_API_KEY", api_key)
 
 
+_ASSISTANT_MODEL_CHOICES: dict[str, dict[str, str]] = {
+    "mini": {
+        "value": "gpt-5-mini-2025-08-07",
+        "description": "Mini - faster (~2s per reply), less precise (default)",
+    },
+    "5.1": {
+        "value": "gpt-5.1-2025-11-13",
+        "description": "5.1 - slower (~5s per reply), more precise",
+    },
+}
+
+
+def _prompt_for_assistant_model(default_model: str) -> str | None:
+    """Interactive assistant model selection shown on first run."""
+
+    if not sys.stdin.isatty():
+        return None
+
+    default_key = next(
+        (key for key, data in _ASSISTANT_MODEL_CHOICES.items() if data["value"] == default_model),
+        "mini",
+    )
+
+    sys.stderr.write(
+        "\nChoose which assistant model to use. This affects how fast and detailed replies feel:\n"
+    )
+    for key, data in _ASSISTANT_MODEL_CHOICES.items():
+        suffix = " (default)" if key == default_key else ""
+        sys.stderr.write(f"  {key}: {data['description']}{suffix}\n")
+
+    prompt = (
+        f"Assistant model [{'/'.join(_ASSISTANT_MODEL_CHOICES.keys())}] (default {default_key}): "
+    )
+    try:
+        choice = input(prompt).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        sys.stderr.write("\nNo selection provided; keeping the default.\n")
+        return None
+
+    if not choice:
+        choice = default_key
+
+    normalized = choice.replace(" ", "")
+    if normalized in {"mini", "fast"}:
+        choice_key = "mini"
+    elif normalized in {"5.1", "5", "full"}:
+        choice_key = "5.1"
+    else:
+        choice_key = normalized if normalized in _ASSISTANT_MODEL_CHOICES else None
+
+    if choice_key is None:
+        sys.stderr.write("Unrecognized choice; defaulting to Mini.\n")
+        choice_key = "mini"
+
+    return _ASSISTANT_MODEL_CHOICES[choice_key]["value"]
+
+
+def _resolve_assistant_model(default_model: str) -> str:
+    """Return the assistant model, prompting/persisting on first launch."""
+
+    env_model = os.getenv("ASSISTANT_MODEL")
+    if env_model and env_model.strip():
+        return env_model.strip()
+
+    prompted_model = _prompt_for_assistant_model(default_model)
+    if prompted_model:
+        _persist_env_value("ASSISTANT_MODEL", prompted_model)
+        os.environ["ASSISTANT_MODEL"] = prompted_model
+        sys.stderr.write("Saved ASSISTANT_MODEL to .env\n\n")
+        return prompted_model
+
+    return default_model
+
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or _prompt_for_api_key()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", _DEFAULTS["openai"]["model"])
 OPENAI_REALTIME_ENDPOINT = os.getenv(
@@ -150,7 +224,8 @@ SESSION_CONFIG["input_audio_transcription"]["model"] = OPENAI_MODEL
 
 # Assistant / LLM Configuration
 _ASSISTANT = _DEFAULTS.get("assistant", {})
-ASSISTANT_MODEL = os.getenv("ASSISTANT_MODEL", _ASSISTANT.get("model", "gpt-5.1-2025-11-13"))
+_DEFAULT_ASSISTANT_MODEL = _ASSISTANT.get("model", _ASSISTANT_MODEL_CHOICES["mini"]["value"])
+ASSISTANT_MODEL = _resolve_assistant_model(_DEFAULT_ASSISTANT_MODEL)
 ASSISTANT_SYSTEM_PROMPT = os.getenv("ASSISTANT_SYSTEM_PROMPT", _ASSISTANT.get("system_prompt", ""))
 ASSISTANT_WEB_SEARCH_ENABLED = _env_bool(
     "ASSISTANT_WEB_SEARCH_ENABLED", _ASSISTANT.get("web_search_enabled", True)
