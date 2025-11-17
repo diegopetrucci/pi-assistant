@@ -601,3 +601,44 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(audio_fmt, "wav")
         self.assertEqual(sample_rate, 8000)
         self.assertEqual(chunk_count, 1)
+
+    def test_extract_modalities_handles_missing_output_list(self):
+        payload = {"output": None}
+
+        text, audio_bytes, audio_fmt, sample_rate, chunk_count = LLMResponder._extract_modalities(
+            payload, default_sample_rate=44100
+        )
+
+        self.assertIsNone(text)
+        self.assertIsNone(audio_bytes)
+        self.assertIsNone(audio_fmt)
+        self.assertEqual(sample_rate, 44100)
+        self.assertEqual(chunk_count, 0)
+
+    def test_extract_modalities_skips_non_dict_blocks_and_contents(self):
+        payload = {
+            "output": [
+                "text block",
+                {"content": None},
+                {"content": ["inner string"]},
+                {
+                    "content": [
+                        {"type": "output_text", "text": "First chunk"},
+                        {
+                            "type": "output_audio",
+                            "audio": {"data": base64.b64encode(b"ab").decode()},
+                        },
+                    ]
+                },
+            ]
+        }
+
+        text, audio_bytes, audio_fmt, sample_rate, chunk_count = LLMResponder._extract_modalities(
+            payload, default_sample_rate=16000
+        )
+
+        self.assertEqual(text, "First chunk")
+        self.assertEqual(audio_bytes, b"ab")
+        self.assertIsNone(audio_fmt)
+        self.assertEqual(sample_rate, 16000)
+        self.assertEqual(chunk_count, 1)
