@@ -9,8 +9,6 @@ from pi_assistant.config import (
     WAKE_WORD_CONSECUTIVE_FRAMES,
     WAKE_WORD_EMBEDDING_MODEL_PATH,
     WAKE_WORD_MELSPEC_MODEL_PATH,
-    WAKE_WORD_MODEL_FALLBACK_PATH,
-    WAKE_WORD_MODEL_PATH,
     WAKE_WORD_SCORE_THRESHOLD,
     WAKE_WORD_TARGET_SAMPLE_RATE,
 )
@@ -28,10 +26,16 @@ class WakeWordEngineTest(unittest.TestCase):
         if not FIXTURE_PATH.exists():
             self.skipTest("wake-word fixture audio missing")
 
+        jarvis_model = Path("models/hey_jarvis_v0.1.onnx")
+        jarvis_fallback = Path("models/hey_jarvis_v0.1.tflite")
+
+        if not jarvis_model.exists() or not jarvis_fallback.exists():
+            self.skipTest("Jarvis wake-word models are missing")
+
         try:
             engine = WakeWordEngine(
-                WAKE_WORD_MODEL_PATH,
-                fallback_model_path=WAKE_WORD_MODEL_FALLBACK_PATH,
+                str(jarvis_model),
+                fallback_model_path=str(jarvis_fallback),
                 melspec_model_path=WAKE_WORD_MELSPEC_MODEL_PATH,
                 embedding_model_path=WAKE_WORD_EMBEDDING_MODEL_PATH,
                 source_sample_rate=SAMPLE_RATE,

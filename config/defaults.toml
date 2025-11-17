@@ -18,6 +18,7 @@ silence_threshold = 500
 max_silence_seconds = 2.0
 
 [wake_word]
+default_model_name = "hey_rhasspy"
 model_path = "models/hey_jarvis_v0.1.onnx"
 fallback_model_path = "models/hey_jarvis_v0.1.tflite"
 melspec_model_path = "models/melspectrogram.onnx"
@@ -25,6 +26,27 @@ embedding_model_path = "models/embedding_model.onnx"
 target_sample_rate = 16000
 score_threshold = 0.5
 consecutive_frames = 2
+
+[wake_word.models.alexa]
+label = "Alexa"
+phrase = "Alexa"
+model_path = "models/alexa_v0.1.onnx"
+fallback_model_path = "models/alexa_v0.1.tflite"
+aliases = ["alexa"]
+
+[wake_word.models.hey_jarvis]
+label = "Jarvis"
+phrase = "Hey Jarvis"
+model_path = "models/hey_jarvis_v0.1.onnx"
+fallback_model_path = "models/hey_jarvis_v0.1.tflite"
+aliases = ["jarvis", "hey jarvis"]
+
+[wake_word.models.hey_rhasspy]
+label = "Rhasspy"
+phrase = "Hey Rhasspy"
+model_path = "models/hey_rhasspy_v0.1.onnx"
+fallback_model_path = "models/hey_rhasspy_v0.1.tflite"
+aliases = ["rhasspy", "rhaspy", "hey rhasspy"]
 
 [session]
 input_audio_format = "pcm16"

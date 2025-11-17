@@ -8,7 +8,7 @@ Real-time speech-to-text transcription system for Raspberry Pi 5 that streams au
 - Streams to OpenAI Realtime API for transcription
 - Server-side Voice Activity Detection (VAD)
 - Optional auto-stop logging after sustained silence
-- Wake-word gated streaming with openWakeWord’s “hey jarvis” model (pre-roll included)
+- Wake-word gated streaming with bundled openWakeWord models (Alexa, Hey Jarvis, Hey Rhasspy) plus pre-roll
 - Optimized for Raspberry Pi 5
 - 24kHz, mono, 16-bit PCM audio
 
@@ -204,16 +204,23 @@ echo "SAMPLE_RATE=48000" >> .env
 
 ### Wake Word Settings
 
-Wake-word gating is enabled by default and uses the bundled openWakeWord “hey jarvis” model:
+Wake-word gating is enabled by default. On the first run the CLI prompts you to pick a wake
+phrase (Alexa, Hey Jarvis, or Hey Rhasspy) and saves the choice to `.env` as `WAKE_WORD_NAME`
+(Hey Rhasspy is the default if you just press Enter).
+You can change it later by editing `.env` or exporting a new value before launching the CLI.
 
-- `WAKE_WORD_MODEL_PATH` / `WAKE_WORD_MODEL_FALLBACK_PATH`: Paths to the `.tflite` and `.onnx` models stored in `models/`.
-- `WAKE_WORD_MELSPEC_MODEL_PATH` / `WAKE_WORD_EMBEDDING_MODEL_PATH`: Feature-extractor assets (`melspectrogram.onnx` and `embedding_model.onnx`) bundled under `models/` so we can run openWakeWord without its download helper.
+- `WAKE_WORD_NAME`: Canonical key for the selected phrase (`alexa`, `hey_jarvis`, or `hey_rhasspy`).
+- `WAKE_WORD_MODEL_PATH` / `WAKE_WORD_MODEL_FALLBACK_PATH`: Default to the `.onnx` / `.tflite`
+  assets for the chosen phrase under `models/`, but you can override them to point at a custom model.
+- `WAKE_WORD_MELSPEC_MODEL_PATH` / `WAKE_WORD_EMBEDDING_MODEL_PATH`: Feature-extractor assets
+  (`melspectrogram.onnx` and `embedding_model.onnx`) bundled under `models/` so we can run
+  openWakeWord without its download helper.
 - `WAKE_WORD_SCORE_THRESHOLD` / `WAKE_WORD_CONSECUTIVE_FRAMES`: Confidence guard (default: score ≥ 0.5 for two consecutive frames).
 - `PREROLL_DURATION_SECONDS`: Length of buffered audio (default: 1 second) that is prepended to the first streamed chunk after activation.
 - `FORCE_ALWAYS_ON`: Set to `1` (or use `--force-always-on`) to bypass the wake word during troubleshooting. Use `--no-force-always-on` to override the env var.
 - `WAKE_WORD_TARGET_SAMPLE_RATE`: Leave at 16 kHz unless you re-train a model that expects a different input rate.
 
-Every detection above the configured threshold is logged with the `[WAKE]` label, and state transitions are reported with `[STATE]`. When the wake word fires, the controller flushes the pre-roll buffer plus live audio so the transcript includes the first spoken words after “hey jarvis”.
+Every detection above the configured threshold is logged with the `[WAKE]` label, and state transitions are reported with `[STATE]`. When the wake word fires, the controller flushes the pre-roll buffer plus live audio so the transcript includes the first spoken words after the selected phrase.
 
 ## Project Structure
 
@@ -247,7 +254,7 @@ pi-assistant/
 
 ## Automated Tests
 
-The `tests/test_wake_word.py` regression uses the generated `tests/hey_jarvis.wav` fixture to ensure the detector fires exactly once for the wake phrase. Run it with:
+The `tests/test_wake_word.py` regression uses the generated `tests/hey_jarvis.wav` fixture (and explicitly loads the Jarvis model) to ensure the detector fires exactly once regardless of which wake word the CLI currently selects. Run it with:
 
 ```bash
 uv run python -m unittest tests/test_wake_word.py
@@ -310,7 +317,7 @@ arecord -l
 - Export `AUDIO_INPUT_DEVICE=<index-or-name>` so the client selects the right microphone.
 
 **Licensing for bundled wake-word models:**
-- `models/hey_jarvis_v0.1.(onnx|tflite)`, `models/melspectrogram.onnx`, and `models/embedding_model.onnx` are distributed under the Apache 2.0 license from the [openWakeWord](https://github.com/dscripka/openWakeWord) project.
+- `models/alexa_v0.1.(onnx|tflite)`, `models/hey_jarvis_v0.1.(onnx|tflite)`, `models/hey_rhasspy_v0.1.(onnx|tflite)`, `models/melspectrogram.onnx`, and `models/embedding_model.onnx` are distributed under the Apache 2.0 license from the [openWakeWord](https://github.com/dscripka/openWakeWord) project.
 
 **Microphone permission (macOS):**
 System Settings → Privacy & Security → Microphone
