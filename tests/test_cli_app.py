@@ -13,7 +13,7 @@ if "audioop" not in sys.modules:
     stub = types.SimpleNamespace(
         ratecv=lambda audio_bytes, width, channels, src_rate, dst_rate, state: (audio_bytes, state),
     )
-    sys.modules["audioop"] = stub
+    sys.modules["audioop"] = stub  # pyright: ignore[reportArgumentType]
 
 from pi_assistant.cli.app import main, parse_args, run_transcription
 
@@ -209,11 +209,11 @@ async def test_run_transcription_success(monkeypatch: pytest.MonkeyPatch) -> Non
     ws_client = deps["ws_client"]
     assistant = deps["assistant"]
 
-    assert audio.started and audio.loop is asyncio.get_running_loop()
-    assert audio.stopped
-    assert ws_client.connected and ws_client.closed
+    assert audio.started and audio.loop is asyncio.get_running_loop()  # pyright: ignore[reportAttributeAccessIssue]
+    assert audio.stopped  # pyright: ignore[reportAttributeAccessIssue]
+    assert ws_client.connected and ws_client.closed  # pyright: ignore[reportAttributeAccessIssue]
     assert run_audio_calls["force_always_on"] is True
-    assert assistant.verify_calls == 1
+    assert assistant.verify_calls == 1  # pyright: ignore[reportAttributeAccessIssue]
 
 
 @pytest.mark.asyncio
@@ -227,8 +227,8 @@ async def test_run_transcription_keyboard_interrupt(monkeypatch: pytest.MonkeyPa
 
     await run_transcription(force_always_on=False)
 
-    assert deps["audio_capture"].stopped is True
-    assert deps["ws_client"].closed is True
+    assert deps["audio_capture"].stopped is True  # pyright: ignore[reportAttributeAccessIssue]
+    assert deps["ws_client"].closed is True  # pyright: ignore[reportAttributeAccessIssue]
 
 
 @pytest.mark.asyncio
@@ -239,8 +239,8 @@ async def test_run_transcription_propagates_errors(monkeypatch: pytest.MonkeyPat
     with pytest.raises(RuntimeError, match="connect failed"):
         await run_transcription()
 
-    assert deps["audio_capture"].stopped is True
-    assert deps["ws_client"].closed is True
+    assert deps["audio_capture"].stopped is True  # pyright: ignore[reportAttributeAccessIssue]
+    assert deps["ws_client"].closed is True  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def test_main_run_mode_uses_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:

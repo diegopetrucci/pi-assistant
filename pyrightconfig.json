@@ -1,0 +1,16 @@
+{
+  "include": ["src", "tests"],
+  "exclude": [
+    ".venv",
+    "venv",
+    "**/__pycache__",
+    "scripts",
+    "test_recording.wav"
+  ],
+  "pythonVersion": "3.11",
+  "venvPath": ".",
+  "venv": ".venv",
+  "typeCheckingMode": "standard",
+  "useLibraryCodeForTypes": true,
+  "reportMissingTypeStubs": "warning"
+}

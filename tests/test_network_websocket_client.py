@@ -11,9 +11,9 @@ import pytest
 if "pi_assistant.cli.logging_utils" not in sys.modules:
     cli_pkg = types.ModuleType("pi_assistant.cli")
     logging_utils = types.ModuleType("pi_assistant.cli.logging_utils")
-    logging_utils.ERROR_LOG_LABEL = "[ERROR]"
-    logging_utils.verbose_print = lambda *args, **kwargs: None
-    cli_pkg.logging_utils = logging_utils
+    logging_utils.ERROR_LOG_LABEL = "[ERROR]"  # pyright: ignore[reportAttributeAccessIssue]
+    logging_utils.verbose_print = lambda *args, **kwargs: None  # pyright: ignore[reportAttributeAccessIssue]
+    cli_pkg.logging_utils = logging_utils  # pyright: ignore[reportAttributeAccessIssue]
     sys.modules["pi_assistant.cli"] = cli_pkg
     sys.modules["pi_assistant.cli.logging_utils"] = logging_utils
 
@@ -117,7 +117,7 @@ async def test_connect_supports_multiple_attempts(monkeypatch):
     await client.connect()
 
     assert client.websocket is not first_ws
-    assert first_ws.closed is True
+    assert first_ws.closed is True  # pyright: ignore[reportAttributeAccessIssue,reportOptionalMemberAccess]
     assert client.connected is True
 
 
@@ -125,7 +125,7 @@ async def test_connect_supports_multiple_attempts(monkeypatch):
 async def test_send_audio_chunk_encodes_base64():
     client = WebSocketClient()
     dummy_ws = DummyWebSocket()
-    client.websocket = dummy_ws
+    client.websocket = dummy_ws  # pyright: ignore[reportAttributeAccessIssue]
     client.connected = True
 
     await client.send_audio_chunk(b"\x00\x01\x02")
@@ -150,7 +150,7 @@ async def test_receive_events_yields_until_closed():
         json.dumps({"type": "bar"}),
     ]
     client = WebSocketClient()
-    client.websocket = DummyWebSocket(messages)
+    client.websocket = DummyWebSocket(messages)  # pyright: ignore[reportAttributeAccessIssue]
     client.connected = True
 
     events = []
@@ -163,7 +163,7 @@ async def test_receive_events_yields_until_closed():
 @pytest.mark.asyncio
 async def test_wait_for_session_created_malformed_json(capsys):
     client = WebSocketClient()
-    client.websocket = DummyWebSocket(["{invalid json"])
+    client.websocket = DummyWebSocket(["{invalid json"])  # pyright: ignore[reportAttributeAccessIssue]
 
     with pytest.raises(json.JSONDecodeError):
         await client.wait_for_session_created()
@@ -177,11 +177,11 @@ async def test_wait_for_session_created_error_event(monkeypatch, capsys):
     error_event = json.dumps({"type": "error", "error": {"message": "oops"}})
     created_event = json.dumps({"type": "transcription_session.created"})
     client = WebSocketClient()
-    client.websocket = DummyWebSocket([error_event, created_event])
+    client.websocket = DummyWebSocket([error_event, created_event])  # pyright: ignore[reportAttributeAccessIssue]
 
     result = await client.wait_for_session_created()
 
-    assert result["type"] == "transcription_session.created"
+    assert result["type"] == "transcription_session.created"  # pyright: ignore[reportOptionalSubscript]
 
     err = capsys.readouterr().err
     assert "Server error: oops" in err
@@ -191,7 +191,7 @@ async def test_wait_for_session_created_error_event(monkeypatch, capsys):
 async def test_close_marks_disconnected():
     client = WebSocketClient()
     dummy_ws = DummyWebSocket()
-    client.websocket = dummy_ws
+    client.websocket = dummy_ws  # pyright: ignore[reportAttributeAccessIssue]
     client.connected = True
 
     await client.close()

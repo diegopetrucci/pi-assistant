@@ -7,6 +7,12 @@ repos:
         args: ["--fix"]
   - repo: local
     hooks:
+      - id: pyright
+        name: Pyright
+        entry: uv run pyright
+        language: system
+        pass_filenames: false
+        types: [python]
       - id: python-max-lines
         name: Enforce 500-line limit on non-test modules
         entry: scripts/check_file_length.py --max-lines 500

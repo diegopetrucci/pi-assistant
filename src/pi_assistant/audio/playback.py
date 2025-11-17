@@ -114,7 +114,7 @@ class SpeechPlayer:
             return None
         rate = info.get("default_samplerate")
         try:
-            return int(rate)
+            return int(rate)  # pyright: ignore[reportArgumentType]
         except (TypeError, ValueError):
             return None
 
@@ -128,8 +128,8 @@ class SpeechPlayer:
     def _output_device_info(self) -> dict:
         try:
             if self._output_device is None:
-                return sd.query_devices(kind="output")
-            return sd.query_devices(self._output_device)
+                return sd.query_devices(kind="output")  # pyright: ignore[reportReturnType]
+            return sd.query_devices(self._output_device)  # pyright: ignore[reportReturnType]
         except Exception:
             return {}
 

@@ -65,7 +65,7 @@ class WebSocketClient:
         verbose_print("Waiting for transcription_session.created event...")
 
         try:
-            async for message in self.websocket:
+            async for message in self.websocket:  # pyright: ignore[reportOptionalIterable]
                 event = json.loads(message)
                 event_type = event.get("type")
 
@@ -108,7 +108,7 @@ class WebSocketClient:
         try:
             # Send the session update event with required session wrapper
             session_update = {"type": "transcription_session.update", "session": SESSION_CONFIG}
-            await self.websocket.send(json.dumps(session_update))
+            await self.websocket.send(json.dumps(session_update))  # pyright: ignore[reportOptionalMemberAccess]
             verbose_print("✓ Session configuration sent")
 
         except Exception as e:

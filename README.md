@@ -133,6 +133,20 @@ uv run pre-commit run --all-files
 
 These commands automatically exclude generated artifacts such as `.venv/` and `test_recording.wav`.
 
+Pyright enforces static typing using `pyrightconfig.json`, mirroring the same exclusions.
+
+```bash
+# Run a full type-checking pass
+uv run pyright
+
+# Keep Pyright running in watch mode while editing
+uv run pyright -- --watch
+```
+
+## Editor Integration
+
+If you use VS Code, install the recommended Pylance extension (added via `.vscode/extensions.json`) so you get fast type checking, inline docstrings, and completion hints that mirror the repo's configuration.
+
 ## Raspberry Pi Setup
 
 ### System Dependencies

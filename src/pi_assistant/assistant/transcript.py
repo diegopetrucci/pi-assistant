@@ -105,7 +105,7 @@ class TurnTranscriptAggregator:
                         f"segments_cleared={pending_segments} wait={total_wait:.3f}s "
                         f"mode={reason} transcript={snippet!r}"
                     )
-                    return transcript or ready_but_empty
+                    return transcript or ready_but_empty  # pyright: ignore[reportReturnType]
                 return None
 
         maybe_transcript = await _maybe_finalize()

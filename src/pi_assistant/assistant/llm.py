@@ -286,7 +286,7 @@ class LLMResponder:
                 model=self._tts_model,
                 voice=self._tts_voice,
                 input=text,
-                response_format=self._tts_format,
+                response_format=self._tts_format,  # pyright: ignore[reportArgumentType]
             )
             audio_bytes = await response.aread()
         except Exception:
