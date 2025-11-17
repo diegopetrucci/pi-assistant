@@ -6,16 +6,16 @@ import asyncio
 import re
 import sys
 
-from pi_transcription.assistant import TurnTranscriptAggregator
-from pi_transcription.audio import SpeechPlayer
-from pi_transcription.cli.logging_utils import (
+from pi_assistant.assistant import TurnTranscriptAggregator
+from pi_assistant.audio import SpeechPlayer
+from pi_assistant.cli.logging_utils import (
     CONTROL_LOG_LABEL,
     ERROR_LOG_LABEL,
     TRANSCRIPT_LOG_LABEL,
     VAD_LOG_LABEL,
     verbose_print,
 )
-from pi_transcription.network import WebSocketClient
+from pi_assistant.network import WebSocketClient
 
 STOP_COMMANDS = ("hey jarvis stop", "jarvis stop")
 

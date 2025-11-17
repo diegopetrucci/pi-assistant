@@ -11,7 +11,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from pi_transcription.audio.resampler import LinearResampler
+from pi_assistant.audio.resampler import LinearResampler
 
 try:
     from openwakeword.model import Model

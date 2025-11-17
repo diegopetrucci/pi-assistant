@@ -133,6 +133,80 @@ def _persist_api_key(api_key: str) -> None:
     _persist_env_value("OPENAI_API_KEY", api_key)
 
 
+_ASSISTANT_MODEL_CHOICES: dict[str, dict[str, str]] = {
+    "mini": {
+        "value": "gpt-5-mini-2025-08-07",
+        "description": "Mini - faster (~2s per reply), less precise (default)",
+    },
+    "5.1": {
+        "value": "gpt-5.1-2025-11-13",
+        "description": "5.1 - slower (~5s per reply), more precise",
+    },
+}
+
+
+def _prompt_for_assistant_model(default_model: str) -> str | None:
+    """Interactive assistant model selection shown on first run."""
+
+    if not sys.stdin.isatty():
+        return None
+
+    default_key = next(
+        (key for key, data in _ASSISTANT_MODEL_CHOICES.items() if data["value"] == default_model),
+        "mini",
+    )
+
+    sys.stderr.write(
+        "\nChoose which assistant model to use. This affects how fast and detailed replies feel:\n"
+    )
+    for key, data in _ASSISTANT_MODEL_CHOICES.items():
+        suffix = " (default)" if key == default_key else ""
+        sys.stderr.write(f"  {key}: {data['description']}{suffix}\n")
+
+    prompt = (
+        f"Assistant model [{'/'.join(_ASSISTANT_MODEL_CHOICES.keys())}] (default {default_key}): "
+    )
+    try:
+        choice = input(prompt).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        sys.stderr.write("\nNo selection provided; keeping the default.\n")
+        return None
+
+    if not choice:
+        choice = default_key
+
+    normalized = choice.replace(" ", "")
+    if normalized in {"mini", "fast"}:
+        choice_key = "mini"
+    elif normalized in {"5.1", "5", "full"}:
+        choice_key = "5.1"
+    else:
+        choice_key = normalized if normalized in _ASSISTANT_MODEL_CHOICES else None
+
+    if choice_key is None:
+        sys.stderr.write("Unrecognized choice; defaulting to Mini.\n")
+        choice_key = "mini"
+
+    return _ASSISTANT_MODEL_CHOICES[choice_key]["value"]
+
+
+def _resolve_assistant_model(default_model: str) -> str:
+    """Return the assistant model, prompting/persisting on first launch."""
+
+    env_model = os.getenv("ASSISTANT_MODEL")
+    if env_model and env_model.strip():
+        return env_model.strip()
+
+    prompted_model = _prompt_for_assistant_model(default_model)
+    if prompted_model:
+        _persist_env_value("ASSISTANT_MODEL", prompted_model)
+        os.environ["ASSISTANT_MODEL"] = prompted_model
+        sys.stderr.write("Saved ASSISTANT_MODEL to .env\n\n")
+        return prompted_model
+
+    return default_model
+
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or _prompt_for_api_key()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", _DEFAULTS["openai"]["model"])
 OPENAI_REALTIME_ENDPOINT = os.getenv(
@@ -150,7 +224,8 @@ SESSION_CONFIG["input_audio_transcription"]["model"] = OPENAI_MODEL
 
 # Assistant / LLM Configuration
 _ASSISTANT = _DEFAULTS.get("assistant", {})
-ASSISTANT_MODEL = os.getenv("ASSISTANT_MODEL", _ASSISTANT.get("model", "gpt-5.1-2025-11-13"))
+_DEFAULT_ASSISTANT_MODEL = _ASSISTANT.get("model", _ASSISTANT_MODEL_CHOICES["mini"]["value"])
+ASSISTANT_MODEL = _resolve_assistant_model(_DEFAULT_ASSISTANT_MODEL)
 ASSISTANT_SYSTEM_PROMPT = os.getenv("ASSISTANT_SYSTEM_PROMPT", _ASSISTANT.get("system_prompt", ""))
 ASSISTANT_WEB_SEARCH_ENABLED = _env_bool(
     "ASSISTANT_WEB_SEARCH_ENABLED", _ASSISTANT.get("web_search_enabled", True)
@@ -222,9 +297,128 @@ AUTO_STOP_MAX_SILENCE_SECONDS = _env_float(
 
 # Wake-word / gating configuration
 _WAKE = _DEFAULTS["wake_word"]
-WAKE_WORD_MODEL_PATH = _env_path("WAKE_WORD_MODEL_PATH", _WAKE["model_path"])
+_WAKE_MODELS: dict[str, dict[str, object]] = _WAKE.get("models", {}) or {}
+
+
+def _normalize_wake_word_token(token: str) -> str:
+    return token.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _wake_word_label(config: dict[str, object]) -> str:
+    label = config.get("phrase") or config.get("label")
+    if isinstance(label, str) and label.strip():
+        return label.strip()
+    return ""
+
+
+def _match_wake_word_name(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    normalized = _normalize_wake_word_token(raw)
+    for key, data in _WAKE_MODELS.items():
+        candidates = [key, key.removeprefix("hey_"), _wake_word_label(data)]
+        aliases = data.get("aliases", [])
+        if isinstance(aliases, list):
+            candidates.extend(alias for alias in aliases if isinstance(alias, str))
+        for candidate in candidates:
+            if not candidate:
+                continue
+            if _normalize_wake_word_token(candidate) == normalized:
+                return key
+    return None
+
+
+def _default_wake_word_name() -> str:
+    configured_default = _WAKE.get("default_model_name")
+    if isinstance(configured_default, str):
+        normalized = _normalize_wake_word_token(configured_default)
+        for key in _WAKE_MODELS:
+            if _normalize_wake_word_token(key) == normalized:
+                return key
+    if _WAKE_MODELS:
+        return next(iter(_WAKE_MODELS))
+    return "hey_rhasspy"
+
+
+def _prompt_for_wake_word_choice(default_name: str) -> str | None:
+    if not sys.stdin.isatty() or not _WAKE_MODELS:
+        return None
+
+    options = list(_WAKE_MODELS.items())
+    sys.stderr.write(
+        "\nChoose a wake phrase so the Pi knows when to start listening.\n"
+        "Say the phrase before speaking to the assistant.\n"
+    )
+    default_label = _wake_word_label(_WAKE_MODELS.get(default_name, {})) or default_name
+    for idx, (key, data) in enumerate(options, start=1):
+        label = _wake_word_label(data) or key.replace("_", " ").title()
+        default_suffix = " (default)" if key == default_name else ""
+        sys.stderr.write(f"  {idx}) {label}{default_suffix}\n")
+
+    while True:
+        try:
+            choice = input(f"Wake phrase [{default_label}]: ").strip()
+        except (EOFError, KeyboardInterrupt):  # pragma: no cover - interactive prompt
+            sys.stderr.write("\nNo wake phrase selected; using default.\n")
+            return None
+
+        if not choice:
+            return default_name
+        if choice.isdigit():
+            idx = int(choice)
+            if 1 <= idx <= len(options):
+                return options[idx - 1][0]
+        match = _match_wake_word_name(choice)
+        if match:
+            return match
+        sys.stderr.write("Invalid selection. Enter the number or name from the list above.\n")
+
+
+def _persist_wake_word_choice(name: str) -> None:
+    _persist_env_value("WAKE_WORD_NAME", name)
+    os.environ["WAKE_WORD_NAME"] = name
+    sys.stderr.write(f"Saved WAKE_WORD_NAME={name} to .env\n\n")
+
+
+def _resolve_wake_word_name() -> str:
+    default_choice = _default_wake_word_name()
+    raw_choice = os.getenv("WAKE_WORD_NAME")
+    env_choice = _match_wake_word_name(raw_choice)
+    if env_choice:
+        # Normalize the in-memory env var so downstream code sees the canonical key.
+        os.environ["WAKE_WORD_NAME"] = env_choice
+        return env_choice
+
+    if raw_choice:
+        sys.stderr.write(f"Unsupported WAKE_WORD_NAME={raw_choice} – falling back to default.\n")
+
+    prompted = _prompt_for_wake_word_choice(default_choice)
+    if prompted:
+        _persist_wake_word_choice(prompted)
+        return prompted
+    return default_choice
+
+
+WAKE_WORD_NAME = _resolve_wake_word_name()
+_SELECTED_WAKE = _WAKE_MODELS.get(WAKE_WORD_NAME, {})
+
+
+def _wake_path_from_config(key: str, fallback: str) -> str:
+    value = _SELECTED_WAKE.get(key)
+    if isinstance(value, str) and value.strip():
+        return value
+    return fallback
+
+
+_DEFAULT_WAKE_MODEL_PATH = _wake_path_from_config("model_path", _WAKE["model_path"])
+_DEFAULT_WAKE_FALLBACK_PATH = _wake_path_from_config(
+    "fallback_model_path", _WAKE["fallback_model_path"]
+)
+WAKE_WORD_PHRASE = _wake_word_label(_SELECTED_WAKE) or WAKE_WORD_NAME.replace("_", " ").title()
+
+WAKE_WORD_MODEL_PATH = _env_path("WAKE_WORD_MODEL_PATH", _DEFAULT_WAKE_MODEL_PATH)
 WAKE_WORD_MODEL_FALLBACK_PATH = _env_path(
-    "WAKE_WORD_MODEL_FALLBACK_PATH", _WAKE["fallback_model_path"]
+    "WAKE_WORD_MODEL_FALLBACK_PATH", _DEFAULT_WAKE_FALLBACK_PATH
 )
 WAKE_WORD_MELSPEC_MODEL_PATH = _env_path(
     "WAKE_WORD_MELSPEC_MODEL_PATH", _WAKE["melspec_model_path"]

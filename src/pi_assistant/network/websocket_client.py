@@ -10,8 +10,8 @@ import sys
 
 import websockets
 
-from pi_transcription.cli.logging_utils import ERROR_LOG_LABEL, verbose_print
-from pi_transcription.config import (
+from pi_assistant.cli.logging_utils import ERROR_LOG_LABEL, verbose_print
+from pi_assistant.config import (
     OPENAI_REALTIME_ENDPOINT,
     SESSION_CONFIG,
     WEBSOCKET_HEADERS,

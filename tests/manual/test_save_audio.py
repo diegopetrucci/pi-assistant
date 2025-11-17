@@ -8,8 +8,8 @@ import wave
 
 import pytest
 
-from pi_transcription.audio import AudioCapture
-from pi_transcription.config import CHANNELS, SAMPLE_RATE
+from pi_assistant.audio import AudioCapture
+from pi_assistant.config import CHANNELS, SAMPLE_RATE
 
 pytestmark = pytest.mark.skip(reason="Manual audio verification test; run explicitly when needed.")
 

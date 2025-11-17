@@ -8,10 +8,10 @@ from typing import Optional, Set
 
 import numpy as np
 
-from pi_transcription.assistant import LLMResponder, TurnTranscriptAggregator
-from pi_transcription.audio import SpeechPlayer
-from pi_transcription.audio.resampler import LinearResampler
-from pi_transcription.cli.logging_utils import (
+from pi_assistant.assistant import LLMResponder, TurnTranscriptAggregator
+from pi_assistant.audio import SpeechPlayer
+from pi_assistant.audio.resampler import LinearResampler
+from pi_assistant.cli.logging_utils import (
     ASSISTANT_LOG_LABEL,
     CONTROL_LOG_LABEL,
     ERROR_LOG_LABEL,
@@ -20,7 +20,7 @@ from pi_transcription.cli.logging_utils import (
     log_state_transition,
     verbose_print,
 )
-from pi_transcription.config import (
+from pi_assistant.config import (
     AUTO_STOP_ENABLED,
     AUTO_STOP_MAX_SILENCE_SECONDS,
     AUTO_STOP_SILENCE_THRESHOLD,
@@ -33,11 +33,13 @@ from pi_transcription.config import (
     WAKE_WORD_MELSPEC_MODEL_PATH,
     WAKE_WORD_MODEL_FALLBACK_PATH,
     WAKE_WORD_MODEL_PATH,
+    WAKE_WORD_NAME,
+    WAKE_WORD_PHRASE,
     WAKE_WORD_SCORE_THRESHOLD,
     WAKE_WORD_TARGET_SAMPLE_RATE,
 )
-from pi_transcription.network import WebSocketClient
-from pi_transcription.wake_word import (
+from pi_assistant.network import WebSocketClient
+from pi_assistant.wake_word import (
     PreRollBuffer,
     StreamState,
     WakeWordDetection,
@@ -142,6 +144,9 @@ async def run_audio_controller(
                 target_sample_rate=WAKE_WORD_TARGET_SAMPLE_RATE,
                 threshold=WAKE_WORD_SCORE_THRESHOLD,
                 consecutive_required=WAKE_WORD_CONSECUTIVE_FRAMES,
+            )
+            verbose_print(
+                f"{WAKE_LOG_LABEL} Wake-word model: {WAKE_WORD_PHRASE} ({WAKE_WORD_NAME})"
             )
         except RuntimeError as exc:
             print(f"{ERROR_LOG_LABEL} {exc}", file=sys.stderr)

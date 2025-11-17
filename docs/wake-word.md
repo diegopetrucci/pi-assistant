@@ -1,15 +1,15 @@
 # Wake Word Integration Plan
 
 ## Objectives
-- Gate streaming to OpenAI until the wake phrase “hey rhaspy" fires.
+- Gate streaming to OpenAI until the selected wake phrase fires.
 - Preserve the first words after the trigger via a short pre-roll buffer.
 - Keep the existing transcription UX (server VAD, auto-stop) once streaming begins.
 
 ## Requirements (locked)
-1. **Wake phrase**: “hey rhaspy.
+1. **Wake phrase**: Support “Alexa”, “Hey Jarvis”, or “Hey Rhasspy” and allow the user to pick the active phrase.
 2. **Pre-roll**: prepend ~1s of buffered audio captured before the trigger to the first transmitted chunk.
 3. **Stream lifetime**: continue streaming until the current silence detector resets the turn.
-4. **Confidence guard**: start with openWakeWord’s default “hey jarvis” model and treat a detection as valid when score ≥0.5 for two consecutive frames; expose both numbers in `config.py` for tuning.
+4. **Confidence guard**: use openWakeWord’s pre-trained models (defaulting to “Hey Rhasspy”) and treat a detection as valid when score ≥0.5 for two consecutive frames; expose both numbers in `config.py` for tuning.
 5. **Resource usage**: keep the capture pipeline at 24 kHz for OpenAI, branch a copy that is downsampled to 16 kHz for the wake-word detector so transcription quality stays untouched.
 6. **Fallback**: add a debug-only override (CLI flag or env var) that bypasses the wake word when troubleshooting.
 7. **Observability/tests**: log state transitions (listening → triggered → streaming → idle) and add an automated test that replays a “hey jarvis” WAV through the detector to prevent regressions.
@@ -48,7 +48,7 @@
 
 ## Implementation Steps
 1. **Dependencies & assets**
-   - Add `openwakeword` to `pyproject.toml`, download/commit the “hey jarvis” model (if license permits) under `models/`.
+   - Add `openwakeword` to `pyproject.toml`, download/commit the Alexa, “hey jarvis”, and “hey rhasspy” models (if license permits) under `models/`.
 2. **WakeWordEngine module**
    - Handles downsampling, buffering, scoring, and threshold logic.
    - Expose async methods: `submit_chunk(bytes)` and `async for detection`.

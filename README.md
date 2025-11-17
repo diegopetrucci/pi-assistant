@@ -8,7 +8,7 @@ Real-time speech-to-text transcription system for Raspberry Pi 5 that streams au
 - Streams to OpenAI Realtime API for transcription
 - Server-side Voice Activity Detection (VAD)
 - Optional auto-stop logging after sustained silence
-- Wake-word gated streaming with openWakeWord’s “hey jarvis” model (pre-roll included)
+- Wake-word gated streaming with bundled openWakeWord models (Alexa, Hey Jarvis, Hey Rhasspy) plus pre-roll
 - Optimized for Raspberry Pi 5
 - 24kHz, mono, 16-bit PCM audio
 
@@ -28,7 +28,7 @@ Real-time speech-to-text transcription system for Raspberry Pi 5 that streams au
 ### 1. Clone or Navigate to Project
 
 ```bash
-cd /path/to/pi-transcription
+cd /path/to/pi-assistant
 ```
 
 ### 2. Install uv (one time per machine)
@@ -54,12 +54,6 @@ uv run pre-commit install
 
 `uv sync` creates a managed `.venv/` if one does not already exist and keeps it up to date as dependencies change.
 
-Need to hand a `requirements.txt` to another system? Export one on demand:
-
-```bash
-uv export --format requirements-txt > requirements.txt
-```
-
 ### Optional: Pin repository-local Python 3.11
 
 If your Raspberry Pi workflow needs Python 3.11 without touching the system installation, let `uv` download a portable interpreter that only applies inside this repo:
@@ -78,7 +72,7 @@ This stores the interpreter under `.uv/python/...` and records the version in `.
 ./scripts/install-portaudio-deps.sh
 ```
 
-The script performs an `apt-get update` and installs `libportaudio2`, `libportaudiocpp0`, and `portaudio19-dev` using `sudo`. If you're on a distro without `apt-get`, install the equivalent PortAudio development packages via your package manager before running `uv run pi-transcription`.
+The script performs an `apt-get update` and installs `libportaudio2`, `libportaudiocpp0`, and `portaudio19-dev` using `sudo`. If you're on a distro without `apt-get`, install the equivalent PortAudio development packages via your package manager before running `uv run pi-assistant`.
 
 ### 5. Configure API Key
 
@@ -104,19 +98,19 @@ You can run commands directly through uv (no manual activation needed) or activa
 
 ```bash
 # Full transcription pipeline (default mode)
-uv run pi-transcription
+uv run pi-assistant
 
 # Force streaming without the wake word (debug mode)
-uv run pi-transcription --force-always-on
+uv run pi-assistant --force-always-on
 
 # Explicitly require the wake word when FORCE_ALWAYS_ON=1 is set in the env
-uv run pi-transcription --no-force-always-on
+uv run pi-assistant --no-force-always-on
 
 # Test WebSocket connection to OpenAI (requires API key)
-uv run pi-transcription test-websocket
+uv run pi-assistant test-websocket
 
 # Test audio capture from microphone (no API key needed)
-uv run pi-transcription test-audio
+uv run pi-assistant test-audio
 
 # Legacy shim (still available if you prefer python scripts)
 uv run python start.py --help
@@ -171,7 +165,7 @@ arecord --device=hw:1,0 --format S16_LE --rate 24000 -c 1 test.wav
 
 ## Configuration
 
-Defaults live in `config/defaults.toml` and are loaded by `pi_transcription.config`.
+Defaults live in `config/defaults.toml` and are loaded by `pi_assistant.config`.
 The TOML file documents the baseline runtime (24 kHz mono PCM, VAD thresholds,
 noise reduction, etc.), while the module exposes strongly typed constants and
 environment-variable overrides:
@@ -204,33 +198,40 @@ detection and transcription stay in sync.
 To persist the override in this repo, append it to `.env` once:
 
 ```bash
-cd pi-transcription
+cd pi-assistant
 echo "SAMPLE_RATE=48000" >> .env
 ```
 
 ### Wake Word Settings
 
-Wake-word gating is enabled by default and uses the bundled openWakeWord “hey jarvis” model:
+Wake-word gating is enabled by default. On the first run the CLI prompts you to pick a wake
+phrase (Alexa, Hey Jarvis, or Hey Rhasspy) and saves the choice to `.env` as `WAKE_WORD_NAME`
+(Hey Rhasspy is the default if you just press Enter).
+You can change it later by editing `.env` or exporting a new value before launching the CLI.
 
-- `WAKE_WORD_MODEL_PATH` / `WAKE_WORD_MODEL_FALLBACK_PATH`: Paths to the `.tflite` and `.onnx` models stored in `models/`.
-- `WAKE_WORD_MELSPEC_MODEL_PATH` / `WAKE_WORD_EMBEDDING_MODEL_PATH`: Feature-extractor assets (`melspectrogram.onnx` and `embedding_model.onnx`) bundled under `models/` so we can run openWakeWord without its download helper.
+- `WAKE_WORD_NAME`: Canonical key for the selected phrase (`alexa`, `hey_jarvis`, or `hey_rhasspy`).
+- `WAKE_WORD_MODEL_PATH` / `WAKE_WORD_MODEL_FALLBACK_PATH`: Default to the `.onnx` / `.tflite`
+  assets for the chosen phrase under `models/`, but you can override them to point at a custom model.
+- `WAKE_WORD_MELSPEC_MODEL_PATH` / `WAKE_WORD_EMBEDDING_MODEL_PATH`: Feature-extractor assets
+  (`melspectrogram.onnx` and `embedding_model.onnx`) bundled under `models/` so we can run
+  openWakeWord without its download helper.
 - `WAKE_WORD_SCORE_THRESHOLD` / `WAKE_WORD_CONSECUTIVE_FRAMES`: Confidence guard (default: score ≥ 0.5 for two consecutive frames).
 - `PREROLL_DURATION_SECONDS`: Length of buffered audio (default: 1 second) that is prepended to the first streamed chunk after activation.
 - `FORCE_ALWAYS_ON`: Set to `1` (or use `--force-always-on`) to bypass the wake word during troubleshooting. Use `--no-force-always-on` to override the env var.
 - `WAKE_WORD_TARGET_SAMPLE_RATE`: Leave at 16 kHz unless you re-train a model that expects a different input rate.
 
-Every detection above the configured threshold is logged with the `[WAKE]` label, and state transitions are reported with `[STATE]`. When the wake word fires, the controller flushes the pre-roll buffer plus live audio so the transcript includes the first spoken words after “hey jarvis”.
+Every detection above the configured threshold is logged with the `[WAKE]` label, and state transitions are reported with `[STATE]`. When the wake word fires, the controller flushes the pre-roll buffer plus live audio so the transcript includes the first spoken words after the selected phrase.
 
 ## Project Structure
 
 ```
-pi-transcription/
+pi-assistant/
 ├── config/
 │   └── defaults.toml        # Baseline runtime configuration
 ├── models/                  # Bundled openWakeWord assets
 ├── scripts/                 # Repo automation helpers
 ├── src/
-│   └── pi_transcription/
+│   └── pi_assistant/
 │       ├── __init__.py
 │       ├── audio/capture.py
 │       ├── cli/app.py       # CLI + orchestration
@@ -253,7 +254,7 @@ pi-transcription/
 
 ## Automated Tests
 
-The `tests/test_wake_word.py` regression uses the generated `tests/hey_jarvis.wav` fixture to ensure the detector fires exactly once for the wake phrase. Run it with:
+The `tests/test_wake_word.py` regression uses the generated `tests/hey_jarvis.wav` fixture (and explicitly loads the Jarvis model) to ensure the detector fires exactly once regardless of which wake word the CLI currently selects. Run it with:
 
 ```bash
 uv run python -m unittest tests/test_wake_word.py
@@ -311,12 +312,12 @@ arecord -l
 ```
 
 **`Error querying device -1`:**
-- Run `uv run pi-transcription test-audio` to confirm sounddevice can capture samples.
+- Run `uv run pi-assistant test-audio` to confirm sounddevice can capture samples.
 - Use `arecord -l` (or `sd.query_devices()` in Python) to note the correct ALSA card/index.
 - Export `AUDIO_INPUT_DEVICE=<index-or-name>` so the client selects the right microphone.
 
 **Licensing for bundled wake-word models:**
-- `models/hey_jarvis_v0.1.(onnx|tflite)`, `models/melspectrogram.onnx`, and `models/embedding_model.onnx` are distributed under the Apache 2.0 license from the [openWakeWord](https://github.com/dscripka/openWakeWord) project.
+- `models/alexa_v0.1.(onnx|tflite)`, `models/hey_jarvis_v0.1.(onnx|tflite)`, `models/hey_rhasspy_v0.1.(onnx|tflite)`, `models/melspectrogram.onnx`, and `models/embedding_model.onnx` are distributed under the Apache 2.0 license from the [openWakeWord](https://github.com/dscripka/openWakeWord) project.
 
 **Microphone permission (macOS):**
 System Settings → Privacy & Security → Microphone

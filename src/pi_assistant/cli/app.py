@@ -8,18 +8,18 @@ import asyncio
 import sys
 from functools import partial
 
-from pi_transcription.assistant import LLMResponder, TurnTranscriptAggregator
-from pi_transcription.audio import AudioCapture, SpeechPlayer
-from pi_transcription.cli.controller import run_audio_controller
-from pi_transcription.cli.events import handle_transcription_event, receive_transcription_events
-from pi_transcription.cli.logging_utils import (
+from pi_assistant.assistant import LLMResponder, TurnTranscriptAggregator
+from pi_assistant.audio import AudioCapture, SpeechPlayer
+from pi_assistant.cli.controller import run_audio_controller
+from pi_assistant.cli.events import handle_transcription_event, receive_transcription_events
+from pi_assistant.cli.logging_utils import (
     ASSISTANT_LOG_LABEL,
     ERROR_LOG_LABEL,
     set_verbose_logging,
 )
-from pi_transcription.config import ASSISTANT_TTS_SAMPLE_RATE, FORCE_ALWAYS_ON
-from pi_transcription.diagnostics import test_audio_capture, test_websocket_client
-from pi_transcription.network import WebSocketClient
+from pi_assistant.config import ASSISTANT_TTS_SAMPLE_RATE, FORCE_ALWAYS_ON
+from pi_assistant.diagnostics import test_audio_capture, test_websocket_client
+from pi_assistant.network import WebSocketClient
 
 
 async def run_transcription(force_always_on: bool = False) -> None:

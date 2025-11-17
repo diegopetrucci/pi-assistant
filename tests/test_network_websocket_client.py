@@ -8,16 +8,16 @@ from types import SimpleNamespace
 import pytest
 
 # Stub out the CLI package to avoid circular imports when loading WebSocketClient.
-if "pi_transcription.cli.logging_utils" not in sys.modules:
-    cli_pkg = types.ModuleType("pi_transcription.cli")
-    logging_utils = types.ModuleType("pi_transcription.cli.logging_utils")
+if "pi_assistant.cli.logging_utils" not in sys.modules:
+    cli_pkg = types.ModuleType("pi_assistant.cli")
+    logging_utils = types.ModuleType("pi_assistant.cli.logging_utils")
     logging_utils.ERROR_LOG_LABEL = "[ERROR]"
     logging_utils.verbose_print = lambda *args, **kwargs: None
     cli_pkg.logging_utils = logging_utils
-    sys.modules["pi_transcription.cli"] = cli_pkg
-    sys.modules["pi_transcription.cli.logging_utils"] = logging_utils
+    sys.modules["pi_assistant.cli"] = cli_pkg
+    sys.modules["pi_assistant.cli.logging_utils"] = logging_utils
 
-from pi_transcription.network.websocket_client import WebSocketClient
+from pi_assistant.network.websocket_client import WebSocketClient
 
 
 class DummyWebSocket:
@@ -54,7 +54,7 @@ async def test_connect_waits_for_session(monkeypatch):
     dummy_module = SimpleNamespace(
         connect=fake_connect, exceptions=SimpleNamespace(ConnectionClosed=Exception)
     )
-    monkeypatch.setattr("pi_transcription.network.websocket_client.websockets", dummy_module)
+    monkeypatch.setattr("pi_assistant.network.websocket_client.websockets", dummy_module)
 
     client = WebSocketClient()
     await client.connect()
@@ -81,8 +81,8 @@ async def test_connect_warns_when_session_timeout(monkeypatch, capsys):
     dummy_module = SimpleNamespace(
         connect=fake_connect, exceptions=SimpleNamespace(ConnectionClosed=Exception)
     )
-    monkeypatch.setattr("pi_transcription.network.websocket_client.websockets", dummy_module)
-    monkeypatch.setattr("pi_transcription.network.websocket_client.asyncio.wait_for", fake_wait_for)
+    monkeypatch.setattr("pi_assistant.network.websocket_client.websockets", dummy_module)
+    monkeypatch.setattr("pi_assistant.network.websocket_client.asyncio.wait_for", fake_wait_for)
 
     client = WebSocketClient()
     await client.connect()
@@ -107,7 +107,7 @@ async def test_connect_supports_multiple_attempts(monkeypatch):
     dummy_module = SimpleNamespace(
         connect=fake_connect, exceptions=SimpleNamespace(ConnectionClosed=Exception)
     )
-    monkeypatch.setattr("pi_transcription.network.websocket_client.websockets", dummy_module)
+    monkeypatch.setattr("pi_assistant.network.websocket_client.websockets", dummy_module)
 
     client = WebSocketClient()
     await client.connect()

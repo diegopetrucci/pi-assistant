@@ -3,8 +3,8 @@ import asyncio
 import numpy as np
 import pytest
 
-from pi_transcription.cli import controller
-from pi_transcription.wake_word import WakeWordDetection
+from pi_assistant.cli import controller
+from pi_assistant.wake_word import WakeWordDetection
 
 
 class FakeCapture:
