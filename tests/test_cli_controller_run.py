@@ -640,6 +640,83 @@ async def test_run_audio_controller_auto_stop_silence_transition(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_audio_controller_resets_wake_engine_on_stream_start(monkeypatch):
+    capture = FakeCapture()
+    loud_chunk = (np.ones(128, dtype=np.int16) * 20000).tobytes()
+    for _ in range(10):
+        capture.queue.put_nowait(loud_chunk)
+
+    ws_client = FakeWebSocket()
+    transcript_buffer = DummyTranscriptBuffer()
+    assistant = object()
+    speech_player = object()
+    stop_signal = asyncio.Event()
+    speech_stopped_signal = asyncio.Event()
+
+    class DummyWakeWordEngine:
+        def __init__(self):
+            self.calls = 0
+            self.reset_calls = 0
+
+        def process_chunk(self, chunk):
+            self.calls += 1
+            if self.calls == 2:
+                return WakeWordDetection(score=0.95, triggered=True)
+            return WakeWordDetection(score=0.1, triggered=False)
+
+        def reset_detection(self):
+            self.reset_calls += 1
+
+    wake_engine = DummyWakeWordEngine()
+    monkeypatch.setattr(controller, "WakeWordEngine", lambda *args, **kwargs: wake_engine)
+
+    def make_preroll(*args, **kwargs):
+        class P:
+            def __init__(self):
+                self.buffer = bytearray()
+
+            def add(self, chunk):
+                self.buffer.extend(chunk)
+
+            def flush(self):
+                data = bytes(self.buffer)
+                self.buffer.clear()
+                return data
+
+            def clear(self):
+                self.buffer.clear()
+
+        return P()
+
+    monkeypatch.setattr(controller, "PreRollBuffer", make_preroll)
+    monkeypatch.setattr(controller, "AUTO_STOP_ENABLED", False)
+
+    task = asyncio.create_task(
+        controller.run_audio_controller(
+            capture,
+            ws_client,  # pyright: ignore[reportArgumentType]
+            force_always_on=False,
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            stop_signal=stop_signal,
+            speech_stopped_signal=speech_stopped_signal,
+        )
+    )
+
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if transcript_buffer.started:
+            break
+    else:
+        pytest.fail("controller never entered streaming state")
+
+    assert wake_engine.reset_calls == 1
+
+    await _shutdown_task(task)
+
+
+@pytest.mark.asyncio
 async def test_run_audio_controller_retrigger_delays_auto_stop(monkeypatch):
     capture = FakeCapture()
     loud_chunk = (np.ones(128, dtype=np.int16) * 32000).tobytes()

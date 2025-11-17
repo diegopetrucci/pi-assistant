@@ -328,6 +328,8 @@ async def run_audio_controller(
                     previous_state = state
                     state = StreamState.STREAMING
                     await transcript_buffer.start_turn()
+                    if wake_engine:
+                        wake_engine.reset_detection()
                     log_state_transition(previous_state, state, "wake phrase detected")
                     payload = pre_roll.flush()
                     if payload:
