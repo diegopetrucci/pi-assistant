@@ -4,8 +4,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from pi_transcription.audio import playback as playback_module
-from pi_transcription.audio.playback import SpeechPlayer
+from pi_assistant.audio import playback as playback_module
+from pi_assistant.audio.playback import SpeechPlayer
 
 
 class DummySD:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pi_transcription.wake_word import StreamState
+from pi_assistant.wake_word import StreamState
 
 # ANSI color codes for log labels
 RESET = "\033[0m"

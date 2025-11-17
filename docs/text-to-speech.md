@@ -50,7 +50,7 @@ change is required.
 ## Shared Considerations
 
 - **Playback plumbing:** Whichever option wins, we need a small module (e.g.
-  `pi_transcription/audio/playback.py`) with a queue-driven coroutine so TTS never blocks the wake
+  `pi_assistant/audio/playback.py`) with a queue-driven coroutine so TTS never blocks the wake
   loop.
 - **Echo suppression:** Consider ducking or muting the microphone input while the speaker plays back
   to avoid self-triggering the wake word.

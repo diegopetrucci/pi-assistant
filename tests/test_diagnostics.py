@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from pi_transcription import diagnostics as diagnostics_module
+from pi_assistant import diagnostics as diagnostics_module
 
 
 class _StubLoop:
@@ -43,14 +43,14 @@ async def test_test_audio_capture_streams_and_stops(monkeypatch: pytest.MonkeyPa
     capture = _StubAudioCapture([b"\x00\x01"])
     loop_stub = _StubLoop([0.0, 0.1, 5.5])
 
-    monkeypatch.setattr("pi_transcription.diagnostics.AudioCapture", lambda: capture)
-    monkeypatch.setattr("pi_transcription.diagnostics.asyncio.get_running_loop", lambda: loop_stub)
+    monkeypatch.setattr("pi_assistant.diagnostics.AudioCapture", lambda: capture)
+    monkeypatch.setattr("pi_assistant.diagnostics.asyncio.get_running_loop", lambda: loop_stub)
 
     async def fake_wait_for(coro, *, timeout):
         capture.wait_timeouts.append(timeout)
         return await coro
 
-    monkeypatch.setattr("pi_transcription.diagnostics.asyncio.wait_for", fake_wait_for)
+    monkeypatch.setattr("pi_assistant.diagnostics.asyncio.wait_for", fake_wait_for)
 
     await diagnostics_module.test_audio_capture()
 
@@ -65,14 +65,14 @@ async def test_test_audio_capture_handles_timeout(monkeypatch: pytest.MonkeyPatc
     capture = _StubAudioCapture([b"\x00\x01"])
     loop_stub = _StubLoop([0.0, 0.1])
 
-    monkeypatch.setattr("pi_transcription.diagnostics.AudioCapture", lambda: capture)
-    monkeypatch.setattr("pi_transcription.diagnostics.asyncio.get_running_loop", lambda: loop_stub)
+    monkeypatch.setattr("pi_assistant.diagnostics.AudioCapture", lambda: capture)
+    monkeypatch.setattr("pi_assistant.diagnostics.asyncio.get_running_loop", lambda: loop_stub)
 
     async def fake_wait_for(coro, *, timeout):
         coro.close()
         raise asyncio.TimeoutError
 
-    monkeypatch.setattr("pi_transcription.diagnostics.asyncio.wait_for", fake_wait_for)
+    monkeypatch.setattr("pi_assistant.diagnostics.asyncio.wait_for", fake_wait_for)
 
     await diagnostics_module.test_audio_capture()
 
@@ -112,7 +112,7 @@ class _StubWebSocketClient:
 @pytest.mark.asyncio
 async def test_test_websocket_client_streams_events(monkeypatch: pytest.MonkeyPatch) -> None:
     stub = _StubWebSocketClient(events=[{"type": "foo"}, {"type": "bar"}])
-    monkeypatch.setattr("pi_transcription.diagnostics.WebSocketClient", lambda: stub)
+    monkeypatch.setattr("pi_assistant.diagnostics.WebSocketClient", lambda: stub)
 
     handled: list[dict] = []
 
@@ -129,7 +129,7 @@ async def test_test_websocket_client_streams_events(monkeypatch: pytest.MonkeyPa
 @pytest.mark.asyncio
 async def test_test_websocket_client_closes_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     stub = _StubWebSocketClient(fail_connect=True)
-    monkeypatch.setattr("pi_transcription.diagnostics.WebSocketClient", lambda: stub)
+    monkeypatch.setattr("pi_assistant.diagnostics.WebSocketClient", lambda: stub)
 
     with pytest.raises(RuntimeError, match="connect failed"):
         await diagnostics_module.test_websocket_client()
@@ -140,7 +140,7 @@ async def test_test_websocket_client_closes_on_failure(monkeypatch: pytest.Monke
 @pytest.mark.asyncio
 async def test_test_websocket_client_handles_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     stub = _StubWebSocketClient(timeout=True)
-    monkeypatch.setattr("pi_transcription.diagnostics.WebSocketClient", lambda: stub)
+    monkeypatch.setattr("pi_assistant.diagnostics.WebSocketClient", lambda: stub)
 
     await diagnostics_module.test_websocket_client()
 

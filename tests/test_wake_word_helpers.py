@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from pi_transcription import wake_word
+from pi_assistant import wake_word
 
 
 class DummyModel:

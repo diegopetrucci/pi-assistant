@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from pi_transcription.audio import capture as capture_module
-from pi_transcription.audio.capture import AudioCapture
+from pi_assistant.audio import capture as capture_module
+from pi_assistant.audio.capture import AudioCapture
 
 
 def make_dummy_query(devices_by_index, device_lists=None):

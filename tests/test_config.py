@@ -7,7 +7,7 @@ import pytest
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 os.environ.setdefault("LOCATION_NAME", "Test City")
 
-from pi_transcription.config import (
+from pi_assistant.config import (
     PROJECT_ROOT,
     _env_bool,
     _env_float,
@@ -143,7 +143,7 @@ def test_persist_env_value_creates_new_env_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     env_path = tmp_path / ".env"
-    monkeypatch.setattr("pi_transcription.config.ENV_PATH", env_path, raising=False)
+    monkeypatch.setattr("pi_assistant.config.ENV_PATH", env_path, raising=False)
 
     _persist_env_value("FOO", "bar")
 
@@ -155,7 +155,7 @@ def test_persist_env_value_updates_existing_key(
 ) -> None:
     env_path = tmp_path / ".env"
     env_path.write_text("FOO=old\nBAZ=keep\n", encoding="utf-8")
-    monkeypatch.setattr("pi_transcription.config.ENV_PATH", env_path, raising=False)
+    monkeypatch.setattr("pi_assistant.config.ENV_PATH", env_path, raising=False)
 
     _persist_env_value("FOO", "new")
 
@@ -166,7 +166,7 @@ def test_persist_env_value_permission_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     env_path = tmp_path / ".env"
-    monkeypatch.setattr("pi_transcription.config.ENV_PATH", env_path, raising=False)
+    monkeypatch.setattr("pi_assistant.config.ENV_PATH", env_path, raising=False)
 
     original_write_text = Path.write_text
 
@@ -183,23 +183,23 @@ def test_persist_env_value_permission_error(
 
 def test_prompt_for_api_key_non_interactive(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr("pi_transcription.config.sys.stdin", _stdin(False), raising=False)
+    monkeypatch.setattr("pi_assistant.config.sys.stdin", _stdin(False), raising=False)
 
     def fake_getpass(prompt: str) -> str:
         raise AssertionError("getpass should not be called for non-interactive sessions")
 
-    monkeypatch.setattr("pi_transcription.config.getpass", fake_getpass, raising=False)
+    monkeypatch.setattr("pi_assistant.config.getpass", fake_getpass, raising=False)
 
     assert _prompt_for_api_key() is None
 
 
 def test_prompt_for_api_key_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr("pi_transcription.config.sys.stdin", _stdin(True), raising=False)
-    monkeypatch.setattr("pi_transcription.config.getpass", lambda prompt: "sk-test", raising=False)
+    monkeypatch.setattr("pi_assistant.config.sys.stdin", _stdin(True), raising=False)
+    monkeypatch.setattr("pi_assistant.config.getpass", lambda prompt: "sk-test", raising=False)
     saved: dict[str, str] = {}
     monkeypatch.setattr(
-        "pi_transcription.config._persist_api_key",
+        "pi_assistant.config._persist_api_key",
         lambda value: saved.setdefault("api_key", value),
         raising=False,
     )
@@ -209,17 +209,17 @@ def test_prompt_for_api_key_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_prompt_for_location_name_non_interactive(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("pi_transcription.config.sys.stdin", _stdin(False), raising=False)
+    monkeypatch.setattr("pi_assistant.config.sys.stdin", _stdin(False), raising=False)
 
     assert _prompt_for_location_name() is None
 
 
 def test_prompt_for_location_name_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("pi_transcription.config.sys.stdin", _stdin(True), raising=False)
+    monkeypatch.setattr("pi_assistant.config.sys.stdin", _stdin(True), raising=False)
     monkeypatch.setattr("builtins.input", lambda prompt="": "Lisbon, PT", raising=False)
     saved: dict[str, str] = {}
     monkeypatch.setattr(
-        "pi_transcription.config._persist_env_value",
+        "pi_assistant.config._persist_env_value",
         lambda key, value: saved.setdefault("location", value),
         raising=False,
     )

@@ -15,7 +15,7 @@ if "audioop" not in sys.modules:
     )
     sys.modules["audioop"] = stub
 
-from pi_transcription.cli.app import main, parse_args, run_transcription
+from pi_assistant.cli.app import main, parse_args, run_transcription
 
 
 def _run_parse(monkeypatch: pytest.MonkeyPatch, argv: list[str]):
@@ -32,7 +32,7 @@ def _run_coro_sync(coro):
 
 
 def test_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    args = _run_parse(monkeypatch, ["pi-transcription"])
+    args = _run_parse(monkeypatch, ["pi-assistant"])
 
     assert args.mode == "run"
     assert args.verbose is False
@@ -42,7 +42,7 @@ def test_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_parse_args_with_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     args = _run_parse(
         monkeypatch,
-        ["pi-transcription", "run", "--force-always-on", "--verbose"],
+        ["pi-assistant", "run", "--force-always-on", "--verbose"],
     )
 
     assert args.mode == "run"
@@ -53,7 +53,7 @@ def test_parse_args_with_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_parse_args_with_no_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     args = _run_parse(
         monkeypatch,
-        ["pi-transcription", "--no-force-always-on"],
+        ["pi-assistant", "--no-force-always-on"],
     )
 
     assert args.mode == "run"
@@ -62,26 +62,26 @@ def test_parse_args_with_no_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_parse_args_invalid_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(SystemExit):
-        _run_parse(monkeypatch, ["pi-transcription", "invalid-mode"])
+        _run_parse(monkeypatch, ["pi-assistant", "invalid-mode"])
 
 
 def test_parse_args_conflicting_force_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(SystemExit):
         _run_parse(
             monkeypatch,
-            ["pi-transcription", "--force-always-on", "--no-force-always-on"],
+            ["pi-assistant", "--force-always-on", "--no-force-always-on"],
         )
 
 
 def test_parse_args_test_audio_mode(monkeypatch: pytest.MonkeyPatch) -> None:
-    args = _run_parse(monkeypatch, ["pi-transcription", "test-audio"])
+    args = _run_parse(monkeypatch, ["pi-assistant", "test-audio"])
 
     assert args.mode == "test-audio"
     assert args.force_always_on is None
 
 
 def test_parse_args_test_websocket_mode(monkeypatch: pytest.MonkeyPatch) -> None:
-    args = _run_parse(monkeypatch, ["pi-transcription", "test-websocket"])
+    args = _run_parse(monkeypatch, ["pi-assistant", "test-websocket"])
 
     assert args.mode == "test-websocket"
 
@@ -154,12 +154,12 @@ def _patch_run_transcription_deps(
     ws_client = ws_client or _StubWebSocketClient()
     assistant = assistant or _StubAssistant()
 
-    monkeypatch.setattr("pi_transcription.cli.app.AudioCapture", lambda: audio_capture)
-    monkeypatch.setattr("pi_transcription.cli.app.WebSocketClient", lambda: ws_client)
-    monkeypatch.setattr("pi_transcription.cli.app.LLMResponder", lambda: assistant)
-    monkeypatch.setattr("pi_transcription.cli.app.TurnTranscriptAggregator", lambda: object())
+    monkeypatch.setattr("pi_assistant.cli.app.AudioCapture", lambda: audio_capture)
+    monkeypatch.setattr("pi_assistant.cli.app.WebSocketClient", lambda: ws_client)
+    monkeypatch.setattr("pi_assistant.cli.app.LLMResponder", lambda: assistant)
+    monkeypatch.setattr("pi_assistant.cli.app.TurnTranscriptAggregator", lambda: object())
     monkeypatch.setattr(
-        "pi_transcription.cli.app.SpeechPlayer", lambda **kwargs: _StubSpeechPlayer(**kwargs)
+        "pi_assistant.cli.app.SpeechPlayer", lambda **kwargs: _StubSpeechPlayer(**kwargs)
     )
 
     async def default_run_audio_controller(*args, **kwargs):
@@ -172,8 +172,8 @@ def _patch_run_transcription_deps(
     run_audio = run_audio_fn or default_run_audio_controller
     receive = receive_fn or default_receive
 
-    monkeypatch.setattr("pi_transcription.cli.app.run_audio_controller", run_audio)
-    monkeypatch.setattr("pi_transcription.cli.app.receive_transcription_events", receive)
+    monkeypatch.setattr("pi_assistant.cli.app.run_audio_controller", run_audio)
+    monkeypatch.setattr("pi_assistant.cli.app.receive_transcription_events", receive)
 
     created["audio_capture"] = audio_capture
     created["ws_client"] = ws_client
@@ -236,20 +236,20 @@ async def test_run_transcription_propagates_errors(monkeypatch: pytest.MonkeyPat
 
 def test_main_run_mode_uses_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     args = types.SimpleNamespace(mode="run", verbose=True, force_always_on=None)
-    monkeypatch.setattr("pi_transcription.cli.app.parse_args", lambda: args)
-    monkeypatch.setattr("pi_transcription.cli.app.FORCE_ALWAYS_ON", True, raising=False)
+    monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
+    monkeypatch.setattr("pi_assistant.cli.app.FORCE_ALWAYS_ON", True, raising=False)
 
     calls: dict[str, object] = {}
 
     async def fake_run_transcription(*, force_always_on: bool):
         calls["force"] = force_always_on
 
-    monkeypatch.setattr("pi_transcription.cli.app.run_transcription", fake_run_transcription)
+    monkeypatch.setattr("pi_assistant.cli.app.run_transcription", fake_run_transcription)
     monkeypatch.setattr(
-        "pi_transcription.cli.app.set_verbose_logging",
+        "pi_assistant.cli.app.set_verbose_logging",
         lambda verbose: calls.setdefault("verbose", verbose),
     )
-    monkeypatch.setattr("pi_transcription.cli.app.asyncio.run", _run_coro_sync)
+    monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
 
     main()
 
@@ -259,17 +259,17 @@ def test_main_run_mode_uses_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_main_prefers_cli_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     args = types.SimpleNamespace(mode="run", verbose=False, force_always_on=False)
-    monkeypatch.setattr("pi_transcription.cli.app.parse_args", lambda: args)
-    monkeypatch.setattr("pi_transcription.cli.app.FORCE_ALWAYS_ON", True, raising=False)
+    monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
+    monkeypatch.setattr("pi_assistant.cli.app.FORCE_ALWAYS_ON", True, raising=False)
 
     calls: dict[str, object] = {}
 
     async def fake_run_transcription(*, force_always_on: bool):
         calls["force"] = force_always_on
 
-    monkeypatch.setattr("pi_transcription.cli.app.run_transcription", fake_run_transcription)
-    monkeypatch.setattr("pi_transcription.cli.app.set_verbose_logging", lambda verbose: None)
-    monkeypatch.setattr("pi_transcription.cli.app.asyncio.run", _run_coro_sync)
+    monkeypatch.setattr("pi_assistant.cli.app.run_transcription", fake_run_transcription)
+    monkeypatch.setattr("pi_assistant.cli.app.set_verbose_logging", lambda verbose: None)
+    monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
 
     main()
 
@@ -278,16 +278,16 @@ def test_main_prefers_cli_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_main_runs_audio_diagnostics(monkeypatch: pytest.MonkeyPatch) -> None:
     args = types.SimpleNamespace(mode="test-audio", verbose=False, force_always_on=None)
-    monkeypatch.setattr("pi_transcription.cli.app.parse_args", lambda: args)
-    monkeypatch.setattr("pi_transcription.cli.app.asyncio.run", _run_coro_sync)
+    monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
+    monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
 
     calls: dict[str, bool] = {}
 
     async def fake_test_audio_capture():
         calls["audio"] = True
 
-    monkeypatch.setattr("pi_transcription.cli.app.test_audio_capture", fake_test_audio_capture)
-    monkeypatch.setattr("pi_transcription.cli.app.set_verbose_logging", lambda verbose: None)
+    monkeypatch.setattr("pi_assistant.cli.app.test_audio_capture", fake_test_audio_capture)
+    monkeypatch.setattr("pi_assistant.cli.app.set_verbose_logging", lambda verbose: None)
 
     main()
 
@@ -296,36 +296,34 @@ def test_main_runs_audio_diagnostics(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_main_runs_websocket_diagnostics(monkeypatch: pytest.MonkeyPatch) -> None:
     args = types.SimpleNamespace(mode="test-websocket", verbose=False, force_always_on=None)
-    monkeypatch.setattr("pi_transcription.cli.app.parse_args", lambda: args)
-    monkeypatch.setattr("pi_transcription.cli.app.asyncio.run", _run_coro_sync)
+    monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
+    monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
 
     calls: dict[str, object] = {}
 
     async def fake_test_websocket_client(handler):
         calls["handler"] = handler
 
-    monkeypatch.setattr(
-        "pi_transcription.cli.app.test_websocket_client", fake_test_websocket_client
-    )
-    monkeypatch.setattr("pi_transcription.cli.app.set_verbose_logging", lambda verbose: None)
+    monkeypatch.setattr("pi_assistant.cli.app.test_websocket_client", fake_test_websocket_client)
+    monkeypatch.setattr("pi_assistant.cli.app.set_verbose_logging", lambda verbose: None)
 
     main()
 
-    from pi_transcription.cli import app as cli_app
+    from pi_assistant.cli import app as cli_app
 
     assert calls["handler"] is cli_app.handle_transcription_event
 
 
 def test_main_exits_on_unhandled_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     args = types.SimpleNamespace(mode="run", verbose=False, force_always_on=None)
-    monkeypatch.setattr("pi_transcription.cli.app.parse_args", lambda: args)
-    monkeypatch.setattr("pi_transcription.cli.app.asyncio.run", _run_coro_sync)
+    monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
+    monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
 
     async def fake_run_transcription(*, force_always_on: bool):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("pi_transcription.cli.app.run_transcription", fake_run_transcription)
-    monkeypatch.setattr("pi_transcription.cli.app.set_verbose_logging", lambda verbose: None)
+    monkeypatch.setattr("pi_assistant.cli.app.run_transcription", fake_run_transcription)
+    monkeypatch.setattr("pi_assistant.cli.app.set_verbose_logging", lambda verbose: None)
 
     exit_calls: dict[str, int] = {}
 
@@ -333,7 +331,7 @@ def test_main_exits_on_unhandled_exception(monkeypatch: pytest.MonkeyPatch) -> N
         exit_calls["code"] = code
         raise SystemExit(code)
 
-    monkeypatch.setattr("pi_transcription.cli.app.sys.exit", fake_exit)
+    monkeypatch.setattr("pi_assistant.cli.app.sys.exit", fake_exit)
 
     with pytest.raises(SystemExit) as excinfo:
         main()
