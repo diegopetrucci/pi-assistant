@@ -5,7 +5,7 @@
     "venv",
     "**/__pycache__",
     "scripts",
-    "test_recording.wav"
+    "tests/manual/test_recording.wav"
   ],
   "pythonVersion": "3.11",
   "venvPath": ".",

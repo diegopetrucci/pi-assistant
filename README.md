@@ -133,7 +133,7 @@ uv run ruff check --fix .
 uv run pre-commit run --all-files
 ```
 
-These commands automatically exclude generated artifacts such as `.venv/` and `test_recording.wav`.
+These commands automatically exclude generated artifacts such as `.venv/` and `tests/manual/test_recording.wav`.
 
 Pyright enforces static typing using `pyrightconfig.json`, mirroring the same exclusions.
 

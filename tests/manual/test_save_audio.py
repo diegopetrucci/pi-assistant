@@ -5,6 +5,7 @@ Test script that saves captured audio to a WAV file so you can verify it's worki
 import asyncio
 import sys
 import wave
+from pathlib import Path
 
 import pytest
 
@@ -59,10 +60,10 @@ async def test_and_save_audio():
 
     # Save to WAV file
     if audio_chunks:
-        output_file = "test_recording.wav"
-        print(f"\nSaving {chunk_count} chunks to {output_file}...")
+        output_path = Path(__file__).with_name("test_recording.wav")
+        print(f"\nSaving {chunk_count} chunks to {output_path}...")
 
-        with wave.open(output_file, "wb") as wav_file:
+        with wave.open(str(output_path), "wb") as wav_file:
             wav_file.setnchannels(CHANNELS)
             wav_file.setsampwidth(2)  # 2 bytes for int16
             wav_file.setframerate(SAMPLE_RATE)
@@ -70,8 +71,8 @@ async def test_and_save_audio():
 
         print("✅ Saved successfully!")
         print("\nTo verify the recording, play it back:")
-        print(f"  afplay {output_file}  (macOS)")
-        print(f"  aplay {output_file}   (Linux/Raspberry Pi)")
+        print(f"  afplay {output_path}  (macOS)")
+        print(f"  aplay {output_path}   (Linux/Raspberry Pi)")
         print("\nIf you hear your voice, the audio capture is working correctly!")
     else:
         print("❌ No audio captured")
