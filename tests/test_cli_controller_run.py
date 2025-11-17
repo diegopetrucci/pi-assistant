@@ -61,6 +61,20 @@ async def test_run_audio_controller_force_always_on_handles_stop(monkeypatch):
     stop_signal = asyncio.Event()
     speech_stopped_signal = asyncio.Event()
 
+    transitions = []
+
+    def fake_log(previous, current, reason):
+        transitions.append(reason)
+
+    monkeypatch.setattr(controller, "log_state_transition", fake_log)
+
+    transitions = []
+
+    def fake_log(previous, current, reason):
+        transitions.append(reason)
+
+    monkeypatch.setattr(controller, "log_state_transition", fake_log)
+
     scheduled = []
 
     def fake_schedule(tb, assistant, player):
@@ -166,6 +180,13 @@ async def test_run_audio_controller_streams_after_wake_word_and_auto_stop(monkey
     monkeypatch.setattr(controller, "AUTO_STOP_SILENCE_THRESHOLD", 5000)
     monkeypatch.setattr(controller, "AUTO_STOP_MAX_SILENCE_SECONDS", 0.01)
 
+    transitions = []
+
+    def fake_log(previous, current, reason):
+        transitions.append(reason)
+
+    monkeypatch.setattr(controller, "log_state_transition", fake_log)
+
     scheduled = []
 
     def fake_schedule(tb, assistant, player):
@@ -187,7 +208,18 @@ async def test_run_audio_controller_streams_after_wake_word_and_auto_stop(monkey
         )
     )
 
-    await asyncio.sleep(0.2)
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if "silence detected" in transitions:
+            break
+    else:
+        pytest.fail("auto-stop transition never triggered")
+    assert not scheduled  # auto-stop should wait for server confirmation
+    for _ in range(5):
+        capture.queue.put_nowait(silence_chunk)
+    capture.queue.put_nowait(silence_chunk)
+    speech_stopped_signal.set()
+    await asyncio.sleep(0.05)
     await _shutdown_task(task)
 
     assert transcript_buffer.started >= 1
@@ -589,7 +621,18 @@ async def test_run_audio_controller_auto_stop_silence_transition(monkeypatch):
         )
     )
 
-    await asyncio.sleep(0.3)
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if any(reason == "silence detected" for _, _, reason in transitions):
+            break
+    else:
+        pytest.fail("auto-stop transition never triggered")
+
+    assert not scheduled  # waiting for server stop
+    for _ in range(5):
+        capture.queue.put_nowait(silence_chunk)
+    speech_stopped_signal.set()
+    await asyncio.sleep(0.1)
     await _shutdown_task(task)
 
     assert any(reason == "silence detected" for _, _, reason in transitions)
@@ -709,12 +752,136 @@ async def test_run_audio_controller_retrigger_delays_auto_stop(monkeypatch):
     for _ in range(20):
         capture.queue.put_nowait(silence_chunk)
 
-    await asyncio.sleep(0.2)
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if any(reason == "silence detected" for _, _, reason in transitions):
+            break
+    else:
+        pytest.fail("auto-stop transition never triggered")
+
+    assert not scheduled
+    for _ in range(5):
+        capture.queue.put_nowait(silence_chunk)
+    speech_stopped_signal.set()
+    await asyncio.sleep(0.05)
     await _shutdown_task(task)
 
     reasons = [reason for _, _, reason in transitions]
     assert "silence detected" in reasons
     assert scheduled
+
+
+@pytest.mark.asyncio
+async def test_auto_stop_wait_blocks_new_wake(monkeypatch):
+    capture = FakeCapture()
+    loud_chunk = (np.ones(128, dtype=np.int16) * 20000).tobytes()
+    silence_chunk = np.zeros(128, dtype=np.int16).tobytes()
+
+    capture.queue.put_nowait(loud_chunk)
+    capture.queue.put_nowait(loud_chunk)
+    for _ in range(50):
+        capture.queue.put_nowait(silence_chunk)
+
+    ws_client = FakeWebSocket()
+    transcript_buffer = DummyTranscriptBuffer()
+    assistant = object()
+    speech_player = object()
+    stop_signal = asyncio.Event()
+    speech_stopped_signal = asyncio.Event()
+
+    class ControlledWakeEngine:
+        def __init__(self, *args, **kwargs):
+            self.calls = 0
+            self.allow_retry = False
+
+        def process_chunk(self, chunk):
+            if self.calls == 0:
+                result = WakeWordDetection(score=0.95, triggered=True)
+            elif self.allow_retry:
+                result = WakeWordDetection(score=0.95, triggered=True)
+                self.allow_retry = False
+            else:
+                result = WakeWordDetection(score=0.1, triggered=False)
+            self.calls += 1
+            return result
+
+        def reset_detection(self):
+            return None
+
+    wake_engine = ControlledWakeEngine(None)
+    monkeypatch.setattr(controller, "WakeWordEngine", lambda *args, **kwargs: wake_engine)
+
+    def make_preroll(*args, **kwargs):
+        class P:
+            def __init__(self):
+                self.buffer = bytearray()
+
+            def add(self, chunk):
+                self.buffer.extend(chunk)
+
+            def flush(self):
+                data = bytes(self.buffer)
+                self.buffer.clear()
+                return data
+
+            def clear(self):
+                self.buffer.clear()
+
+        return P()
+
+    monkeypatch.setattr(controller, "PreRollBuffer", make_preroll)
+    monkeypatch.setattr(
+        controller,
+        "LinearResampler",
+        lambda *args, **kwargs: type(
+            "R",
+            (),
+            {
+                "process": lambda self, audio_bytes: np.frombuffer(audio_bytes, dtype=np.int16),
+                "reset": lambda self: None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(controller, "AUTO_STOP_ENABLED", True)
+    monkeypatch.setattr(controller, "AUTO_STOP_SILENCE_THRESHOLD", 1000)
+    monkeypatch.setattr(controller, "AUTO_STOP_MAX_SILENCE_SECONDS", 0.01)
+
+    transitions = []
+
+    def fake_log(previous, current, reason):
+        transitions.append(reason)
+
+    monkeypatch.setattr(controller, "log_state_transition", fake_log)
+
+    task = asyncio.create_task(
+        controller.run_audio_controller(
+            capture,
+            ws_client,
+            force_always_on=False,
+            transcript_buffer=transcript_buffer,
+            assistant=assistant,
+            speech_player=speech_player,
+            stop_signal=stop_signal,
+            speech_stopped_signal=speech_stopped_signal,
+        )
+    )
+
+    for _ in range(50):
+        await asyncio.sleep(0.01)
+        if "silence detected" in transitions:
+            break
+    else:
+        pytest.fail("auto-stop transition never triggered")
+
+    wake_engine.allow_retry = True
+    capture.queue.put_nowait(loud_chunk)
+    await asyncio.sleep(0.05)
+
+    assert transcript_buffer.started == 1  # new wake ignored while awaiting server stop
+
+    speech_stopped_signal.set()
+    await asyncio.sleep(0.05)
+    await _shutdown_task(task)
 
 
 @pytest.mark.asyncio
