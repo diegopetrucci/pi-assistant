@@ -97,7 +97,8 @@ def _build_session_log_path(directory: Path) -> Path:
     base_path = directory / f"{safe_timestamp}.log"
 
     try:
-        base_path.open("x", encoding="utf-8").close()
+        with base_path.open("x", encoding="utf-8"):
+            pass
         return base_path
     except FileExistsError:
         pass
@@ -107,7 +108,8 @@ def _build_session_log_path(directory: Path) -> Path:
     while counter <= MAX_RETRIES:
         candidate = directory / f"{safe_timestamp}_{counter}.log"
         try:
-            candidate.open("x", encoding="utf-8").close()
+            with candidate.open("x", encoding="utf-8"):
+                pass
             return candidate
         except FileExistsError:
             counter += 1
