@@ -178,6 +178,8 @@ environment-variable overrides:
   `AUTO_STOP_MAX_SILENCE_SECONDS`
 - Assistant replies: `ASSISTANT_MODEL`, `ASSISTANT_SYSTEM_PROMPT`,
   `ASSISTANT_WEB_SEARCH_ENABLED`, `ASSISTANT_TTS_*`
+- Language locks: `TRANSCRIPTION_LANGUAGE` (forced speech-recognition hint) and
+  `ASSISTANT_LANGUAGE` (LLM output language), both defaulting to `"en"`
 - Wake-word overrides (see below): `WAKE_WORD_*`, `FORCE_ALWAYS_ON`
 
 If you want the assistant to know its real-world context, set
@@ -188,6 +190,12 @@ runs if neither the env var nor the defaults provide one.
 
 Update the TOML file for new defaults (which can be committed) and use env vars
 for per-device overrides.
+
+To keep every interaction in English (or another fixed language), set both
+`TRANSCRIPTION_LANGUAGE` and `ASSISTANT_LANGUAGE` inside `.env`. The first value
+is sent with the OpenAI Realtime session update so the recognizer never switches
+languages mid-stream, while the second is injected into a system instruction so
+assistant replies remain in that language even when the transcript briefly drifts.
 
 When a USB microphone only exposes 48 kHz (or any rate different from the
 OpenAI session’s 24 kHz expectation), set `SAMPLE_RATE` to the hardware-supported

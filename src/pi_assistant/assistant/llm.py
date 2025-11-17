@@ -11,6 +11,7 @@ from openai import AsyncOpenAI, BadRequestError
 
 from pi_assistant.cli.logging_utils import verbose_print
 from pi_assistant.config import (
+    ASSISTANT_LANGUAGE,
     ASSISTANT_MODEL,
     ASSISTANT_SYSTEM_PROMPT,
     ASSISTANT_TTS_ENABLED,
@@ -51,6 +52,7 @@ class LLMResponder:
         tts_voice: str = ASSISTANT_TTS_VOICE,
         tts_format: str = ASSISTANT_TTS_FORMAT,
         tts_sample_rate: int = ASSISTANT_TTS_SAMPLE_RATE,
+        language: str = ASSISTANT_LANGUAGE,
         client: Optional[AsyncOpenAI] = None,
     ):
         self._client = client or AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -63,6 +65,7 @@ class LLMResponder:
         self._tts_voice = tts_voice
         self._tts_format = tts_format
         self._tts_sample_rate = tts_sample_rate
+        self._language = language.strip() if language else ""
         self._responses_audio_requested = enable_tts and use_responses_audio
         self._responses_audio_supported = self._responses_audio_requested
         self._audio_fallback_logged = False
@@ -94,6 +97,18 @@ class LLMResponder:
                             "text": f"Device location: {self._location_name}",
                         }
                     ],
+                }
+            )
+        if self._language:
+            language_instruction = (
+                f"Always interpret the conversation in {self._language}. "
+                f"Respond strictly in {self._language}, even if the user speaks another language "
+                "or the transcript seems to switch languages."
+            )
+            messages.append(
+                {
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": language_instruction}],
                 }
             )
         messages.append(

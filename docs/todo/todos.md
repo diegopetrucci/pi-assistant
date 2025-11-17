@@ -1,8 +1,10 @@
 # TODOs
 
 Required:
+- [ ] remove start.py
+- [ ] move test_recording.wav to an assets folder
+- [ ] update the readme, agents, etc
 - [ ] Drop "hey wakeword" from user message
-- [ ] force the language to be english
 - [ ] Don't wait for sentence to finish, stream / transcribe in smaller chunks
 - [ ] let user pick name
 - [ ] Measure real reply latency for each assistant model and update onboarding copy
