@@ -2,11 +2,11 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v*"
 
 jobs:
-  release:
+  build-and-publish:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -14,42 +14,45 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Determine next version
-        id: bump
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Verify version consistency
         run: |
-          set -euo pipefail
+          TAG_REF="${{ github.ref }}"
+          TAG_VERSION_V="${TAG_REF#refs/tags/}"
+          TAG_VERSION="${TAG_VERSION_V#v}"
 
-          next_version=$(python - <<'PY'
-import re
-import subprocess
+          PROJECT_VERSION=$(grep -oP 'version = "\K[^"]+' pyproject.toml)
 
-tags = subprocess.check_output(["git", "tag"]).decode().splitlines()
-pattern = re.compile(r"v?\d+\.\d+\.\d+$")
-versions = [tag.lstrip("v") for tag in tags if pattern.fullmatch(tag)]
+          if [ "$TAG_VERSION" != "$PROJECT_VERSION" ]; then
+            echo "Error: Tag version ($TAG_VERSION) does not match pyproject.toml version ($PROJECT_VERSION)."
+            exit 1
+          fi
+          echo "Version check passed: $TAG_VERSION"
 
-if versions:
-    def to_tuple(value: str) -> tuple[int, int, int]:
-        return tuple(int(part) for part in value.split("."))
+      - name: Build artifacts
+        run: uv build
 
-    versions.sort(key=to_tuple)
-    last = versions[-1]
-    major, minor, patch = (int(part) for part in last.split("."))
-    print(f"{major}.{minor + 1}.0")
-else:
-    print("0.1.0")
-PY
-)
-
-          echo "next=$next_version" >>"$GITHUB_OUTPUT"
-
-      - name: Create release
-        uses: ncipollo/release-action@v1
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          tag: ${{ steps.bump.outputs.next }}
-          name: ${{ steps.bump.outputs.next }}
-          commit: ${{ github.sha }}
-          generateReleaseNotes: true
-          skipIfReleaseExists: true
+          name: pi-assistant-dist
+          path: dist/*
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
