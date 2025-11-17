@@ -1,0 +1,31 @@
+name: Tests
+
+on:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: test-key
+      PI_TRANSCRIPTION_USE_DUMMY_AUDIO: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --dev --locked
+
+      - name: Run tests
+        run: uv run pytest --ignore=tests/manual

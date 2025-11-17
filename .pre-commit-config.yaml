@@ -1,0 +1,14 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.5
+    hooks:
+      - id: ruff-format
+      - id: ruff
+        args: ["--fix"]
+  - repo: local
+    hooks:
+      - id: python-max-lines
+        name: Enforce 500-line limit on non-test modules
+        entry: scripts/check_file_length.py --max-lines 500
+        language: system
+        types: [python]

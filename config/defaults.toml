@@ -1,0 +1,58 @@
+[audio]
+sample_rate = 24000
+stream_sample_rate = 24000
+buffer_size = 1024
+channels = 1
+dtype = "int16"
+queue_max_size = 100
+preroll_duration_seconds = 1.0
+
+[openai]
+realtime_endpoint = "wss://api.openai.com/v1/realtime?intent=transcription"
+model = "gpt-4o-transcribe"
+beta_header = "realtime=v1"
+
+[auto_stop]
+enabled = true
+silence_threshold = 500
+max_silence_seconds = 2.0
+
+[wake_word]
+model_path = "models/hey_jarvis_v0.1.onnx"
+fallback_model_path = "models/hey_jarvis_v0.1.tflite"
+melspec_model_path = "models/melspectrogram.onnx"
+embedding_model_path = "models/embedding_model.onnx"
+target_sample_rate = 16000
+score_threshold = 0.5
+consecutive_frames = 2
+
+[session]
+input_audio_format = "pcm16"
+include = ["item.input_audio_transcription.logprobs"]
+
+[session.input_audio_transcription]
+model = "gpt-4o-transcribe"
+prompt = ""
+language = "en"
+
+[session.turn_detection]
+type = "server_vad"
+threshold = 0.5
+prefix_padding_ms = 300
+silence_duration_ms = 500
+
+[session.input_audio_noise_reduction]
+type = "near_field"
+
+[assistant]
+model = "gpt-5.1-2025-11-13"
+system_prompt = "You are an ai assistant. Your user talks to you via a raspberry pi via voice, so the user's text might not always be the best quality as it's transcribed via microphone audio. Make your answers short and to the point, unless the user says differently." 
+web_search_enabled = true
+tts_enabled = true
+tts_model = "gpt-4o-mini-tts"
+tts_voice = "alloy"
+tts_format = "pcm"
+tts_sample_rate = 24000
+
+[device]
+location_name = ""

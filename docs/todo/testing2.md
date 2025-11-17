@@ -1,0 +1,9 @@
+- [ ] Cover `run_transcription`/`parse_args` in `src/pi_transcription/cli/app.py:21-161`, including failure cleanup, verification probes, and CLI flag combinations.
+- [ ] Exercise `LLMResponder.verify_responses_audio_support` and `_synthesize_audio` in `src/pi_transcription/assistant.py:311-378`, ensuring fallback logic toggles `_responses_audio_supported`.
+- [ ] Add controller-loop tests for wake-engine init failures, `speech_stopped_signal`, retrigger budgeting, and response-task cleanup in `src/pi_transcription/cli/controller.py:132-311`.
+- [ ] Extend `tests/test_network_websocket_client.py` (or new tests) to cover handshake timeouts, repeated `error` events, receive-loop disconnects, and `send_audio_chunk` precondition checks.
+- [ ] Increase `src/pi_transcription/cli/events.py:22-109` coverage by asserting log formatting for partial/VAD/error events plus stop-command exceptions and websocket failures.
+- [ ] Unit test env/config helpers in `src/pi_transcription/config/__init__.py:81-246`, including `_env_*`, `_persist_env_value`, API-key prompt behavior, and LOCATION_NAME resolution.
+- [ ] Write async fakes for `diagnostics.test_audio_capture` / `test_websocket_client` (`src/pi_transcription/diagnostics.py:14-96`) to verify timeout messaging and resource cleanup.
+- [ ] Expand `tests/test_audio_capture.py` to hit `start_stream`, `stop_stream`, `_describe_device`, and failure paths in `src/pi_transcription/audio/capture.py:61-202`.
+- [ ] Add stdout-capture tests for `log_state_transition` (`src/pi_transcription/cli/logging_utils.py:29-38`) to lock formatting and duplicate-state suppression.

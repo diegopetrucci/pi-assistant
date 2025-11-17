@@ -205,3 +205,13 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project-specific
+# Ignore test audio recordings
+test_recording.wav
+*.wav
+test.wav
+
+# But keep test scripts (these are tracked)
+!test_audio.py
+!test_save_audio.py
