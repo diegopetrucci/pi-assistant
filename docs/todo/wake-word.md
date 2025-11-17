@@ -59,7 +59,7 @@
 5. **Debug override & config**
    - Add CLI/env plumbing plus new constants in `config.py` for thresholds and buffer durations.
 6. **Tests & scripts**
-   - Create a fixture WAV (or reuse `test_recording.wav` if it contains the phrase), build `tests/test_wake_word.py`, and document a manual verification script in `README.md`.
+   - Create a fixture WAV (or reuse `tests/manual/test_recording.wav` if it contains the phrase), build `tests/test_wake_word.py`, and document a manual verification script in `README.md`.
 7. **Docs & logging**
    - Update README usage section (wake-word mode, override flag) and ensure logs clearly indicate detection activity.
 

@@ -4,7 +4,7 @@ indent-width = 4
 exclude = [
     "venv",
     "__pycache__",
-    "test_recording.wav",
+    "tests/manual/test_recording.wav",
     "scripts",
 ]
 

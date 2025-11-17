@@ -1,9 +1,7 @@
 # TODOs
 
 Required:
-- [ ] remove start.py
-- [ ] remove src/pi-transcription as i believe it's unused
-- [ ] move test_recording.wav to an assets folder
+- [x] move test_recording.wav under tests/manual/
 - [ ] update the readme, agents, etc
 - [ ] Drop "hey wakeword" from user message
 - [ ] Don't wait for sentence to finish, stream / transcribe in smaller chunks
@@ -12,6 +10,7 @@ Required:
 
 Maybe:
 - [ ] Stream the reply
+- [ ] wake word logs are too much in non -v
 - [ ] explore if we can add more names for wake words
 - [ ] Add speaker diarization
 - [ ] Auto-detect microphone sample rate support and adjust capture/session config when defaults fail (avoid manual SAMPLE_RATE exports)
