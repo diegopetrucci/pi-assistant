@@ -1,12 +1,11 @@
-"""Helpers for capturing turn-level transcripts and querying an LLM."""
+"""LLM response helpers and cached TTS phrase playback."""
 
 from __future__ import annotations
 
 import asyncio
 import base64
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple
 
 from openai import AsyncOpenAI, BadRequestError
 
@@ -24,140 +23,6 @@ from pi_assistant.config import (
     LOCATION_NAME,
     OPENAI_API_KEY,
 )
-
-
-class TurnTranscriptAggregator:
-    """Collects finalized transcripts for the active turn."""
-
-    def __init__(
-        self,
-        drain_timeout_seconds: float = 0.35,
-        max_finalize_wait_seconds: float = 1.25,
-    ):
-        self._drain_timeout = max(drain_timeout_seconds, 0.0)
-        self._max_finalize_wait = max(max_finalize_wait_seconds, self._drain_timeout)
-        self._lock = asyncio.Lock()
-        self._segments: list[str] = []
-        self._seen_items: set[str] = set()
-        self._state: str = "idle"
-        self._trace_label = "[TURN-TRACE]"
-
-    def _timestamp(self) -> str:
-        return datetime.now().strftime("%H:%M:%S.%f")[:-3]
-
-    async def start_turn(self) -> None:
-        """Begin capturing transcripts for a new turn."""
-
-        async with self._lock:
-            self._segments.clear()
-            self._seen_items.clear()
-            self._state = "active"
-            verbose_print(f"{self._trace_label} {self._timestamp()} start turn")
-
-    async def append_transcript(self, item_id: Optional[str], text: str) -> None:
-        """Store a completed transcript fragment for the current turn."""
-
-        cleaned = text.strip()
-        if not cleaned:
-            return
-
-        async with self._lock:
-            if self._state == "idle":
-                verbose_print(
-                    f"{self._trace_label} {self._timestamp()} append ignored (idle) item={item_id}"
-                )
-                return
-            if item_id and item_id in self._seen_items:
-                verbose_print(
-                    f"{self._trace_label} {self._timestamp()} append ignored (duplicate) "
-                    f"item={item_id}"
-                )
-                return
-            if item_id:
-                self._seen_items.add(item_id)
-            self._segments.append(cleaned)
-            verbose_print(
-                f"{self._trace_label} {self._timestamp()} append stored item={item_id} "
-                f"segments={len(self._segments)} text={cleaned!r}"
-            )
-
-    async def finalize_turn(self) -> Optional[str]:
-        """Return the aggregated transcript once the turn is over."""
-
-        async with self._lock:
-            if self._state == "idle":
-                verbose_print(f"{self._trace_label} {self._timestamp()} finalize skipped (idle)")
-                return None
-            self._state = "closing"
-            pending_segments = len(self._segments)
-            verbose_print(
-                f"{self._trace_label} {self._timestamp()} finalize start "
-                f"segments={pending_segments}"
-            )
-
-        wait_interval = self._drain_timeout if self._drain_timeout > 0 else 0.1
-        total_wait = 0.0
-        ready_but_empty = object()
-
-        async def _maybe_finalize() -> Optional[str]:
-            async with self._lock:
-                ready = bool(self._segments) or total_wait >= self._max_finalize_wait
-                if ready:
-                    transcript = " ".join(self._segments).strip()
-                    self._segments.clear()
-                    self._seen_items.clear()
-                    self._state = "idle"
-                    snippet = (
-                        (transcript[:80] + "…")
-                        if transcript and len(transcript) > 80
-                        else transcript
-                    )
-                    reason = (
-                        "timeout"
-                        if (not transcript and total_wait >= self._max_finalize_wait)
-                        else "complete"
-                    )
-                    verbose_print(
-                        f"{self._trace_label} {self._timestamp()} finalize done "
-                        f"segments_cleared={pending_segments} wait={total_wait:.3f}s "
-                        f"mode={reason} transcript={snippet!r}"
-                    )
-                    return transcript or ready_but_empty
-                return None
-
-        maybe_transcript = await _maybe_finalize()
-        if maybe_transcript is ready_but_empty:
-            return None
-        if maybe_transcript is not None:
-            return maybe_transcript
-
-        while True:
-            remaining = self._max_finalize_wait - total_wait
-            if remaining <= 0:
-                wait_duration = 0.0
-            else:
-                wait_duration = min(wait_interval, remaining)
-            if wait_duration > 0:
-                await asyncio.sleep(wait_duration)
-                total_wait += wait_duration
-            maybe_transcript = await _maybe_finalize()
-            if maybe_transcript is ready_but_empty:
-                return None
-            if maybe_transcript is not None:
-                return maybe_transcript
-
-    async def clear_current_turn(self, reason: str = "") -> None:
-        """Drop any buffered segments without ending the turn."""
-
-        async with self._lock:
-            segment_count = len(self._segments)
-            self._segments.clear()
-            self._seen_items.clear()
-            suffix = f" reason={reason}" if reason else ""
-            verbose_print(
-                f"{self._trace_label} {self._timestamp()} clear turn "
-                f"segments_dropped={segment_count}{suffix}"
-            )
 
 
 @dataclass
@@ -201,6 +66,8 @@ class LLMResponder:
         self._responses_audio_requested = enable_tts and use_responses_audio
         self._responses_audio_supported = self._responses_audio_requested
         self._audio_fallback_logged = False
+        self._phrase_audio_cache: dict[str, tuple[bytes, int]] = {}
+        self._phrase_locks: dict[str, asyncio.Lock] = {}
 
     async def generate_reply(self, transcript: str) -> Optional[LLMReply]:
         """Send the transcript to the LLM and return the response text."""
@@ -273,6 +140,40 @@ class LLMResponder:
             audio_format=audio_format,
             audio_sample_rate=sample_rate,
         )
+
+    def peek_phrase_audio(self, text: str) -> Optional[Tuple[bytes, int]]:
+        """Return cached audio for a fixed phrase if it exists."""
+
+        if not text:
+            return None
+        key = text.strip()
+        if not key:
+            return None
+        return self._phrase_audio_cache.get(key)
+
+    async def warm_phrase_audio(self, text: str) -> Optional[Tuple[bytes, int]]:
+        """Ensure TTS audio for a phrase is synthesized and cached."""
+
+        if not (self._enable_tts and text):
+            return None
+        key = text.strip()
+        if not key:
+            return None
+        cached = self._phrase_audio_cache.get(key)
+        if cached:
+            return cached
+        lock = self._phrase_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            cached = self._phrase_audio_cache.get(key)
+            if cached:
+                return cached
+            audio_bytes, sample_rate = await self._synthesize_audio(key)
+            if audio_bytes:
+                playback_rate = sample_rate or self._tts_sample_rate or 24000
+                payload = (audio_bytes, int(playback_rate))
+                self._phrase_audio_cache[key] = payload
+                return payload
+        return None
 
     def _build_audio_extra_body(self) -> Optional[dict]:
         if not (self._enable_tts and self._responses_audio_supported):
@@ -436,4 +337,4 @@ class LLMResponder:
         return text_output, audio_output, audio_format, audio_sample_rate, audio_chunk_count
 
 
-__all__ = ["LLMReply", "LLMResponder", "TurnTranscriptAggregator"]
+__all__ = ["LLMReply", "LLMResponder"]

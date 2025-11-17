@@ -243,6 +243,15 @@ ASSISTANT_TTS_SAMPLE_RATE = _env_int(
     "ASSISTANT_TTS_SAMPLE_RATE", _ASSISTANT.get("tts_sample_rate", 24000)
 )
 
+_UX = _DEFAULTS.get("ux", {})
+CONFIRMATION_CUE_ENABLED = _env_bool(
+    "CONFIRMATION_CUE_ENABLED", _UX.get("confirmation_cue_enabled", True)
+)
+_CONFIRMATION_CUE_DEFAULT_TEXT = _UX.get("confirmation_cue_text", "Got it.")
+CONFIRMATION_CUE_TEXT = (
+    os.getenv("CONFIRMATION_CUE_TEXT") or _CONFIRMATION_CUE_DEFAULT_TEXT or ""
+).strip()
+
 _DEVICE = _DEFAULTS.get("device", {})
 
 
