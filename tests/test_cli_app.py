@@ -148,9 +148,18 @@ class _StubWebSocketClient:
 
 
 class _StubAssistant:
-    def __init__(self, *, tts_enabled: bool = True, supports_audio: bool = True):
+    def __init__(
+        self,
+        *,
+        tts_enabled: bool = True,
+        supports_audio: bool = True,
+        model_name: str = "test-model",
+        tools: tuple[str, ...] = (),
+    ):
         self.tts_enabled = tts_enabled
         self._supports_audio = supports_audio
+        self._model_name = model_name
+        self._tools = tools
         self.verify_calls = 0
         self.resp_audio_supported = None
         self.warm_calls: list[str] = []
@@ -180,6 +189,14 @@ class _StubAssistant:
             audio_bytes=None,
             audio_sample_rate=None,
         )
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
+
+    @property
+    def enabled_tools(self) -> tuple[str, ...]:
+        return self._tools
 
 
 class _StubSpeechPlayer:
