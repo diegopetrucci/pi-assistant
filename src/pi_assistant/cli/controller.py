@@ -33,6 +33,8 @@ from pi_assistant.config import (
     WAKE_WORD_MELSPEC_MODEL_PATH,
     WAKE_WORD_MODEL_FALLBACK_PATH,
     WAKE_WORD_MODEL_PATH,
+    WAKE_WORD_NAME,
+    WAKE_WORD_PHRASE,
     WAKE_WORD_SCORE_THRESHOLD,
     WAKE_WORD_TARGET_SAMPLE_RATE,
 )
@@ -142,6 +144,9 @@ async def run_audio_controller(
                 target_sample_rate=WAKE_WORD_TARGET_SAMPLE_RATE,
                 threshold=WAKE_WORD_SCORE_THRESHOLD,
                 consecutive_required=WAKE_WORD_CONSECUTIVE_FRAMES,
+            )
+            verbose_print(
+                f"{WAKE_LOG_LABEL} Wake-word model: {WAKE_WORD_PHRASE} ({WAKE_WORD_NAME})"
             )
         except RuntimeError as exc:
             print(f"{ERROR_LOG_LABEL} {exc}", file=sys.stderr)
