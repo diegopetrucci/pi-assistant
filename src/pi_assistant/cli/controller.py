@@ -215,6 +215,7 @@ async def run_audio_controller(
     retrigger_budget = 0
     awaiting_server_stop = False
     pending_finalize_reason: Optional[str] = None
+    suppress_next_server_stop_event = False
     response_tasks: Set[asyncio.Task] = set()
 
     if state == StreamState.STREAMING:
@@ -271,7 +272,12 @@ async def run_audio_controller(
 
             if not force_always_on and speech_stopped_signal.is_set():
                 speech_stopped_signal.clear()
-                if awaiting_server_stop:
+                if suppress_next_server_stop_event:
+                    suppress_next_server_stop_event = False
+                    verbose_print(
+                        f"{TURN_LOG_LABEL} Ignoring stale server speech stop acknowledgement."
+                    )
+                elif awaiting_server_stop:
                     _complete_deferred_finalize("server speech stop event")
                 else:
                     _transition_stream_to_listening("server speech stop event")
@@ -314,9 +320,10 @@ async def run_audio_controller(
             if wake_engine and detection.triggered:
                 if awaiting_server_stop:
                     verbose_print(
-                        f"{WAKE_LOG_LABEL} Wake phrase ignored; prior turn awaiting server stop."
+                        f"{WAKE_LOG_LABEL} Wake phrase overriding prior turn awaiting server stop."
                     )
-                    continue
+                    _complete_deferred_finalize("wake phrase override")
+                    suppress_next_server_stop_event = True
                 if state == StreamState.LISTENING:
                     previous_state = state
                     state = StreamState.STREAMING

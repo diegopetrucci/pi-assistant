@@ -9,7 +9,8 @@ Required:
 - [ ] add timestamps to the logs so we see the bottlenecks
 
 Maybe:
-- [ ] Option to reduce debug logs
 - [ ] add pylance
+- [ ] add audio feedback to let the user know it heard them
+- [ ] Stream the reply
 - [ ] Add speaker diarization
 - [ ] Auto-detect microphone sample rate support and adjust capture/session config when defaults fail (avoid manual SAMPLE_RATE exports)
