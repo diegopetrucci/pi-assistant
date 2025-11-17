@@ -104,6 +104,7 @@ async def finalize_turn_and_respond(
 
     _maybe_schedule_confirmation_cue(assistant, speech_player)
 
+    print(f"{TURN_LOG_LABEL} Transcript ready ({len(transcript)} chars); requesting assistant...")
     verbose_print(f"{TURN_LOG_LABEL} Sending transcript to assistant: {transcript}")
 
     try:
@@ -252,6 +253,7 @@ async def run_audio_controller(
             pending_finalize_reason = reason
             verbose_print(f"{TURN_LOG_LABEL} Awaiting server confirmation before finalizing turn.")
             return
+        print(f"{TURN_LOG_LABEL} Speech ended (reason={reason}) – finalizing turn.")
         awaiting_server_stop = False
         pending_finalize_reason = None
         _schedule_response_task(reason)
@@ -261,6 +263,7 @@ async def run_audio_controller(
         if not awaiting_server_stop:
             return
         reason = pending_finalize_reason or fallback_reason
+        print(f"{TURN_LOG_LABEL} Speech ended (reason={reason}) – finalizing turn.")
         awaiting_server_stop = False
         pending_finalize_reason = None
         _schedule_response_task(reason)

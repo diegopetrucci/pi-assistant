@@ -126,10 +126,15 @@ class LLMResponder:
             request_kwargs["tools"] = [{"type": "web_search"}]
 
         extra_body = self._build_audio_extra_body()
+        print("[ASSISTANT] Awaiting OpenAI response...")
         response = await self._send_response_request(request_kwargs, extra_body)
 
         text, audio_bytes, audio_format, sample_rate, chunk_count = self._extract_modalities(
             response, default_sample_rate=self._tts_sample_rate
+        )
+        print(
+            "[ASSISTANT] Response received "
+            f"(text={'yes' if text else 'no'}, audio_chunks={chunk_count})"
         )
         if self._enable_tts:
             if audio_bytes:

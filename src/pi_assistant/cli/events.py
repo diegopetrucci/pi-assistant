@@ -12,6 +12,7 @@ from pi_assistant.cli.logging_utils import (
     CONTROL_LOG_LABEL,
     ERROR_LOG_LABEL,
     TRANSCRIPT_LOG_LABEL,
+    TURN_LOG_LABEL,
     VAD_LOG_LABEL,
     verbose_print,
 )
@@ -100,6 +101,8 @@ async def receive_transcription_events(
                     continue
                 await transcript_buffer.append_transcript(item_id, transcript)
             elif event_type == "input_audio_buffer.speech_stopped":
+                item_id = event.get("item_id")
+                print(f"{TURN_LOG_LABEL} Server acknowledged speech stop (item={item_id}).")
                 speech_stopped_signal.set()
 
     except asyncio.CancelledError:
