@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine next version
+        id: bump
+        run: |
+          set -euo pipefail
+
+          next_version=$(python - <<'PY'
+import re
+import subprocess
+
+tags = subprocess.check_output(["git", "tag"]).decode().splitlines()
+pattern = re.compile(r"v?\d+\.\d+\.\d+$")
+versions = [tag.lstrip("v") for tag in tags if pattern.fullmatch(tag)]
+
+if versions:
+    def to_tuple(value: str) -> tuple[int, int, int]:
+        return tuple(int(part) for part in value.split("."))
+
+    versions.sort(key=to_tuple)
+    last = versions[-1]
+    major, minor, patch = (int(part) for part in last.split("."))
+    print(f"{major}.{minor + 1}.0")
+else:
+    print("0.1.0")
+PY
+)
+
+          echo "next=$next_version" >>"$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ steps.bump.outputs.next }}
+          name: ${{ steps.bump.outputs.next }}
+          commit: ${{ github.sha }}
+          generateReleaseNotes: true
+          skipIfReleaseExists: true
