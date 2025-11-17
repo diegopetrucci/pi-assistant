@@ -111,7 +111,8 @@ def _build_session_log_path(directory: Path) -> Path:
             return candidate
         except FileExistsError:
             counter += 1
-    raise RuntimeError(f"Unable to create a unique log file in {directory} after {MAX_RETRIES} attempts.")
+    message = f"Unable to create a unique log file in {directory} after {MAX_RETRIES} attempts."
+    raise RuntimeError(message)
 
 
 def _log_capture_active() -> bool:
