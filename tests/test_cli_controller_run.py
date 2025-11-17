@@ -950,6 +950,7 @@ async def test_auto_stop_wait_allows_new_wake(monkeypatch):
     else:
         pytest.fail("auto-stop transition never triggered")
 
+    await asyncio.sleep(0.05)
     wake_engine.allow_retry = True
     capture.queue.put_nowait(loud_chunk)
     await asyncio.sleep(0.05)
@@ -959,6 +960,251 @@ async def test_auto_stop_wait_allows_new_wake(monkeypatch):
     speech_stopped_signal.set()
     await asyncio.sleep(0.05)
     await _shutdown_task(task)
+
+
+@pytest.mark.asyncio
+async def test_wake_phrase_override_cancels_pending_responses(monkeypatch):
+    capture = FakeCapture()
+    loud_chunk = (np.ones(128, dtype=np.int16) * 20000).tobytes()
+    silence_chunk = np.zeros(128, dtype=np.int16).tobytes()
+
+    capture.queue.put_nowait(loud_chunk)
+    capture.queue.put_nowait(loud_chunk)
+
+    ws_client = FakeWebSocket()
+    transcript_buffer = DummyTranscriptBuffer()
+    assistant = object()
+    speech_player = object()
+    stop_signal = asyncio.Event()
+    speech_stopped_signal = asyncio.Event()
+
+    class ControlledWakeEngine:
+        def __init__(self, *args, **kwargs):
+            self.calls = 0
+            self.allow_retry = False
+
+        def process_chunk(self, chunk):
+            if self.calls == 0:
+                result = WakeWordDetection(score=0.95, triggered=True)
+            elif self.allow_retry:
+                self.allow_retry = False
+                result = WakeWordDetection(score=0.95, triggered=True)
+            else:
+                result = WakeWordDetection(score=0.1, triggered=False)
+            self.calls += 1
+            return result
+
+        def reset_detection(self):
+            return None
+
+    wake_engine = ControlledWakeEngine(None)
+    monkeypatch.setattr(controller, "WakeWordEngine", lambda *args, **kwargs: wake_engine)
+
+    def make_preroll(*args, **kwargs):
+        class P:
+            def __init__(self):
+                self.buffer = bytearray()
+
+            def add(self, chunk):
+                self.buffer.extend(chunk)
+
+            def flush(self):
+                data = bytes(self.buffer)
+                self.buffer.clear()
+                return data
+
+            def clear(self):
+                self.buffer.clear()
+
+        return P()
+
+    monkeypatch.setattr(controller, "PreRollBuffer", make_preroll)
+    monkeypatch.setattr(
+        controller,
+        "LinearResampler",
+        lambda *args, **kwargs: type(
+            "R",
+            (),
+            {
+                "process": lambda self, audio_bytes: np.frombuffer(audio_bytes, dtype=np.int16),
+                "reset": lambda self: None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(controller, "AUTO_STOP_ENABLED", False)
+
+    scheduled = []
+
+    def fake_schedule(*args, **kwargs):
+        task = asyncio.create_task(asyncio.sleep(10))
+        scheduled.append(task)
+        return task
+
+    monkeypatch.setattr(controller, "schedule_turn_response", fake_schedule)
+
+    task = asyncio.create_task(
+        controller.run_audio_controller(
+            capture,
+            ws_client,  # pyright: ignore[reportArgumentType]
+            force_always_on=False,
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            stop_signal=stop_signal,
+            speech_stopped_signal=speech_stopped_signal,
+        )
+    )
+
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if transcript_buffer.started >= 1:
+            break
+    else:
+        pytest.fail("initial wake phrase did not start a turn")
+
+    speech_stopped_signal.set()
+    capture.queue.put_nowait(silence_chunk)
+
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if scheduled:
+            break
+    else:
+        pytest.fail("first response never scheduled")
+
+    wake_engine.allow_retry = True
+    capture.queue.put_nowait(loud_chunk)
+
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if transcript_buffer.started >= 2 and scheduled[0].cancelled():
+            break
+    else:
+        pytest.fail("pending response was not cancelled after wake override")
+
+    capture.queue.put_nowait(silence_chunk)
+    await _shutdown_task(task)
+    for pending in scheduled:
+        pending.cancel()
+
+
+@pytest.mark.asyncio
+async def test_wake_override_suppresses_stale_server_ack(monkeypatch):
+    capture = FakeCapture()
+    loud_chunk = (np.ones(128, dtype=np.int16) * 20000).tobytes()
+    silence_chunk = np.zeros(128, dtype=np.int16).tobytes()
+
+    capture.queue.put_nowait(loud_chunk)
+    capture.queue.put_nowait(loud_chunk)
+    capture.queue.put_nowait(silence_chunk)
+
+    ws_client = FakeWebSocket()
+    transcript_buffer = DummyTranscriptBuffer()
+    assistant = object()
+    speech_player = object()
+    stop_signal = asyncio.Event()
+    speech_stopped_signal = asyncio.Event()
+
+    class ControlledWakeEngine:
+        def __init__(self, *args, **kwargs):
+            self.calls = 0
+            self.allow_retry = False
+
+        def process_chunk(self, chunk):
+            if self.calls == 0:
+                result = WakeWordDetection(score=0.95, triggered=True)
+            elif self.allow_retry:
+                self.allow_retry = False
+                result = WakeWordDetection(score=0.95, triggered=True)
+            else:
+                result = WakeWordDetection(score=0.1, triggered=False)
+            self.calls += 1
+            return result
+
+        def reset_detection(self):
+            return None
+
+    wake_engine = ControlledWakeEngine(None)
+    monkeypatch.setattr(controller, "WakeWordEngine", lambda *args, **kwargs: wake_engine)
+
+    def make_preroll(*args, **kwargs):
+        class P:
+            def __init__(self):
+                self.buffer = bytearray()
+
+            def add(self, chunk):
+                self.buffer.extend(chunk)
+
+            def flush(self):
+                data = bytes(self.buffer)
+                self.buffer.clear()
+                return data
+
+            def clear(self):
+                self.buffer.clear()
+
+        return P()
+
+    monkeypatch.setattr(controller, "PreRollBuffer", make_preroll)
+    monkeypatch.setattr(
+        controller,
+        "LinearResampler",
+        lambda *args, **kwargs: type(
+            "R",
+            (),
+            {
+                "process": lambda self, audio_bytes: np.frombuffer(audio_bytes, dtype=np.int16),
+                "reset": lambda self: None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(controller, "AUTO_STOP_ENABLED", True)
+    monkeypatch.setattr(controller, "AUTO_STOP_SILENCE_THRESHOLD", 1000)
+    monkeypatch.setattr(controller, "AUTO_STOP_MAX_SILENCE_SECONDS", 0.0)
+
+    scheduled = []
+
+    def fake_schedule(*args, **kwargs):
+        task = asyncio.create_task(asyncio.sleep(10))
+        scheduled.append(task)
+        return task
+
+    monkeypatch.setattr(controller, "schedule_turn_response", fake_schedule)
+
+    task = asyncio.create_task(
+        controller.run_audio_controller(
+            capture,
+            ws_client,  # pyright: ignore[reportArgumentType]
+            force_always_on=False,
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            stop_signal=stop_signal,
+            speech_stopped_signal=speech_stopped_signal,
+        )
+    )
+
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if transcript_buffer.started >= 1:
+            break
+    else:
+        pytest.fail("controller never entered streaming state")
+
+    wake_engine.allow_retry = True
+    capture.queue.put_nowait(loud_chunk)
+    await asyncio.sleep(0.05)
+    assert scheduled  # first finalize scheduled before override cleanup runs
+
+    speech_stopped_signal.set()
+    capture.queue.put_nowait(silence_chunk)
+    await asyncio.sleep(0.05)
+
+    assert len(scheduled) == 1  # stale server ack did not trigger another schedule
+
+    await _shutdown_task(task)
+    for pending in scheduled:
+        pending.cancel()
 
 
 @pytest.mark.asyncio

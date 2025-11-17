@@ -143,6 +143,8 @@ def schedule_turn_response(
     def _log_task_error(fut: asyncio.Task):
         try:
             fut.result()
+        except asyncio.CancelledError:
+            verbose_print(f"{TURN_LOG_LABEL} Assistant reply task cancelled.")
         except Exception as exc:  # pragma: no cover - unexpected
             print(f"{ASSISTANT_LOG_LABEL} Unexpected assistant error: {exc}", file=sys.stderr)
 
@@ -232,6 +234,16 @@ async def run_audio_controller(
         task.add_done_callback(_discard_on_completion)
         verbose_print(f"{TURN_LOG_LABEL} Scheduled assistant reply ({reason}).")
 
+    def _cancel_response_tasks(reason: str) -> None:
+        if not response_tasks:
+            return
+        verbose_print(
+            f"{TURN_LOG_LABEL} Canceling {len(response_tasks)} pending assistant reply task(s) "
+            f"({reason})."
+        )
+        for pending in tuple(response_tasks):
+            pending.cancel()
+
     def _transition_stream_to_listening(reason: str, *, defer_finalize: bool = False) -> None:
         nonlocal state, heard_speech, silence_duration, retrigger_budget
         nonlocal awaiting_server_stop, pending_finalize_reason
@@ -308,6 +320,7 @@ async def run_audio_controller(
                     awaiting_server_stop = False
                     pending_finalize_reason = None
                     await transcript_buffer.clear_current_turn("manual stop command")
+                    _cancel_response_tasks("manual stop command")
                 continue
 
             detection = WakeWordDetection()
@@ -330,6 +343,7 @@ async def run_audio_controller(
                 if state == StreamState.LISTENING:
                     previous_state = state
                     state = StreamState.STREAMING
+                    _cancel_response_tasks("wake phrase override")
                     await transcript_buffer.start_turn()
                     if wake_engine:
                         wake_engine.reset_detection()
