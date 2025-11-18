@@ -137,8 +137,8 @@ def _prompt_for_reasoning_effort(
 
     normalized_choice = _normalize_reasoning_effort(choice or normalized_default, allowed_choices)
     if normalized_choice is None:
-        sys.stderr.write("Unrecognized choice; defaulting to low.\n")
-        normalized_choice = "low"
+        sys.stderr.write(f"Unrecognized choice; defaulting to {normalized_default}.\n")
+        normalized_choice = normalized_default
     return normalized_choice
 
 
@@ -216,16 +216,16 @@ def _prompt_for_assistant_model(default_model: str) -> str | None:
 
     choice_key = _coerce_assistant_model_key(choice)
     if choice_key is None:
-        lowered = choice.strip().lower()
+        lowered_choice = choice.strip().lower()
         for key, data in _ASSISTANT_MODEL_CHOICES.items():
             model_id = str(data["value"]).strip().lower()
-            if lowered == model_id:
+            if lowered_choice == key.lower() or lowered_choice == model_id:
                 choice_key = key
                 break
 
     if choice_key is None:
-        sys.stderr.write("Unrecognized choice; defaulting to Mini.\n")
-        choice_key = "mini"
+        sys.stderr.write(f"Unrecognized choice; defaulting to {default_key}.\n")
+        choice_key = default_key
 
     return str(_ASSISTANT_MODEL_CHOICES[choice_key]["value"])
 

@@ -138,7 +138,6 @@ Verbose logs are captured by default. Each `uv run pi-assistant` session:
 - Strips ANSI colors for readability.
 
 You can override the log folder with `VERBOSE_LOG_DIRECTORY=/path/to/dir`, or disable capture entirely via `VERBOSE_LOG_CAPTURE_ENABLED=0` to conserve space on constrained devices.
-
 ## Code Quality
 
 Ruff is configured via `ruff.toml` to handle both formatting and linting.
