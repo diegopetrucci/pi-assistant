@@ -24,4 +24,4 @@ Write commits in the form `component: one-line summary` (e.g., `audio: harden po
 Never commit `.env`, API keys, or artifacts generated under `.uv/` or `.venv/`. Validate that `OPENAI_API_KEY` is set before invoking network code and prefer `config/defaults.toml` for new knobs so agents running headless Pis inherit sane defaults. When adding binaries or models, document their license in `docs/` and update `.gitignore` if they should remain local-only.
 
 ## PRs
-* Use github's `gh` command line tool to check out the prs when asked
+* Use github's `gh` command line tool to check out the prs when asked; see `.ai/gh-cli.md` for the full command list
