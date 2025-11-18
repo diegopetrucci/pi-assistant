@@ -215,6 +215,12 @@ class LLMResponder:
                 return payload
         return None
 
+    @property
+    def location_name(self) -> str:
+        """Return the configured location context passed to the LLM."""
+
+        return self._location_name
+
     def _build_audio_extra_body(self) -> Optional[dict]:
         if not (self._enable_tts and self._responses_audio_supported):
             return None

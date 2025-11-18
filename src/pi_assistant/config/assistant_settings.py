@@ -24,6 +24,8 @@ def _coerce_assistant_model_key(choice: str | None) -> str | None:
     normalized = choice.strip().lower().replace(" ", "")
     if not normalized:
         return None
+    if normalized in {"nano"}:
+        return "nano"
     if normalized in {"mini", "fast"}:
         return "mini"
     if normalized in {"5.1", "5", "full"}:
@@ -39,6 +41,11 @@ _ASSISTANT_MODEL_CHOICES: dict[str, dict[str, object]] = {
         "value": "gpt-5-mini-2025-08-07",
         "description": "Mini - faster (~2s per reply), less precise (default)",
         "reasoning_efforts": ("minimal", "low", "medium", "high"),
+    },
+    "nano": {
+        "value": "gpt-5-nano-2025-08-07",
+        "description": "Nano - newest ultra-fast tier (experimental reasoning support)",
+        "reasoning_efforts": ("low", "medium", "high"),
     },
     "5.1": {
         "value": "gpt-5.1-2025-11-13",

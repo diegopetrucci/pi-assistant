@@ -98,6 +98,55 @@ def _persist_env_value(key: str, value: str) -> None:
     ENV_PATH.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8")
 
 
+def _remove_env_keys(keys: tuple[str, ...]) -> set[str]:
+    """Remove specified keys from .env and return the ones that existed."""
+
+    if not keys:
+        return set()
+
+    existing_lines: list[str] = []
+    if ENV_PATH.exists():
+        existing_lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+
+    removed: set[str] = set()
+    trimmed_lines: list[str] = []
+    for line in existing_lines:
+        matched = False
+        for key in keys:
+            if line.startswith(f"{key}="):
+                removed.add(key)
+                matched = True
+                break
+        if not matched:
+            trimmed_lines.append(line)
+
+    if existing_lines:
+        new_contents = "\n".join(trimmed_lines).rstrip()
+        ENV_PATH.write_text((new_contents + "\n") if new_contents else "", encoding="utf-8")
+
+    for key in keys:
+        os.environ.pop(key, None)
+
+    return removed
+
+
+_FIRST_LAUNCH_ENV_KEYS: tuple[str, ...] = (
+    "ASSISTANT_MODEL",
+    "ASSISTANT_REASONING_EFFORT",
+    "LOCATION_NAME",
+)
+
+
+def reset_first_launch_choices() -> set[str]:
+    """
+    Clear saved selections that were captured via first-launch prompts.
+
+    Returns the subset of keys that were removed from the environment.
+    """
+
+    return _remove_env_keys(_FIRST_LAUNCH_ENV_KEYS)
+
+
 def _persist_api_key(api_key: str) -> None:
     """Write or update OPENAI_API_KEY in the repo's .env file."""
 
@@ -288,4 +337,5 @@ __all__ = [
     "AUTO_STOP_ENABLED",
     "AUTO_STOP_SILENCE_THRESHOLD",
     "AUTO_STOP_MAX_SILENCE_SECONDS",
+    "reset_first_launch_choices",
 ]
