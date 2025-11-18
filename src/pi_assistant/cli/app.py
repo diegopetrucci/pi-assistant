@@ -33,6 +33,7 @@ from pi_assistant.config import (
     SIMULATED_QUERY_TEXT,
     normalize_assistant_model_choice,
     reasoning_effort_choices_for_model,
+    reset_first_launch_choices,
 )
 from pi_assistant.diagnostics import test_audio_capture, test_websocket_client
 from pi_assistant.network import WebSocketClient
@@ -50,6 +51,13 @@ def _assistant_model_help() -> str:
         description = data["description"]
         lines.append(f"  {key}: {description} [{model_id}]")
     return "\n".join(lines)
+
+
+def _assistant_model_label(model_id: str) -> str:
+    for key, data in ASSISTANT_MODEL_REGISTRY.items():
+        if data["id"] == model_id:
+            return f"{key} ({model_id})"
+    return model_id
 
 
 def _parse_assistant_model_arg(value: str) -> str:
@@ -151,6 +159,8 @@ async def run_transcription(  # noqa: PLR0912, PLR0915
     console_print(f"{ASSISTANT_LOG_LABEL} Tools enabled: {tools_summary}")
     reasoning_summary = selected_reasoning_effort or "auto"
     console_print(f"{ASSISTANT_LOG_LABEL} Reasoning effort: {reasoning_summary}")
+    location_summary = (assistant.location_name or "").strip() or "unspecified"
+    console_print(f"{ASSISTANT_LOG_LABEL} Location context: {location_summary}")
     speech_player = SpeechPlayer(default_sample_rate=ASSISTANT_TTS_SAMPLE_RATE)
     if assistant.tts_enabled and CONFIRMATION_CUE_ENABLED and CONFIRMATION_CUE_TEXT:
         cue_task = asyncio.create_task(assistant.warm_phrase_audio(CONFIRMATION_CUE_TEXT))
@@ -313,13 +323,45 @@ def parse_args():
             "Note: 'minimal' requires web search to be disabled."
         ),
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help=(
+            "Remove saved first-launch answers (assistant model, reasoning effort, location) "
+            "from .env and exit."
+        ),
+    )
+    args = parser.parse_args()
+    if args.reasoning_effort:
+        selected_model = args.assistant_model or ASSISTANT_MODEL
+        allowed = reasoning_effort_choices_for_model(selected_model)
+        if args.reasoning_effort not in allowed:
+            label = _assistant_model_label(selected_model)
+            parser.error(
+                f"Reasoning effort '{args.reasoning_effort}' is not supported by {label}. "
+                f"Allowed values: {', '.join(allowed)}."
+            )
+    return args
 
 
 def main():
     """Main entry point"""
 
     args = parse_args()
+    if getattr(args, "reset", False):
+        cleared = sorted(reset_first_launch_choices())
+        if cleared:
+            console_print(
+                f"{ASSISTANT_LOG_LABEL} Cleared saved selections: {', '.join(cleared)}. "
+                "They will be requested again on next run."
+            )
+        else:
+            console_print(
+                f"{ASSISTANT_LOG_LABEL} No saved first-launch selections were present. "
+                "Defaults will be used on next run."
+            )
+        return
+
     set_verbose_logging(args.verbose)
     if args.mode == "test-audio":
         run_func = test_audio_capture

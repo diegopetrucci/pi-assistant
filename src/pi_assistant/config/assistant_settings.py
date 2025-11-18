@@ -24,10 +24,17 @@ def _coerce_assistant_model_key(choice: str | None) -> str | None:
     normalized = choice.strip().lower().replace(" ", "")
     if not normalized:
         return None
-    if normalized in {"mini", "fast"}:
-        return "mini"
-    if normalized in {"5.1", "5", "full"}:
-        return "5.1"
+    alias_map = {
+        "nano": "nano",
+        "mini": "mini",
+        "fast": "mini",
+        "5.1": "5.1",
+        "5": "5.1",
+        "full": "5.1",
+    }
+    mapped = alias_map.get(normalized)
+    if mapped:
+        return mapped
     for key in _ASSISTANT_MODEL_CHOICES:
         if normalized == key.replace(" ", "").lower():
             return key
@@ -39,6 +46,11 @@ _ASSISTANT_MODEL_CHOICES: dict[str, dict[str, object]] = {
         "value": "gpt-5-mini-2025-08-07",
         "description": "Mini - faster (~2s per reply), less precise (default)",
         "reasoning_efforts": ("minimal", "low", "medium", "high"),
+    },
+    "nano": {
+        "value": "gpt-5-nano-2025-08-07",
+        "description": "Nano - newest ultra-fast tier (experimental reasoning support)",
+        "reasoning_efforts": ("low", "medium", "high"),
     },
     "5.1": {
         "value": "gpt-5.1-2025-11-13",

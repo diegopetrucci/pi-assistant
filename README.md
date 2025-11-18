@@ -97,13 +97,13 @@ On first launch, if `.env` is missing or `OPENAI_API_KEY` is empty, the CLI prom
 
 ## Usage
 
+See `docs/cli.md` for the complete CLI command and configuration guide, including execution modes, diagnostics, flags, environment variables, and wake-word tuning. The quick start remains:
+
 ```bash
 uv run pi-assistant
 ```
 
-Say "Hey Jarvis stop" (or "Jarvis stop") while the assistant is talking to immediately halt playback, clear the pending turn, and return to listening mode.
-
-See `docs/cli.md` for the complete CLI command and configuration guide, including execution modes, diagnostics, flags, environment variables, and wake-word tuning. The quick start remains:
+Say "Hey Jarvis stop" (or "Jarvis stop") while the assistant is talking to immediately halt playback, clear the pending turn, and return to listening mode. Follow the CLI guide for verbose logging, simulated queries, assistant model overrides, and diagnostics such as `test-audio` and `test-websocket`.
 
 ### Assistant Models & Reasoning
 
