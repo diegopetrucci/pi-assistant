@@ -97,13 +97,51 @@ On first launch, if `.env` is missing or `OPENAI_API_KEY` is empty, the CLI prom
 
 ## Usage
 
-See `docs/cli.md` for the complete CLI command and configuration guide, including execution modes, diagnostics, flags, environment variables, and wake-word tuning. The quick start remains:
-
 ```bash
 uv run pi-assistant
 ```
 
-Follow the guide for verbose logging, simulated queries, assistant model overrides, and diagnostics such as `test-audio` and `test-websocket`.
+Say "Hey Jarvis stop" (or "Jarvis stop") while the assistant is talking to immediately halt playback, clear the pending turn, and return to listening mode.
+
+See `docs/cli.md` for the complete CLI command and configuration guide, including execution modes, diagnostics, flags, environment variables, and wake-word tuning. The quick start remains:
+
+### Assistant Models & Reasoning
+
+`pi_assistant.assistant.LLMResponder` wraps the OpenAI Responses API and supports multiple presets. The CLI prompts for a default model/reasoning pair on first launch and stores the choice in `.env`, but you can override it per run via the flags above or by setting `ASSISTANT_MODEL` / `ASSISTANT_REASONING_EFFORT`.
+
+| Preset | Model ID | Recommended use |
+| --- | --- | --- |
+| `mini` (default) | `gpt-5-mini-2025-08-07` | Low-latency replies with optional `minimal`, `low`, `medium`, or `high` reasoning. |
+| `5.1` | `gpt-5.1-2025-11-13` | Higher accuracy with `none`, `low`, `medium`, or `high` reasoning. |
+
+- `ASSISTANT_REASONING_EFFORT` falls back to `low` when unset; `minimal` cannot be used while `ASSISTANT_WEB_SEARCH_ENABLED=1`.
+- `ASSISTANT_SYSTEM_PROMPT`, `LOCATION_NAME`, `ASSISTANT_LANGUAGE`, and `TRANSCRIPTION_LANGUAGE` are sent as system messages so you can keep the assistant short, localized, and aware of the device's location.
+- Set `ASSISTANT_WEB_SEARCH_ENABLED=0` to disable tool calls entirely or leave it enabled to let GPT-5 issue web search requests when the Responses API determines they are useful.
+
+### Assistant Audio Modes & TTS
+
+Two delivery paths are supported:
+
+- `responses` (default): stream assistant audio directly from the Responses API when `ASSISTANT_TTS_RESPONSES_ENABLED=1`. The CLI automatically verifies whether the selected model supports the feature and falls back if the server rejects it.
+- `local-tts`: request text first, then synthesize locally via the Audio API using `ASSISTANT_TTS_MODEL`, `ASSISTANT_TTS_VOICE`, `ASSISTANT_TTS_FORMAT`, and `ASSISTANT_TTS_SAMPLE_RATE`.
+
+`SpeechPlayer` handles sample-rate mismatches and exposes a stop hook so voice commands can interrupt playback. The optional confirmation cue ("Got it.") is controlled via `CONFIRMATION_CUE_ENABLED` and `CONFIRMATION_CUE_TEXT`; the phrase is pre-rendered and cached so the tone plays instantly after each wake-word trigger.
+
+### Simulated Queries & Voice Controls
+
+- Set `SIMULATED_QUERY_TEXT="What's the forecast today?"` in `.env` to auto-inject a prompt every time the pipeline starts, or use `--simulate-query` to test a single turn without speaking.
+- Voice stop commands ("Hey Jarvis stop" / "Jarvis stop") signal the `SpeechPlayer` to halt audio and set `AUDIO_INPUT_DEVICE`-free capture back to listening mode with the current turn discarded.
+
+### Capturing Verbose Logs Locally
+
+Verbose logs are captured by default. Each `uv run pi-assistant` session:
+
+- Writes a log file named with an ISO-8601 timestamp (e.g., `logs/2024-11-30T14-03-12.123.log`) under the `logs/` directory.
+- Mirrors console output timestamps in the log.
+- Strips ANSI colors for readability.
+
+You can override the log folder with `VERBOSE_LOG_DIRECTORY=/path/to/dir`, or disable capture entirely via `VERBOSE_LOG_CAPTURE_ENABLED=0` to conserve space on constrained devices.
+
 ## Code Quality
 
 Ruff is configured via `ruff.toml` to handle both formatting and linting.
@@ -169,7 +207,7 @@ arecord --device=hw:1,0 --format S16_LE --rate 24000 -c 1 test.wav
 
 ## Configuration
 
-Defaults still live in `config/defaults.toml` and are surfaced via `pi_assistant.config`. Detailed environment-variable descriptions (assistant tuning, wake-word overrides, simulated queries, logging knobs, etc.) are documented in `docs/cli.md`.
+Defaults live in `config/defaults.toml` and are surfaced via `pi_assistant.config`. Detailed environment-variable descriptions (assistant tuning, wake-word overrides, simulated queries, logging knobs, etc.) are documented in `docs/cli.md`.
 
 ## Project Structure
 
