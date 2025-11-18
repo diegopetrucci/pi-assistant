@@ -64,15 +64,12 @@ class AudioCapture:
         # Convert numpy array to bytes
         audio_bytes = indata.copy().tobytes()
 
-        # Put audio data in queue (non-blocking)
-        # If queue is full, skip this chunk to prevent blocking
+        # Put audio data in queue from the event loop thread.
+        # If the queue is full, skip this chunk to prevent blocking.
         loop = self.loop
         if loop is None:
             return
-        try:
-            loop.call_soon_threadsafe(self.audio_queue.put_nowait, audio_bytes)
-        except asyncio.QueueFull:
-            print("Warning: Audio queue full, dropping frame", file=sys.stderr)
+        loop.call_soon_threadsafe(self._enqueue_audio_bytes, audio_bytes)
 
     def start_stream(self, loop):
         """
@@ -119,6 +116,13 @@ class AudioCapture:
             self.stream.stop()
             self.stream.close()
             verbose_print("Audio stream closed")
+
+    def _enqueue_audio_bytes(self, audio_bytes: bytes) -> None:
+        """Attempt a non-blocking enqueue of audio; drop if the queue is full."""
+        try:
+            self.audio_queue.put_nowait(audio_bytes)
+        except asyncio.QueueFull:
+            print("Warning: Audio queue full, dropping frame", file=sys.stderr)
 
     async def get_audio_chunk(self):
         """
