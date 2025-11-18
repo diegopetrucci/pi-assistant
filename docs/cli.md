@@ -119,6 +119,7 @@ When hardware only exposes 48 kHz, set `SAMPLE_RATE=48000` and keep `STREAM_SAMP
 echo "SAMPLE_RATE=48000" >> .env
 ```
 
+If `uv run pi-assistant` stops with `Microphone <name> does not support SAMPLE_RATE=24000 Hz`, the client already probed PortAudio and detected the mismatch. Set `SAMPLE_RATE` to the hinted default (often 48000) but leave `STREAM_SAMPLE_RATE=24000` so the controller keeps resampling capture audio for OpenAI.
 ### Assistant Delivery & Language
 
 - `ASSISTANT_TTS_RESPONSES_ENABLED` (toggles streaming audio)

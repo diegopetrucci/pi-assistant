@@ -13,7 +13,7 @@ os.environ.setdefault("LOCATION_NAME", "Test City")
 if "audioop" not in sys.modules:
     audioop_stub = types.ModuleType("audioop")
 
-    def _ratecv(audio_bytes, width, channels, src_rate, dst_rate, state):
+    def _ratecv(audio_bytes, width, channels, src_rate, dst_rate, state):  # noqa: PLR0913
         return audio_bytes, state
 
     cast(Any, audioop_stub).ratecv = _ratecv
@@ -110,6 +110,20 @@ def test_parse_args_reset_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     args = _run_parse(monkeypatch, ["pi-assistant", "--reset"])
 
     assert args.reset is True
+
+
+def test_parse_args_rejects_minimal_for_nano(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        _run_parse(
+            monkeypatch,
+            ["pi-assistant", "--assistant-model", "nano", "--reasoning-effort", "minimal"],
+        )
+
+    stderr = capsys.readouterr().err
+    assert "not supported" in stderr
+    assert "low, medium, high" in stderr
 
 
 class _StubAudioCapture:
@@ -211,7 +225,7 @@ class _StubSpeechPlayer:
         self.play_calls.append((audio_bytes, sample_rate))
 
 
-def _patch_run_transcription_deps(
+def _patch_run_transcription_deps(  # noqa: PLR0913
     monkeypatch: pytest.MonkeyPatch,
     *,
     audio_capture: _StubAudioCapture | None = None,

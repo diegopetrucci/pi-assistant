@@ -44,7 +44,7 @@ class LLMReply:
 class LLMResponder:
     """Thin wrapper around the OpenAI Responses API."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         model: str = ASSISTANT_MODEL,
@@ -351,7 +351,7 @@ class LLMResponder:
         return audio_bytes, self._tts_sample_rate or None
 
     @staticmethod
-    def _extract_modalities(
+    def _extract_modalities(  # noqa: PLR0912
         response, default_sample_rate: Optional[int] = None
     ) -> tuple[Optional[str], Optional[bytes], Optional[str], Optional[int], int]:
         """Pull text and audio payloads out of a Responses API payload."""

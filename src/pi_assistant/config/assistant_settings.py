@@ -24,12 +24,17 @@ def _coerce_assistant_model_key(choice: str | None) -> str | None:
     normalized = choice.strip().lower().replace(" ", "")
     if not normalized:
         return None
-    if normalized in {"nano"}:
-        return "nano"
-    if normalized in {"mini", "fast"}:
-        return "mini"
-    if normalized in {"5.1", "5", "full"}:
-        return "5.1"
+    alias_map = {
+        "nano": "nano",
+        "mini": "mini",
+        "fast": "mini",
+        "5.1": "5.1",
+        "5": "5.1",
+        "full": "5.1",
+    }
+    mapped = alias_map.get(normalized)
+    if mapped:
+        return mapped
     for key in _ASSISTANT_MODEL_CHOICES:
         if normalized == key.replace(" ", "").lower():
             return key
@@ -130,10 +135,7 @@ def _prompt_for_reasoning_effort(
         sys.stderr.write("\nNo selection provided; keeping the default.\n")
         return None
 
-    if not choice:
-        return normalized_default
-
-    normalized_choice = _normalize_reasoning_effort(choice.lower(), allowed_choices)
+    normalized_choice = _normalize_reasoning_effort(choice or normalized_default, allowed_choices)
     if normalized_choice is None:
         sys.stderr.write("Unrecognized choice; defaulting to low.\n")
         normalized_choice = "low"
@@ -210,9 +212,9 @@ def _prompt_for_assistant_model(default_model: str) -> str | None:
         return None
 
     if not choice:
-        return str(_ASSISTANT_MODEL_CHOICES[default_key]["value"])
+        choice = default_key
 
-    choice_key = _coerce_assistant_model_key(choice.lower())
+    choice_key = _coerce_assistant_model_key(choice)
     if choice_key is None:
         lowered = choice.strip().lower()
         for key, data in _ASSISTANT_MODEL_CHOICES.items():

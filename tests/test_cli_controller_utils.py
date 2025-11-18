@@ -12,4 +12,4 @@ def test_calculate_rms_returns_expected_value():
     samples = np.array([0, 32767, -32768], dtype=np.int16).tobytes()
     rms = controller.calculate_rms(samples)
 
-    assert 26000 < rms < 28000  # approximate RMS for the provided samples
+    assert 26000 < rms < 28000  # noqa: PLR2004  # approximate RMS for the provided samples
