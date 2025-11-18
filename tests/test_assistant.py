@@ -15,6 +15,7 @@ from pi_assistant.assistant import (
     LLMResponder,
     TurnTranscriptAggregator,
 )
+from pi_assistant.config import ASSISTANT_REASONING_EFFORT
 
 
 class TurnTranscriptAggregatorTest(unittest.IsolatedAsyncioTestCase):
@@ -225,6 +226,52 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
         sent = client.calls[0]
         self.assertEqual(sent["input"][0]["content"][0]["type"], "input_text")
         self.assertIn("tools", sent)
+        self.assertEqual(sent.get("reasoning"), {"effort": ASSISTANT_REASONING_EFFORT})
+
+    async def test_includes_reasoning_effort_when_configured(self):
+        payload = {"output": []}
+        client = FakeOpenAIClient(payload)
+        responder = LLMResponder(
+            client=cast(AsyncOpenAI, client),
+            enable_web_search=False,
+            reasoning_effort="medium",
+        )  # pyright: ignore[reportArgumentType]
+
+        await responder.generate_reply("Hi")
+
+        self.assertEqual(len(client.calls), 1)
+        sent = client.calls[0]
+        self.assertEqual(sent.get("reasoning"), {"effort": "medium"})
+
+    async def test_ignores_invalid_reasoning_effort_values(self):
+        payload = {"output": []}
+        client = FakeOpenAIClient(payload)
+        responder = LLMResponder(
+            client=cast(AsyncOpenAI, client),
+            enable_web_search=False,
+            reasoning_effort="totally-invalid",
+        )  # pyright: ignore[reportArgumentType]
+
+        await responder.generate_reply("Hi")
+
+        self.assertEqual(len(client.calls), 1)
+        sent = client.calls[0]
+        self.assertNotIn("reasoning", sent)
+
+    async def test_minimal_reasoning_with_web_search_upgrades_to_low(self):
+        payload = {"output": []}
+        client = FakeOpenAIClient(payload)
+        responder = LLMResponder(
+            client=cast(AsyncOpenAI, client),
+            enable_web_search=True,
+            reasoning_effort="minimal",
+        )  # pyright: ignore[reportArgumentType]
+
+        await responder.generate_reply("Hi")
+
+        self.assertEqual(len(client.calls), 1)
+        sent = client.calls[0]
+        self.assertEqual(sent.get("reasoning"), {"effort": "low"})
 
     async def test_returns_none_for_blank_transcript(self):
         client = FakeOpenAIClient({"output": []})

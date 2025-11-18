@@ -1,4 +1,5 @@
 import importlib
+import os
 import sys
 from types import ModuleType
 from typing import Any, Tuple
@@ -24,3 +25,6 @@ try:
     importlib.import_module("audioop")
 except ModuleNotFoundError:
     sys.modules["audioop"] = _AudioOpStub()
+
+os.environ.setdefault("OPENAI_API_KEY", "test-key")
+os.environ.setdefault("LOCATION_NAME", "Test City")
