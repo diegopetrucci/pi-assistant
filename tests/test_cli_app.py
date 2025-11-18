@@ -661,7 +661,6 @@ def test_main_passes_simulate_query_flag(monkeypatch: pytest.MonkeyPatch) -> Non
         calls["simulate_query"] = simulate_query
         calls["reasoning_effort"] = reasoning_effort
         calls["assistant_model"] = assistant_model
-        calls["reasoning_effort"] = reasoning_effort
 
     monkeypatch.setattr("pi_assistant.cli.app.run_transcription", fake_run_transcription)
     monkeypatch.setattr("pi_assistant.cli.app.set_verbose_logging", lambda verbose: None)
