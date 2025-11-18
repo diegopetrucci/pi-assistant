@@ -20,6 +20,7 @@ Target Python 3.9+ and follow Ruff’s formatter—never hand-tune spacing after
 * Name tests `test_<feature>.py` and organize helper coroutines inside `tests/utils.py` if you need reuse.
 * Aim for coverage above 85% in critical modules (`audio`, `wake_word`, `network`) and gate new features on at least one positive and one failure-path assertion.
 * Always write unit tests to confirm new logic, or changes to existing one
+* When writing new code, never add annotations to silence `pyright`. All issues raised should be dealt with
 
 ## Commit & Pull Request Guidelines
 Write commits in the form `component: one-line summary` (e.g., `audio: harden portaudio fallback`) and keep bodies under 72 columns with “why” over “what”. Each PR should describe the user-facing behavior, link relevant issues, and include verification steps (`uv run pi-assistant`, `uv run pytest`). Attach screenshots or logs when the change impacts CLI output, note config additions in `README.md`, and seek a second review for hardware-touching changes.
