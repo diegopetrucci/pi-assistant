@@ -117,6 +117,7 @@ class WakeWordEngine:
         threshold: float = 0.5,
         consecutive_required: int = 2,
     ):
+        factory = _require_model_factory()
         self.threshold = threshold
         self.consecutive_required = max(1, consecutive_required)
         self._consecutive_hits = 0
@@ -126,7 +127,7 @@ class WakeWordEngine:
             fallback_model_path,
             melspec_model_path=melspec_model_path,
             embedding_model_path=embedding_model_path,
-            factory=_require_model_factory(),
+            factory=factory,
         )
         self._model_label = next(iter(self._model.models.keys()))
 

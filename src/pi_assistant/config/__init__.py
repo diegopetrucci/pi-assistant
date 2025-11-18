@@ -483,8 +483,6 @@ WAKE_WORD_TARGET_SAMPLE_RATE = _env_int("WAKE_WORD_TARGET_SAMPLE_RATE", _WAKE["t
 WAKE_WORD_SCORE_THRESHOLD = _env_float("WAKE_WORD_SCORE_THRESHOLD", _WAKE["score_threshold"])
 WAKE_WORD_CONSECUTIVE_FRAMES = _env_int("WAKE_WORD_CONSECUTIVE_FRAMES", _WAKE["consecutive_frames"])
 
-FORCE_ALWAYS_ON = _env_bool("FORCE_ALWAYS_ON", default=False)
-
 # Validation
 if not OPENAI_API_KEY:
     raise ValueError(
