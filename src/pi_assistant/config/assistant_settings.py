@@ -66,7 +66,6 @@ _REASONING_EFFORT_DESCRIPTIONS: dict[str, str] = {
 _REASONING_EFFORT_ALIASES: dict[str, str] = {
     "fast": "none",
     "zero": "none",
-    "minimal": "low",
     "default": "low",
     "balanced": "low",
     "med": "medium",
