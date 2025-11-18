@@ -67,14 +67,16 @@ def test_prompt_for_reasoning_effort_accepts_default_on_enter(monkeypatch: pytes
     assert selected == "low"
 
 
-def test_prompt_for_reasoning_effort_invalid_choice_defaults_low(monkeypatch: pytest.MonkeyPatch):
+def test_prompt_for_reasoning_effort_invalid_choice_defaults_to_normalized_default(
+    monkeypatch: pytest.MonkeyPatch,
+):
     _patch_tty_streams(monkeypatch, assistant_settings)
     monkeypatch.setattr("builtins.input", _FakeInput(["extreme"]))
 
     allowed = ("minimal", "low", "high")
     selected = assistant_settings._prompt_for_reasoning_effort("minimal", allowed)
 
-    assert selected == "low"
+    assert selected == "minimal"
 
 
 def test_prompt_for_location_name_requires_input(monkeypatch: pytest.MonkeyPatch):
