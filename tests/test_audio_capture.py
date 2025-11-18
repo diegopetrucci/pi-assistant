@@ -102,7 +102,6 @@ def test_enqueue_audio_bytes_warns_when_queue_full(monkeypatch):
             return b""
 
         def put_nowait(self, item: bytes):
-            del item
             raise asyncio.QueueFull
 
     capture.audio_queue = FullQueue()
@@ -158,7 +157,7 @@ def test_callback_schedules_enqueue_helper():
             return b""
 
         def put_nowait(self, item: bytes):
-            del item
+            return None
 
     capture.audio_queue = DummyQueue()
     audio_chunk = np.arange(4, dtype=np.int16)
@@ -182,7 +181,6 @@ def test_callback_logs_status(monkeypatch):
             return b""
 
         def put_nowait(self, item: bytes):
-            del item
             return None
 
     capture.audio_queue = Queue()
