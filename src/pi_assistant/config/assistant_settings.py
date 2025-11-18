@@ -125,12 +125,15 @@ def _prompt_for_reasoning_effort(
     options = "/".join(allowed_choices)
     prompt = f"Reasoning effort [{options}] (default {normalized_default}): "
     try:
-        choice = input(prompt).strip().lower()
+        choice = input(prompt).strip()
     except (EOFError, KeyboardInterrupt):  # pragma: no cover - interactive prompt
         sys.stderr.write("\nNo selection provided; keeping the default.\n")
         return None
 
-    normalized_choice = _normalize_reasoning_effort(choice or normalized_default, allowed_choices)
+    if not choice:
+        return normalized_default
+
+    normalized_choice = _normalize_reasoning_effort(choice.lower(), allowed_choices)
     if normalized_choice is None:
         sys.stderr.write("Unrecognized choice; defaulting to low.\n")
         normalized_choice = "low"
@@ -201,15 +204,15 @@ def _prompt_for_assistant_model(default_model: str) -> str | None:
         f"Assistant model [{'/'.join(_ASSISTANT_MODEL_CHOICES.keys())}] (default {default_key}): "
     )
     try:
-        choice = input(prompt).strip().lower()
+        choice = input(prompt).strip()
     except (EOFError, KeyboardInterrupt):
         sys.stderr.write("\nNo selection provided; keeping the default.\n")
         return None
 
     if not choice:
-        choice = default_key
+        return str(_ASSISTANT_MODEL_CHOICES[default_key]["value"])
 
-    choice_key = _coerce_assistant_model_key(choice)
+    choice_key = _coerce_assistant_model_key(choice.lower())
     if choice_key is None:
         lowered = choice.strip().lower()
         for key, data in _ASSISTANT_MODEL_CHOICES.items():

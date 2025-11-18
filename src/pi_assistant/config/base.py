@@ -229,15 +229,17 @@ def _prompt_for_location_name() -> str | None:
         "\nLOCATION_NAME is missing. Provide a city or region so the assistant knows "
         "where this Pi is located.\n"
     )
-    try:
-        location = input("Device location (e.g., London, UK): ").strip()
-    except (EOFError, KeyboardInterrupt):  # pragma: no cover - interactive prompt
-        sys.stderr.write("\nNo location provided; leaving LOCATION_NAME empty.\n")
-        return None
+    while True:
+        try:
+            location = input("Device location (e.g., London, UK): ").strip()
+        except (EOFError, KeyboardInterrupt):  # pragma: no cover - interactive prompt
+            sys.stderr.write("\nNo location provided; leaving LOCATION_NAME empty.\n")
+            return None
 
-    if not location:
-        sys.stderr.write("Empty location provided; leaving LOCATION_NAME empty.\n")
-        return None
+        if location:
+            break
+
+        sys.stderr.write("LOCATION_NAME is required. Enter a city or region (Ctrl+C to cancel).\n")
 
     _persist_env_value("LOCATION_NAME", location)
     os.environ["LOCATION_NAME"] = location

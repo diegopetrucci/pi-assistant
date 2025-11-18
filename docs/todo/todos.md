@@ -2,6 +2,7 @@
 
 Required:
 - [ ] update the readme, agents, etc
+- [ ] is there a way to automatically get the location
 - [ ] the readme should be a readme not a dump
 - [ ] add all cli commannds for the project in docs/cli.md
 - [ ] clean up /docs
