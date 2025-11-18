@@ -1,0 +1,30 @@
+- `gh auth` – authenticate CLI and git
+- `gh browse` – open repos/issues/PRs in browser
+- `gh codespace` – manage and connect to Codespaces
+- `gh gist` – create or edit gists
+- `gh issue` – work with issues
+- `gh org` – administer organizations
+- `gh pr` – manage pull requests
+- `gh project` – interact with GitHub Projects
+- `gh release` – create or edit releases
+- `gh repo` – clone and manage repositories
+- `gh cache` – handle Actions caches
+- `gh run` – inspect workflow runs
+- `gh workflow` – manage workflow metadata
+- `gh co` – alias for `gh pr checkout`
+- `gh agent-task` – operate on agent tasks
+- `gh alias` – define custom shortcuts
+- `gh api` – call the GitHub API
+- `gh attestation` – manage artifact attestations
+- `gh completion` – emit shell completion scripts
+- `gh config` – view or edit CLI config
+- `gh extension` – install or update extensions
+- `gh gpg-key` – manage account GPG keys
+- `gh label` – list or edit labels
+- `gh preview` – run feature previews
+- `gh ruleset` – inspect repository rulesets
+- `gh search` – search repos/issues/PRs
+- `gh secret` – manage secrets
+- `gh ssh-key` – manage SSH keys
+- `gh status` – show notifications/issues summary
+- `gh variable` – manage Actions variables

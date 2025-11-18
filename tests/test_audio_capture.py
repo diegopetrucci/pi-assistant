@@ -94,23 +94,82 @@ def test_first_available_input_device_raises_when_none(monkeypatch):
         capture._first_available_input_device()
 
 
-def test_callback_warns_when_queue_full(monkeypatch):
+def test_enqueue_audio_bytes_warns_when_queue_full(monkeypatch):
     capture = AudioCapture()
-    capture.loop = type("Loop", (), {"call_soon_threadsafe": lambda self, cb, *args: cb(*args)})()
 
     class FullQueue:
-        def put_nowait(self, _):
+        async def get(self):
+            return b""
+
+        def put_nowait(self, item: bytes):
             raise asyncio.QueueFull
 
-    capture.audio_queue = FullQueue()  # pyright: ignore[reportAttributeAccessIssue]
-    audio_chunk = np.zeros((4,), dtype=np.int16)
+    capture.audio_queue = FullQueue()
 
     stderr = io.StringIO()
     monkeypatch.setattr(capture_module.sys, "stderr", stderr)
 
-    capture.callback(audio_chunk, frames=4, time_info=None, status=None)
+    capture._enqueue_audio_bytes(b"1234")
 
     assert "Audio queue full" in stderr.getvalue()
+
+
+def test_enqueue_audio_bytes_enqueues_when_room(monkeypatch):
+    capture = AudioCapture()
+
+    class RecordingQueue:
+        def __init__(self):
+            self.items = []
+
+        async def get(self):
+            return self.items.pop(0)
+
+        def put_nowait(self, item: bytes):
+            self.items.append(item)
+
+    queue = RecordingQueue()
+    capture.audio_queue = queue
+
+    stderr = io.StringIO()
+    monkeypatch.setattr(capture_module.sys, "stderr", stderr)
+
+    payload = b"abcd"
+    capture._enqueue_audio_bytes(payload)
+
+    assert queue.items == [payload]
+    assert stderr.getvalue() == ""
+
+
+def test_callback_schedules_enqueue_helper():
+    capture = AudioCapture()
+
+    class RecordingLoop:
+        def __init__(self):
+            self.calls = []
+
+        def call_soon_threadsafe(self, callback, *args):
+            self.calls.append((callback, args))
+
+    capture.loop = RecordingLoop()
+
+    class DummyQueue:
+        async def get(self):
+            return b""
+
+        def put_nowait(self, item: bytes):
+            return None
+
+    capture.audio_queue = DummyQueue()
+    audio_chunk = np.arange(4, dtype=np.int16)
+    expected_bytes = audio_chunk.copy().tobytes()
+
+    capture.callback(audio_chunk, frames=4, time_info=None, status=None)
+
+    assert capture.loop.calls
+    callback, args = capture.loop.calls[0]
+    assert callback.__self__ is capture
+    assert callback.__func__ is AudioCapture._enqueue_audio_bytes
+    assert args == (expected_bytes,)
 
 
 def test_callback_logs_status(monkeypatch):
@@ -118,10 +177,13 @@ def test_callback_logs_status(monkeypatch):
     capture.loop = type("Loop", (), {"call_soon_threadsafe": lambda self, cb, *args: cb(*args)})()
 
     class Queue:
-        def put_nowait(self, _):
-            pass
+        async def get(self):
+            return b""
 
-    capture.audio_queue = Queue()  # pyright: ignore[reportAttributeAccessIssue]
+        def put_nowait(self, item: bytes):
+            return None
+
+    capture.audio_queue = Queue()
     audio_chunk = np.zeros((4,), dtype=np.int16)
 
     stderr = io.StringIO()

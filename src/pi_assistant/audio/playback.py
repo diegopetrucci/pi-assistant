@@ -9,6 +9,7 @@ import numpy as np
 
 from ._sounddevice import sounddevice as sd
 from .resampler import LinearResampler
+from .utils import device_info_dict
 
 
 class SpeechPlayer:
@@ -113,10 +114,14 @@ class SpeechPlayer:
         if not info:
             return None
         rate = info.get("default_samplerate")
-        try:
-            return int(rate)  # pyright: ignore[reportArgumentType]
-        except (TypeError, ValueError):
-            return None
+        if isinstance(rate, (int, float)):
+            return int(rate)
+        if isinstance(rate, str):
+            try:
+                return int(float(rate))
+            except (ValueError, TypeError):
+                return None
+        return None
 
     def _is_rate_supported(self, rate: int) -> bool:
         try:
@@ -125,13 +130,15 @@ class SpeechPlayer:
         except Exception:
             return False
 
-    def _output_device_info(self) -> dict:
+    def _output_device_info(self) -> dict[str, object]:
         try:
             if self._output_device is None:
-                return sd.query_devices(kind="output")  # pyright: ignore[reportReturnType]
-            return sd.query_devices(self._output_device)  # pyright: ignore[reportReturnType]
+                raw = sd.query_devices(kind="output")
+            else:
+                raw = sd.query_devices(self._output_device)
         except Exception:
             return {}
+        return device_info_dict(raw)
 
     def _log_playback_override(self, requested: int, selected: int) -> None:
         if self._override_logged:

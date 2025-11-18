@@ -7,6 +7,8 @@ import asyncio
 import base64
 import json
 import sys
+from collections.abc import AsyncIterator
+from typing import Any, Protocol, cast
 
 import websockets
 
@@ -18,14 +20,24 @@ from pi_assistant.config import (
 )
 
 
+class _WebSocketProtocol(Protocol):
+    """Subset of the runtime WebSocket API used by the client."""
+
+    def __aiter__(self) -> AsyncIterator[str]: ...
+
+    async def send(self, payload: str) -> None: ...
+
+    async def close(self) -> None: ...
+
+
 class WebSocketClient:
     """Handles WebSocket connection to OpenAI Realtime API"""
 
     def __init__(self):
-        self.websocket = None
+        self.websocket: _WebSocketProtocol | None = None
         self.connected = False
 
-    async def connect(self):
+    async def connect(self) -> None:
         """
         Establish WebSocket connection to OpenAI Realtime API using API key
         """
@@ -35,8 +47,11 @@ class WebSocketClient:
 
         try:
             # Connect with required headers
-            self.websocket = await websockets.connect(
-                OPENAI_REALTIME_ENDPOINT, additional_headers=WEBSOCKET_HEADERS
+            self.websocket = cast(
+                _WebSocketProtocol,
+                await websockets.connect(
+                    OPENAI_REALTIME_ENDPOINT, additional_headers=WEBSOCKET_HEADERS
+                ),
             )
             self.connected = True
             verbose_print("✓ Connected to OpenAI Realtime API")
@@ -55,7 +70,12 @@ class WebSocketClient:
             print(f"Error connecting to OpenAI: {e}", file=sys.stderr)
             raise
 
-    async def wait_for_session_created(self):
+    def _require_websocket(self) -> _WebSocketProtocol:
+        if not self.websocket:
+            raise RuntimeError("WebSocket not connected")
+        return self.websocket
+
+    async def wait_for_session_created(self) -> dict[str, Any]:
         """
         Wait for and capture the transcription_session.created event
 
@@ -63,10 +83,11 @@ class WebSocketClient:
             dict: The event from the server
         """
         verbose_print("Waiting for transcription_session.created event...")
+        websocket = self._require_websocket()
 
         try:
-            async for message in self.websocket:  # pyright: ignore[reportOptionalIterable]
-                event = json.loads(message)
+            async for message in websocket:
+                event = cast(dict[str, Any], json.loads(message))
                 event_type = event.get("type")
 
                 # Debug: print what we received
@@ -91,7 +112,9 @@ class WebSocketClient:
             print(f"Error waiting for session: {e}", file=sys.stderr)
             raise
 
-    async def send_session_config(self):
+        raise RuntimeError("Connection closed before receiving transcription_session.created")
+
+    async def send_session_config(self) -> None:
         """
         Send transcription session configuration to OpenAI
         Configures audio format, model, VAD, and noise reduction
@@ -108,22 +131,22 @@ class WebSocketClient:
         try:
             # Send the session update event with required session wrapper
             session_update = {"type": "transcription_session.update", "session": SESSION_CONFIG}
-            await self.websocket.send(json.dumps(session_update))  # pyright: ignore[reportOptionalMemberAccess]
+            websocket = self._require_websocket()
+            await websocket.send(json.dumps(session_update))
             verbose_print("✓ Session configuration sent")
 
         except Exception as e:
             print(f"Error sending session config: {e}", file=sys.stderr)
             raise
 
-    async def send_audio_chunk(self, audio_bytes):
+    async def send_audio_chunk(self, audio_bytes: bytes) -> None:
         """
         Send audio chunk to OpenAI Realtime API
 
         Args:
             audio_bytes: Raw PCM16 audio data as bytes
         """
-        if not self.connected or not self.websocket:
-            raise RuntimeError("WebSocket not connected")
+        websocket = self._require_websocket()
 
         # Encode audio to base64
         audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
@@ -132,22 +155,21 @@ class WebSocketClient:
         message = {"type": "input_audio_buffer.append", "audio": audio_base64}
 
         # Send to OpenAI
-        await self.websocket.send(json.dumps(message))
+        await websocket.send(json.dumps(message))
 
-    async def receive_events(self):
+    async def receive_events(self) -> AsyncIterator[dict[str, Any]]:
         """
         Continuously receive and handle events from OpenAI
 
         Yields:
             dict: Parsed JSON event from server
         """
-        if not self.connected or not self.websocket:
-            raise RuntimeError("WebSocket not connected")
+        websocket = self._require_websocket()
 
         try:
-            async for message in self.websocket:
+            async for message in websocket:
                 # Parse JSON event
-                event = json.loads(message)
+                event = cast(dict[str, Any], json.loads(message))
                 yield event
 
         except websockets.exceptions.ConnectionClosed:
@@ -158,9 +180,10 @@ class WebSocketClient:
             print(f"Error receiving events: {e}", file=sys.stderr)
             raise
 
-    async def close(self):
+    async def close(self) -> None:
         """Close WebSocket connection"""
         if self.websocket:
             await self.websocket.close()
+            self.websocket = None
             self.connected = False
             verbose_print("WebSocket connection closed")

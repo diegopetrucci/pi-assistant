@@ -1,11 +1,26 @@
 import importlib
 import sys
-import types
+from types import ModuleType
+from typing import Any, Tuple
+
+
+class _AudioOpStub(ModuleType):
+    def __init__(self) -> None:
+        super().__init__("audioop")
+
+    @staticmethod
+    def ratecv(
+        audio_bytes: bytes,
+        width: int,
+        channels: int,
+        src_rate: int,
+        dst_rate: int,
+        state: Any,
+    ) -> Tuple[bytes, Any]:
+        return audio_bytes, state
+
 
 try:
     importlib.import_module("audioop")
 except ModuleNotFoundError:
-    stub = types.SimpleNamespace(
-        ratecv=lambda audio_bytes, width, channels, src_rate, dst_rate, state: (audio_bytes, state),
-    )
-    sys.modules["audioop"] = stub  # pyright: ignore[reportArgumentType]
+    sys.modules["audioop"] = _AudioOpStub()
