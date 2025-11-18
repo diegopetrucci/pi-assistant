@@ -349,6 +349,21 @@ async def test_run_transcription_applies_reasoning_override(
 
 
 @pytest.mark.asyncio
+async def test_run_transcription_logs_reasoning_effort(monkeypatch: pytest.MonkeyPatch) -> None:
+    logs: list[str] = []
+
+    def fake_console_print(*args, **kwargs):
+        logs.append(" ".join(str(arg) for arg in args))
+
+    monkeypatch.setattr("pi_assistant.cli.app.console_print", fake_console_print)
+    _patch_run_transcription_deps(monkeypatch)
+
+    await run_transcription(assistant_audio_mode="responses", reasoning_effort="medium")
+
+    assert any("Reasoning effort: medium" in entry for entry in logs)
+
+
+@pytest.mark.asyncio
 async def test_run_transcription_honors_assistant_model_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

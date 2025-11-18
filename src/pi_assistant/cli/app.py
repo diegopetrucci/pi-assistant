@@ -149,6 +149,8 @@ async def run_transcription(
     enabled_tools = assistant.enabled_tools
     tools_summary = ", ".join(enabled_tools) if enabled_tools else "none"
     console_print(f"{ASSISTANT_LOG_LABEL} Tools enabled: {tools_summary}")
+    reasoning_summary = selected_reasoning_effort or "auto"
+    console_print(f"{ASSISTANT_LOG_LABEL} Reasoning effort: {reasoning_summary}")
     speech_player = SpeechPlayer(default_sample_rate=ASSISTANT_TTS_SAMPLE_RATE)
     if assistant.tts_enabled and CONFIRMATION_CUE_ENABLED and CONFIRMATION_CUE_TEXT:
         cue_task = asyncio.create_task(assistant.warm_phrase_audio(CONFIRMATION_CUE_TEXT))

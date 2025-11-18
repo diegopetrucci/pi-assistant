@@ -6,6 +6,8 @@ Required:
 - [ ] if i shut down the assistant the logs appear not to save, or at least the convo, even if i wait for it to finish
 - [ ] add a way to reset the initial choices / go through them again
 - [ ] fix hey x stop
+- [ ] revisit what to keep in non -v logs
+- [ ] revisit all logs
 - [ ] Drop "hey wakeword" from user message
 - [ ] Don't wait for sentence to finish, stream / transcribe in smaller chunks
 - [ ] Measure real reply latency for each assistant model and update onboarding copy
