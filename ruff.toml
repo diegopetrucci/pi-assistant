@@ -14,8 +14,12 @@ select = [
     "F",  # pyflakes
     "I",  # import sorting
     "B",  # bugbear
+    "PLR",  # pylint refactor checks
 ]
 ignore = []
+
+[lint.pylint]
+max-statements = 50
 
 [format]
 quote-style = "double"

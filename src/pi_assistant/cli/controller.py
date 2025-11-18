@@ -152,7 +152,7 @@ def schedule_turn_response(
     return task
 
 
-async def run_audio_controller(
+async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
     audio_capture,
     ws_client: WebSocketClient,
     *,

@@ -91,7 +91,9 @@ class TurnTranscriptAggregator:
                 self._seen_items.clear()
                 self._state = "idle"
                 snippet = (
-                    (transcript[:80] + "…") if transcript and len(transcript) > 80 else transcript
+                    (transcript[:80] + "…")  # noqa: PLR2004
+                    if transcript and len(transcript) > 80  # noqa: PLR2004
+                    else transcript
                 )
                 reason = (
                     "timeout"

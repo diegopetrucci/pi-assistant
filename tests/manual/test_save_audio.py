@@ -37,7 +37,7 @@ async def test_and_save_audio():
     try:
         # Capture for 5 seconds
         start_time = loop.time()
-        while loop.time() - start_time < 5.0:
+        while loop.time() - start_time < 5.0:  # noqa: PLR2004
             try:
                 audio_data = await asyncio.wait_for(capture.get_audio_chunk(), timeout=1.0)
                 audio_chunks.append(audio_data)
