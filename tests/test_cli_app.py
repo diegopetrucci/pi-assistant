@@ -112,6 +112,20 @@ def test_parse_args_reset_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     assert args.reset is True
 
 
+def test_parse_args_rejects_minimal_for_nano(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        _run_parse(
+            monkeypatch,
+            ["pi-assistant", "--assistant-model", "nano", "--reasoning-effort", "minimal"],
+        )
+
+    stderr = capsys.readouterr().err
+    assert "not supported" in stderr
+    assert "low, medium, high" in stderr
+
+
 class _StubAudioCapture:
     def __init__(self):
         self.loop = None

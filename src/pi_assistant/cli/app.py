@@ -53,6 +53,13 @@ def _assistant_model_help() -> str:
     return "\n".join(lines)
 
 
+def _assistant_model_label(model_id: str) -> str:
+    for key, data in ASSISTANT_MODEL_REGISTRY.items():
+        if data["id"] == model_id:
+            return f"{key} ({model_id})"
+    return model_id
+
+
 def _parse_assistant_model_arg(value: str) -> str:
     normalized = normalize_assistant_model_choice(value)
     if normalized:
@@ -324,7 +331,17 @@ def parse_args():
             "from .env and exit."
         ),
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.reasoning_effort:
+        selected_model = args.assistant_model or ASSISTANT_MODEL
+        allowed = reasoning_effort_choices_for_model(selected_model)
+        if args.reasoning_effort not in allowed:
+            label = _assistant_model_label(selected_model)
+            parser.error(
+                f"Reasoning effort '{args.reasoning_effort}' is not supported by {label}. "
+                f"Allowed values: {', '.join(allowed)}."
+            )
+    return args
 
 
 def main():
