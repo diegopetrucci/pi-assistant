@@ -16,12 +16,12 @@ def _normalize_wake_word_token(token: str) -> str:
 
 
 def _wake_word_label(config: dict[str, object]) -> str:
-    label = config.get("label")
-    if isinstance(label, str) and label.strip():
-        return label.strip()
     phrase = config.get("phrase")
     if isinstance(phrase, str) and phrase.strip():
         return phrase.strip()
+    label = config.get("label")
+    if isinstance(label, str) and label.strip():
+        return label.strip()
     aliases = config.get("aliases", [])
     if isinstance(aliases, list):
         for alias in aliases:
