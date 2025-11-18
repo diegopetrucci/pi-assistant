@@ -20,6 +20,7 @@ Real-time speech-to-text transcription system for Raspberry Pi 5 that streams au
 ### Hardware
 - Raspberry Pi 5
 - USB microphone (plug-and-play, ALSA compatible)
+- USB speaker
 
 ### Software
 - Python 3.9+
@@ -37,10 +38,6 @@ cd /path/to/pi-assistant
 ### 2. Install uv (one time per machine)
 
 ```bash
-# macOS (Homebrew)
-brew install uv
-
-# Or use the official installer on Linux/macOS
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
@@ -103,7 +100,7 @@ See `docs/cli.md` for the complete CLI command and configuration guide, includin
 uv run pi-assistant
 ```
 
-Say "Hey Jarvis stop" (or "Jarvis stop") while the assistant is talking to immediately halt playback, clear the pending turn, and return to listening mode. Follow the CLI guide for verbose logging, simulated queries, assistant model overrides, and diagnostics such as `test-audio` and `test-websocket`.
+Say "Hey Rhaspy stop" (or "Rhaspy stop") while the assistant is talking to immediately halt playback, clear the pending turn, and return to listening mode. Follow the CLI guide for verbose logging, simulated queries, assistant model overrides, and diagnostics such as `test-audio` and `test-websocket`.
 
 ### Assistant Models & Reasoning
 
@@ -235,7 +232,6 @@ pi-assistant/
 │   │   ├── test_audio_device.py
 │   │   └── test_save_audio.py
 │   └── test_wake_word.py
-├── start.py                 # Compatibility shim for legacy entry point
 ├── README.md
 ├── pyproject.toml
 ├── uv.lock / ruff.toml / docs/wake-word.md / todos.md
@@ -273,15 +269,6 @@ uv run pytest --cov
 ```
 
 Async tests rely on `pytest-asyncio`; no extra setup is needed when using `uv sync --group dev`.
-
-## Implementation Status
-
-- ✅ **Phase 1**: Project Setup - Virtual environment, dependencies, .env configuration
-- ✅ **Phase 2**: Configuration - Audio settings, API configuration, session config
-- ✅ **Phase 3**: Audio Capture - USB microphone input, sounddevice integration, async queue
-- ✅ **Phase 4**: WebSocket Client - API key auth, connection management, event handling
-- ✅ **Phase 5**: Integration - Audio capture bridged with WebSocket streaming
-- ⏳ **Phase 6**: Error Handling - Graceful shutdown and resiliency improvements
 
 ## Troubleshooting
 
