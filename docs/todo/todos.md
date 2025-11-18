@@ -2,6 +2,8 @@
 
 Required:
 - [ ] update the readme, agents, etc
+- [ ] --reset should not reset the api key
+- [ ] make the whole app runnable without uv
 - [ ] the readme should be a readme not a dump
 - [ ] clean up /docs
 - [ ] test if selecting via cli 5.1 super high reasoning actually selects it as it's very fast
