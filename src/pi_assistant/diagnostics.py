@@ -28,7 +28,7 @@ async def test_audio_capture():
     try:
         start_time = loop.time()
         print(f"Start time: {start_time}")
-        while loop.time() - start_time < 5.0:
+        while loop.time() - start_time < 5.0:  # noqa: PLR2004
             try:
                 audio_data = await asyncio.wait_for(capture.get_audio_chunk(), timeout=1.0)
                 chunk_count += 1
@@ -75,7 +75,7 @@ async def test_websocket_client(event_handler=None):
                 else:
                     print(event)
 
-                if event_count >= 10:
+                if event_count >= 10:  # noqa: PLR2004
                     break
 
         except asyncio.TimeoutError:

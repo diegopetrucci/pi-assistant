@@ -54,7 +54,7 @@ class AudioCapture:
         self.callback_count += 1
 
         # Debug: Print first few callbacks
-        if self.callback_count <= 3:
+        if self.callback_count <= 3:  # noqa: PLR2004
             verbose_print(
                 f"[DEBUG] Callback #{self.callback_count}: {len(indata)} frames", flush=True
             )
