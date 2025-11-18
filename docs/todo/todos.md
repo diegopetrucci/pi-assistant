@@ -3,7 +3,7 @@
 Required:
 - [ ] update the readme, agents, etc
 - [ ] the readme should be a readme not a dump
-- [ ] add all cli commannds for the project in docs/cli.md
+- [ ] add all cli commands for the project in docs/cli.md
 - [ ] --reset should not reset the api key
 - [ ] make the whole app runnable without uv
 - [ ] clean up /docs
