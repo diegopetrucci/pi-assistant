@@ -103,12 +103,6 @@ You can run commands directly through uv (no manual activation needed) or activa
 # Full transcription pipeline (default mode)
 uv run pi-assistant
 
-# Force streaming without the wake word (debug mode)
-uv run pi-assistant --force-always-on
-
-# Explicitly require the wake word when FORCE_ALWAYS_ON=1 is set in the env
-uv run pi-assistant --no-force-always-on
-
 # Force responses audio streaming (default)
 uv run pi-assistant --assistant-audio-mode responses
 
@@ -218,7 +212,7 @@ environment-variable overrides:
   `ASSISTANT_WEB_SEARCH_ENABLED`, `ASSISTANT_TTS_*`
 - Language locks: `TRANSCRIPTION_LANGUAGE` (forced speech-recognition hint) and
   `ASSISTANT_LANGUAGE` (LLM output language), both defaulting to `"en"`
-- Wake-word overrides (see below): `WAKE_WORD_*`, `FORCE_ALWAYS_ON`
+- Wake-word overrides (see below): `WAKE_WORD_*`
 - Verbose logging capture (enabled by default): `VERBOSE_LOG_CAPTURE_ENABLED`, `VERBOSE_LOG_DIRECTORY`
 
 If you want the assistant to know its real-world context, set
@@ -273,7 +267,6 @@ You can change it later by editing `.env` or exporting a new value before launch
   openWakeWord without its download helper.
 - `WAKE_WORD_SCORE_THRESHOLD` / `WAKE_WORD_CONSECUTIVE_FRAMES`: Confidence guard (default: score ≥ 0.5 for two consecutive frames).
 - `PREROLL_DURATION_SECONDS`: Length of buffered audio (default: 1 second) that is prepended to the first streamed chunk after activation.
-- `FORCE_ALWAYS_ON`: Set to `1` (or use `--force-always-on`) to bypass the wake word during troubleshooting. Use `--no-force-always-on` to override the env var.
 - `WAKE_WORD_TARGET_SAMPLE_RATE`: Leave at 16 kHz unless you re-train a model that expects a different input rate.
 
 Every detection above the configured threshold is logged with the `[WAKE]` label, and state transitions are reported with `[STATE]`. When the wake word fires, the controller flushes the pre-roll buffer plus live audio so the transcript includes the first spoken words after the selected phrase.

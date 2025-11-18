@@ -45,30 +45,8 @@ def test_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert args.mode == "run"
     assert args.verbose is False
-    assert args.force_always_on is None
     assert args.assistant_audio_mode is None
     assert args.simulate_query is None
-
-
-def test_parse_args_with_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
-    args = _run_parse(
-        monkeypatch,
-        ["pi-assistant", "run", "--force-always-on", "--verbose"],
-    )
-
-    assert args.mode == "run"
-    assert args.verbose is True
-    assert args.force_always_on is True
-
-
-def test_parse_args_with_no_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
-    args = _run_parse(
-        monkeypatch,
-        ["pi-assistant", "--no-force-always-on"],
-    )
-
-    assert args.mode == "run"
-    assert args.force_always_on is False
 
 
 def test_parse_args_invalid_mode(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -76,19 +54,10 @@ def test_parse_args_invalid_mode(monkeypatch: pytest.MonkeyPatch) -> None:
         _run_parse(monkeypatch, ["pi-assistant", "invalid-mode"])
 
 
-def test_parse_args_conflicting_force_flags(monkeypatch: pytest.MonkeyPatch) -> None:
-    with pytest.raises(SystemExit):
-        _run_parse(
-            monkeypatch,
-            ["pi-assistant", "--force-always-on", "--no-force-always-on"],
-        )
-
-
 def test_parse_args_test_audio_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     args = _run_parse(monkeypatch, ["pi-assistant", "test-audio"])
 
     assert args.mode == "test-audio"
-    assert args.force_always_on is None
 
 
 def test_parse_args_test_websocket_mode(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -263,16 +232,13 @@ def _patch_run_transcription_deps(
 
 @pytest.mark.asyncio
 async def test_run_transcription_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    run_audio_calls = {}
-
     async def fake_run_audio_controller(*args, **kwargs):
-        run_audio_calls["force_always_on"] = kwargs["force_always_on"]
         kwargs["stop_signal"].set()
         kwargs["speech_stopped_signal"].set()
 
     deps = _patch_run_transcription_deps(monkeypatch, run_audio_fn=fake_run_audio_controller)
 
-    await run_transcription(force_always_on=True, assistant_audio_mode="responses")
+    await run_transcription(assistant_audio_mode="responses")
 
     audio = cast(_StubAudioCapture, deps["audio_capture"])
     ws_client = cast(_StubWebSocketClient, deps["ws_client"])
@@ -282,7 +248,6 @@ async def test_run_transcription_success(monkeypatch: pytest.MonkeyPatch) -> Non
     assert audio.started and audio.loop is asyncio.get_running_loop()
     assert audio.stopped
     assert ws_client.connected and ws_client.closed
-    assert run_audio_calls["force_always_on"] is True
     assert assistant.verify_calls == 1
     assert assistant_kwargs is not None
     use_responses_audio = assistant_kwargs.get("use_responses_audio")
@@ -299,7 +264,7 @@ async def test_run_transcription_keyboard_interrupt(monkeypatch: pytest.MonkeyPa
     ws_client = _InterruptWebSocket()
     deps = _patch_run_transcription_deps(monkeypatch, ws_client=ws_client)
 
-    await run_transcription(force_always_on=False, assistant_audio_mode="responses")
+    await run_transcription(assistant_audio_mode="responses")
 
     audio_capture = cast(_StubAudioCapture, deps["audio_capture"])
     ws_client = cast(_StubWebSocketClient, deps["ws_client"])
@@ -329,7 +294,7 @@ async def test_run_transcription_local_tts_mode_skips_probe(
 ) -> None:
     deps = _patch_run_transcription_deps(monkeypatch)
 
-    await run_transcription(force_always_on=False, assistant_audio_mode="local-tts")
+    await run_transcription(assistant_audio_mode="local-tts")
 
     assistant = cast(_StubAssistant, deps["assistant"])
     assistant_kwargs = cast(Optional[dict[str, object]], deps["assistant_kwargs"])
@@ -345,7 +310,6 @@ async def test_run_transcription_simulated_query(monkeypatch: pytest.MonkeyPatch
     deps = _patch_run_transcription_deps(monkeypatch)
 
     await run_transcription(
-        force_always_on=False,
         assistant_audio_mode="responses",
         simulate_query="Testing 123",
     )
@@ -354,23 +318,20 @@ async def test_run_transcription_simulated_query(monkeypatch: pytest.MonkeyPatch
     assert assistant.generate_calls == ["Testing 123"]
 
 
-def test_main_run_mode_uses_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_run_mode_invokes_transcription(monkeypatch: pytest.MonkeyPatch) -> None:
     args = types.SimpleNamespace(
         mode="run",
         verbose=True,
-        force_always_on=None,
         assistant_audio_mode=None,
         simulate_query=None,
     )
     monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
-    monkeypatch.setattr("pi_assistant.cli.app.FORCE_ALWAYS_ON", True, raising=False)
 
     calls: dict[str, object] = {}
 
     async def fake_run_transcription(
-        *, force_always_on: bool, assistant_audio_mode: Optional[str], simulate_query: Optional[str]
+        *, assistant_audio_mode: Optional[str], simulate_query: Optional[str]
     ):
-        calls["force"] = force_always_on
         calls["audio_mode"] = assistant_audio_mode
         calls["simulate_query"] = simulate_query
 
@@ -383,39 +344,7 @@ def test_main_run_mode_uses_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
 
     main()
 
-    assert calls["force"] is True
     assert calls["verbose"] is True
-    assert calls["audio_mode"] is None
-    assert calls["simulate_query"] is None
-
-
-def test_main_prefers_cli_force_flag(monkeypatch: pytest.MonkeyPatch) -> None:
-    args = types.SimpleNamespace(
-        mode="run",
-        verbose=False,
-        force_always_on=False,
-        assistant_audio_mode=None,
-        simulate_query=None,
-    )
-    monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
-    monkeypatch.setattr("pi_assistant.cli.app.FORCE_ALWAYS_ON", True, raising=False)
-
-    calls: dict[str, object] = {}
-
-    async def fake_run_transcription(
-        *, force_always_on: bool, assistant_audio_mode: Optional[str], simulate_query: Optional[str]
-    ):
-        calls["force"] = force_always_on
-        calls["audio_mode"] = assistant_audio_mode
-        calls["simulate_query"] = simulate_query
-
-    monkeypatch.setattr("pi_assistant.cli.app.run_transcription", fake_run_transcription)
-    monkeypatch.setattr("pi_assistant.cli.app.set_verbose_logging", lambda verbose: None)
-    monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
-
-    main()
-
-    assert calls["force"] is False
     assert calls["audio_mode"] is None
     assert calls["simulate_query"] is None
 
@@ -424,7 +353,6 @@ def test_main_runs_audio_diagnostics(monkeypatch: pytest.MonkeyPatch) -> None:
     args = types.SimpleNamespace(
         mode="test-audio",
         verbose=False,
-        force_always_on=None,
         assistant_audio_mode=None,
         simulate_query=None,
     )
@@ -448,7 +376,6 @@ def test_main_runs_websocket_diagnostics(monkeypatch: pytest.MonkeyPatch) -> Non
     args = types.SimpleNamespace(
         mode="test-websocket",
         verbose=False,
-        force_always_on=None,
         assistant_audio_mode=None,
         simulate_query=None,
     )
@@ -474,7 +401,6 @@ def test_main_exits_on_unhandled_exception(monkeypatch: pytest.MonkeyPatch) -> N
     args = types.SimpleNamespace(
         mode="run",
         verbose=False,
-        force_always_on=None,
         assistant_audio_mode=None,
         simulate_query=None,
     )
@@ -482,7 +408,7 @@ def test_main_exits_on_unhandled_exception(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
 
     async def fake_run_transcription(
-        *, force_always_on: bool, assistant_audio_mode: Optional[str], simulate_query: Optional[str]
+        *, assistant_audio_mode: Optional[str], simulate_query: Optional[str]
     ):
         raise RuntimeError("boom")
 
@@ -508,20 +434,17 @@ def test_main_passes_audio_mode_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     args = types.SimpleNamespace(
         mode="run",
         verbose=False,
-        force_always_on=None,
         assistant_audio_mode="local-tts",
         simulate_query=None,
     )
     monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
-    monkeypatch.setattr("pi_assistant.cli.app.FORCE_ALWAYS_ON", False, raising=False)
     monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
 
     calls: dict[str, object] = {}
 
     async def fake_run_transcription(
-        *, force_always_on: bool, assistant_audio_mode: Optional[str], simulate_query: Optional[str]
+        *, assistant_audio_mode: Optional[str], simulate_query: Optional[str]
     ):
-        calls["force"] = force_always_on
         calls["audio_mode"] = assistant_audio_mode
         calls["simulate_query"] = simulate_query
 
@@ -530,7 +453,6 @@ def test_main_passes_audio_mode_flag(monkeypatch: pytest.MonkeyPatch) -> None:
 
     main()
 
-    assert calls["force"] is False
     assert calls["audio_mode"] == "local-tts"
     assert calls["simulate_query"] is None
 
@@ -539,20 +461,17 @@ def test_main_passes_simulate_query_flag(monkeypatch: pytest.MonkeyPatch) -> Non
     args = types.SimpleNamespace(
         mode="run",
         verbose=False,
-        force_always_on=None,
         assistant_audio_mode=None,
         simulate_query="Hello!",
     )
     monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
-    monkeypatch.setattr("pi_assistant.cli.app.FORCE_ALWAYS_ON", False, raising=False)
     monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
 
     calls: dict[str, object] = {}
 
     async def fake_run_transcription(
-        *, force_always_on: bool, assistant_audio_mode: Optional[str], simulate_query: Optional[str]
+        *, assistant_audio_mode: Optional[str], simulate_query: Optional[str]
     ):
-        calls["force"] = force_always_on
         calls["audio_mode"] = assistant_audio_mode
         calls["simulate_query"] = simulate_query
 
@@ -561,6 +480,5 @@ def test_main_passes_simulate_query_flag(monkeypatch: pytest.MonkeyPatch) -> Non
 
     main()
 
-    assert calls["force"] is False
     assert calls["audio_mode"] is None
     assert calls["simulate_query"] == "Hello!"

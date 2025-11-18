@@ -50,7 +50,7 @@ async def _shutdown_task(task):
 
 
 @pytest.mark.asyncio
-async def test_run_audio_controller_force_always_on_handles_stop(monkeypatch):
+async def test_run_audio_controller_handles_manual_stop(monkeypatch):
     capture = FakeCapture()
     capture.queue.put_nowait(np.zeros(32, dtype=np.int16).tobytes())
     capture.queue.put_nowait(np.ones(32, dtype=np.int16).tobytes())
@@ -61,19 +61,20 @@ async def test_run_audio_controller_force_always_on_handles_stop(monkeypatch):
     stop_signal = asyncio.Event()
     speech_stopped_signal = asyncio.Event()
 
-    transitions = []
+    class DummyWakeWordEngine:
+        def __init__(self, *args, **kwargs):
+            self.calls = 0
 
-    def fake_log(previous, current, reason):  # pyright: ignore[reportRedeclaration]
-        transitions.append(reason)
+        def process_chunk(self, chunk):
+            self.calls += 1
+            triggered = self.calls == 1
+            score = 0.9 if triggered else 0.1
+            return WakeWordDetection(score=score, triggered=triggered)
 
-    monkeypatch.setattr(controller, "log_state_transition", fake_log)
+        def reset_detection(self):
+            return None
 
-    transitions = []
-
-    def fake_log(previous, current, reason):
-        transitions.append(reason)
-
-    monkeypatch.setattr(controller, "log_state_transition", fake_log)
+    monkeypatch.setattr(controller, "WakeWordEngine", DummyWakeWordEngine)
 
     scheduled = []
 
@@ -87,7 +88,6 @@ async def test_run_audio_controller_force_always_on_handles_stop(monkeypatch):
         controller.run_audio_controller(
             capture,
             ws_client,  # pyright: ignore[reportArgumentType]
-            force_always_on=True,
             transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
             assistant=assistant,  # pyright: ignore[reportArgumentType]
             speech_player=speech_player,  # pyright: ignore[reportArgumentType]
@@ -199,7 +199,6 @@ async def test_run_audio_controller_streams_after_wake_word_and_auto_stop(monkey
         controller.run_audio_controller(
             capture,
             ws_client,  # pyright: ignore[reportArgumentType]
-            force_always_on=False,
             transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
             assistant=assistant,  # pyright: ignore[reportArgumentType]
             speech_player=speech_player,  # pyright: ignore[reportArgumentType]
@@ -307,7 +306,6 @@ async def test_run_audio_controller_handles_server_stop_signal(monkeypatch):
         controller.run_audio_controller(
             capture,
             ws_client,  # pyright: ignore[reportArgumentType]
-            force_always_on=False,
             transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
             assistant=assistant,  # pyright: ignore[reportArgumentType]
             speech_player=speech_player,  # pyright: ignore[reportArgumentType]
@@ -404,7 +402,6 @@ async def test_run_audio_controller_cancellation_cleans_response_tasks(monkeypat
         controller.run_audio_controller(
             capture,
             ws_client,  # pyright: ignore[reportArgumentType]
-            force_always_on=False,
             transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
             assistant=assistant,  # pyright: ignore[reportArgumentType]
             speech_player=speech_player,  # pyright: ignore[reportArgumentType]
@@ -510,7 +507,6 @@ async def test_run_audio_controller_manual_stop_clears_buffers(monkeypatch):
         controller.run_audio_controller(
             capture,
             ws_client,  # pyright: ignore[reportArgumentType]
-            force_always_on=False,
             transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
             assistant=assistant,  # pyright: ignore[reportArgumentType]
             speech_player=speech_player,  # pyright: ignore[reportArgumentType]
@@ -612,7 +608,6 @@ async def test_run_audio_controller_auto_stop_silence_transition(monkeypatch):
         controller.run_audio_controller(
             capture,
             ws_client,  # pyright: ignore[reportArgumentType]
-            force_always_on=False,
             transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
             assistant=assistant,  # pyright: ignore[reportArgumentType]
             speech_player=speech_player,  # pyright: ignore[reportArgumentType]
@@ -695,7 +690,6 @@ async def test_run_audio_controller_resets_wake_engine_on_stream_start(monkeypat
         controller.run_audio_controller(
             capture,
             ws_client,  # pyright: ignore[reportArgumentType]
-            force_always_on=False,
             transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
             assistant=assistant,  # pyright: ignore[reportArgumentType]
             speech_player=speech_player,  # pyright: ignore[reportArgumentType]
@@ -813,7 +807,6 @@ async def test_run_audio_controller_retrigger_delays_auto_stop(monkeypatch):
         controller.run_audio_controller(
             capture,
             ws_client,  # pyright: ignore[reportArgumentType]
-            force_always_on=False,
             transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
             assistant=assistant,  # pyright: ignore[reportArgumentType]
             speech_player=speech_player,  # pyright: ignore[reportArgumentType]
@@ -934,7 +927,6 @@ async def test_auto_stop_wait_allows_new_wake(monkeypatch):
         controller.run_audio_controller(
             capture,
             ws_client,  # pyright: ignore[reportArgumentType]
-            force_always_on=False,
             transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
             assistant=assistant,  # pyright: ignore[reportArgumentType]
             speech_player=speech_player,  # pyright: ignore[reportArgumentType]
@@ -1046,7 +1038,6 @@ async def test_wake_phrase_override_cancels_pending_responses(monkeypatch):
         controller.run_audio_controller(
             capture,
             ws_client,  # pyright: ignore[reportArgumentType]
-            force_always_on=False,
             transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
             assistant=assistant,  # pyright: ignore[reportArgumentType]
             speech_player=speech_player,  # pyright: ignore[reportArgumentType]
@@ -1178,7 +1169,6 @@ async def test_wake_override_suppresses_stale_server_ack(monkeypatch):
         controller.run_audio_controller(
             capture,
             ws_client,  # pyright: ignore[reportArgumentType]
-            force_always_on=False,
             transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
             assistant=assistant,  # pyright: ignore[reportArgumentType]
             speech_player=speech_player,  # pyright: ignore[reportArgumentType]
@@ -1290,7 +1280,6 @@ async def test_run_audio_controller_stop_signal_during_preroll_flush(monkeypatch
         controller.run_audio_controller(
             capture,
             ws_client,  # pyright: ignore[reportArgumentType]
-            force_always_on=False,
             transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
             assistant=assistant,  # pyright: ignore[reportArgumentType]
             speech_player=speech_player,  # pyright: ignore[reportArgumentType]

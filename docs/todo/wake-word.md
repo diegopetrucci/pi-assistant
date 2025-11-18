@@ -11,8 +11,7 @@
 3. **Stream lifetime**: continue streaming until the current silence detector resets the turn.
 4. **Confidence guard**: use openWakeWord’s pre-trained models (defaulting to “Hey Rhasspy”) and treat a detection as valid when score ≥0.5 for two consecutive frames; expose both numbers in `config.py` for tuning.
 5. **Resource usage**: keep the capture pipeline at 24 kHz for OpenAI, branch a copy that is downsampled to 16 kHz for the wake-word detector so transcription quality stays untouched.
-6. **Fallback**: add a debug-only override (CLI flag or env var) that bypasses the wake word when troubleshooting.
-7. **Observability/tests**: log state transitions (listening → triggered → streaming → idle) and add an automated test that replays a “hey jarvis” WAV through the detector to prevent regressions.
+6. **Observability/tests**: log state transitions (listening → triggered → streaming → idle) and add an automated test that replays a “hey jarvis” WAV through the detector to prevent regressions.
 
 ## Architecture
 
@@ -38,10 +37,6 @@
   - No wake word retrigger occurs.
 - Transition back to `LISTENING` and resume wake-word-only mode.
 
-### Debug override
-- `--force-always-on` CLI flag or `FORCE_ALWAYS_ON=1` env var.
-- When enabled, bypass the wake-word gate but keep logging that the override is active for clarity.
-
 ### Observability & testing
 - Log every detection score ≥ threshold, accepted triggers, state transitions, and manual overrides.
 - Add `tests/test_wake_word.py` that streams a known WAV containing “hey jarvis” to the detector and asserts the trigger fires once.
@@ -56,11 +51,9 @@
    - Introduce an `AudioRouter` or extend `AudioCapture` consumer logic to keep a rolling buffer, flush on trigger, and queue audio for OpenAI once streaming.
 4. **State management**
    - Embed a small controller in `start.py` that coordinates the wake-word engine, buffering, and websocket streaming tasks.
-5. **Debug override & config**
-   - Add CLI/env plumbing plus new constants in `config.py` for thresholds and buffer durations.
-6. **Tests & scripts**
+5. **Tests & scripts**
    - Create a fixture WAV (or reuse `tests/manual/test_recording.wav` if it contains the phrase), build `tests/test_wake_word.py`, and document a manual verification script in `README.md`.
-7. **Docs & logging**
+6. **Docs & logging**
    - Update README usage section (wake-word mode, override flag) and ensure logs clearly indicate detection activity.
 
 ## Risks / Mitigations
