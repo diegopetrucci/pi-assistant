@@ -3,17 +3,17 @@
 [![CI](https://github.com/diegopetrucci/pi-assistant/actions/workflows/tests.yml/badge.svg)](https://github.com/diegopetrucci/pi-assistant/actions/workflows/tests.yml)
 [![Codecov](https://codecov.io/gh/diegopetrucci/pi-assistant/branch/main/graph/badge.svg)](https://codecov.io/gh/diegopetrucci/pi-assistant)
 
-Real-time speech-to-text transcription system for Raspberry Pi 5 that streams audio from a USB microphone to OpenAI's Realtime API and displays transcribed text in the terminal.
+Real-time speech-to-text transcription system for Raspberry Pi 5 that streams audio from a USB microphone to OpenAI's Realtime API, forwards finalized turns to a GPT-5-based assistant, and can speak or print the reply in the terminal.
 
 ## Features
 
-- Real-time audio capture from USB microphone
-- Streams to OpenAI Realtime API for transcription
-- Server-side Voice Activity Detection (VAD)
-- Optional auto-stop logging after sustained silence
-- Wake-word gated streaming with bundled openWakeWord models (Alexa, Hey Jarvis, Hey Rhasspy) plus pre-roll
-- Optimized for Raspberry Pi 5
-- 24kHz, mono, 16-bit PCM audio
+- Real-time audio capture from USB microphone with wake-word gating, pre-roll, and silence auto-stop.
+- Streams to OpenAI Realtime API for transcription, then routes each completed turn to GPT-5 Mini or GPT-5.1 with adjustable reasoning effort.
+- Assistant replies can stream directly from the Responses API or fall back to local Audio API TTS with automatic sample-rate selection.
+- Optional web-search tool calls, fixed system prompt, and location/language hints so the assistant stays on-topic.
+- Voice stop commands (e.g., "Hey Jarvis stop") interrupt playback and clear the pending turn.
+- Verbose logging captures wake-word scores, state transitions, and all console output in timestamped files under `logs/`.
+- Optimized for Raspberry Pi 5, 24 kHz mono PCM audio throughout the capture pipeline.
 
 ## Requirements
 
@@ -97,33 +97,40 @@ On first launch, if `.env` is missing or `OPENAI_API_KEY` is empty, the CLI prom
 
 ## Usage
 
-You can run commands directly through uv (no manual activation needed) or activate `.venv/` yourself.
-
 ```bash
-# Full transcription pipeline (wake-word gated; configure via WAKE_WORD_* env vars)
 uv run pi-assistant
-
-# Force responses audio streaming (default)
-uv run pi-assistant --assistant-audio-mode responses
-
-# Fetch text first, then synthesize locally via the Audio API
-uv run pi-assistant --assistant-audio-mode local-tts
-
-# Inject a default simulated question once at startup (for silent testing)
-uv run pi-assistant --simulate-query
-
-# Inject a custom simulated question
-uv run pi-assistant --simulate-query "Hey Rhasspy, what's the weather?"
-
-# Test WebSocket connection to OpenAI (requires API key)
-uv run pi-assistant test-websocket
-
-# Test audio capture from microphone (no API key needed)
-uv run pi-assistant test-audio
-
-# Legacy shim (still available if you prefer python scripts)
-uv run python start.py --help
 ```
+
+Say "Hey Jarvis stop" (or "Jarvis stop") while the assistant is talking to immediately halt playback, clear the pending turn, and return to listening mode.
+
+See `docs/cli.md` for the complete CLI command and configuration guide, including execution modes, diagnostics, flags, environment variables, and wake-word tuning. The quick start remains:
+
+### Assistant Models & Reasoning
+
+`pi_assistant.assistant.LLMResponder` wraps the OpenAI Responses API and supports multiple presets. The CLI prompts for a default model/reasoning pair on first launch and stores the choice in `.env`, but you can override it per run via the flags above or by setting `ASSISTANT_MODEL` / `ASSISTANT_REASONING_EFFORT`.
+
+| Preset | Model ID | Recommended use |
+| --- | --- | --- |
+| `mini` (default) | `gpt-5-mini-2025-08-07` | Low-latency replies with optional `minimal`, `low`, `medium`, or `high` reasoning. |
+| `5.1` | `gpt-5.1-2025-11-13` | Higher accuracy with `none`, `low`, `medium`, or `high` reasoning. |
+
+- `ASSISTANT_REASONING_EFFORT` falls back to `low` when unset; `minimal` cannot be used while `ASSISTANT_WEB_SEARCH_ENABLED=1`.
+- `ASSISTANT_SYSTEM_PROMPT`, `LOCATION_NAME`, `ASSISTANT_LANGUAGE`, and `TRANSCRIPTION_LANGUAGE` are sent as system messages so you can keep the assistant short, localized, and aware of the device's location.
+- Set `ASSISTANT_WEB_SEARCH_ENABLED=0` to disable tool calls entirely or leave it enabled to let GPT-5 issue web search requests when the Responses API determines they are useful.
+
+### Assistant Audio Modes & TTS
+
+Two delivery paths are supported:
+
+- `responses` (default): stream assistant audio directly from the Responses API when `ASSISTANT_TTS_RESPONSES_ENABLED=1`. The CLI automatically verifies whether the selected model supports the feature and falls back if the server rejects it.
+- `local-tts`: request text first, then synthesize locally via the Audio API using `ASSISTANT_TTS_MODEL`, `ASSISTANT_TTS_VOICE`, `ASSISTANT_TTS_FORMAT`, and `ASSISTANT_TTS_SAMPLE_RATE`.
+
+`SpeechPlayer` handles sample-rate mismatches and exposes a stop hook so voice commands can interrupt playback. The optional confirmation cue ("Got it.") is controlled via `CONFIRMATION_CUE_ENABLED` and `CONFIRMATION_CUE_TEXT`; the phrase is pre-rendered and cached so the tone plays instantly after each wake-word trigger.
+
+### Simulated Queries & Voice Controls
+
+- Set `SIMULATED_QUERY_TEXT="What's the forecast today?"` in `.env` to auto-inject a prompt every time the pipeline starts, or use `--simulate-query` to test a single turn without speaking.
+- Voice stop commands ("Hey Jarvis stop" / "Jarvis stop") signal the `SpeechPlayer` to halt audio and set `AUDIO_INPUT_DEVICE`-free capture back to listening mode with the current turn discarded.
 
 ### Capturing Verbose Logs Locally
 
@@ -134,6 +141,7 @@ Verbose logs are captured by default. Each `uv run pi-assistant` session:
 - Strips ANSI colors for readability.
 
 You can override the log folder with `VERBOSE_LOG_DIRECTORY=/path/to/dir`, or disable capture entirely via `VERBOSE_LOG_CAPTURE_ENABLED=0` to conserve space on constrained devices.
+
 ## Code Quality
 
 Ruff is configured via `ruff.toml` to handle both formatting and linting.
@@ -160,6 +168,8 @@ uv run pyright
 # Keep Pyright running in watch mode while editing
 uv run pyright -- --watch
 ```
+
+Before sending a pull request, run `uv run pyright && uv run pytest` so CI sees the same status you validated locally.
 
 ## Editor Integration
 
@@ -197,79 +207,7 @@ arecord --device=hw:1,0 --format S16_LE --rate 24000 -c 1 test.wav
 
 ## Configuration
 
-Defaults live in `config/defaults.toml` and are loaded by `pi_assistant.config`.
-The TOML file documents the baseline runtime (24 kHz mono PCM, VAD thresholds,
-noise reduction, etc.), while the module exposes strongly typed constants and
-environment-variable overrides:
-
-- `OPENAI_API_KEY` (required), `OPENAI_MODEL`, `OPENAI_REALTIME_ENDPOINT`
-- Audio pipeline knobs: `SAMPLE_RATE`, `STREAM_SAMPLE_RATE`, `BUFFER_SIZE`,
-  `CHANNELS`, `DTYPE`, `PREROLL_DURATION_SECONDS`, `AUDIO_QUEUE_MAX_SIZE`,
-  `AUDIO_INPUT_DEVICE`
-- Auto-stop tuning: `AUTO_STOP_ENABLED`, `AUTO_STOP_SILENCE_THRESHOLD`,
-  `AUTO_STOP_MAX_SILENCE_SECONDS`
-- Assistant replies: `ASSISTANT_MODEL`, `ASSISTANT_SYSTEM_PROMPT`,
-  `ASSISTANT_WEB_SEARCH_ENABLED`, `ASSISTANT_TTS_*`
-- Language locks: `TRANSCRIPTION_LANGUAGE` (forced speech-recognition hint) and
-  `ASSISTANT_LANGUAGE` (LLM output language), both defaulting to `"en"`
-- Wake-word overrides (see below): `WAKE_WORD_*`
-- Verbose logging capture (enabled by default): `VERBOSE_LOG_CAPTURE_ENABLED`, `VERBOSE_LOG_DIRECTORY`
-
-If you want the assistant to know its real-world context, set
-`LOCATION_NAME="London, UK"` (or edit `device.location_name` in `config/defaults.toml`).
-The value is sent as a system message (`Device location: London, UK`) alongside any
-custom assistant prompt, and the CLI will interactively ask for it the first time it
-runs if neither the env var nor the defaults provide one.
-
-Update the TOML file for new defaults (which can be committed) and use env vars
-for per-device overrides.
-
-Set `ASSISTANT_TTS_RESPONSES_ENABLED=0` (or launch with `--assistant-audio-mode local-tts`)
-to prefer the text+local-TTS round-trip when you want to compare perceived latency against
-the streaming Responses audio path. Re-enable streaming with
-`ASSISTANT_TTS_RESPONSES_ENABLED=1` or `--assistant-audio-mode responses`.
-
-If you need to test without speaking, set `SIMULATED_QUERY_TEXT="Hey Rhasspy, is it going to rain today?"`
-in `.env` (or pass `--simulate-query` / `--simulate-query "custom prompt"`). The CLI injects the text once
-per `uv run pi-assistant` invocation and plays the resulting reply through the normal TTS path.
-
-To keep every interaction in English (or another fixed language), set both
-`TRANSCRIPTION_LANGUAGE` and `ASSISTANT_LANGUAGE` inside `.env`. The first value
-is sent with the OpenAI Realtime session update so the recognizer never switches
-languages mid-stream, while the second is injected into a system instruction so
-assistant replies remain in that language even when the transcript briefly drifts.
-
-When a USB microphone only exposes 48 kHz (or any rate different from the
-OpenAI session’s 24 kHz expectation), set `SAMPLE_RATE` to the hardware-supported
-value and leave `STREAM_SAMPLE_RATE` at the default 24 kHz. The controller will
-resample buffered and live audio before sending it to OpenAI, so wake-word
-detection and transcription stay in sync.
-
-To persist the override in this repo, append it to `.env` once:
-
-```bash
-cd pi-assistant
-echo "SAMPLE_RATE=48000" >> .env
-```
-
-### Wake Word Settings
-
-Wake-word gating is enabled by default. On the first run the CLI prompts you to pick a wake
-phrase (Alexa, Hey Jarvis, or Hey Rhasspy) and saves the choice to `.env` as `WAKE_WORD_NAME`
-(Hey Rhasspy is the default if you just press Enter).
-You can change it later by editing `.env` or exporting a new value before launching the CLI.
-
-- `WAKE_WORD_NAME`: Canonical key for the selected phrase (`alexa`, `hey_jarvis`, or `hey_rhasspy`).
-- `WAKE_WORD_MODEL_PATH` / `WAKE_WORD_MODEL_FALLBACK_PATH`: Default to the `.onnx` / `.tflite`
-  assets for the chosen phrase under `models/`, but you can override them to point at a custom model.
-- `WAKE_WORD_MELSPEC_MODEL_PATH` / `WAKE_WORD_EMBEDDING_MODEL_PATH`: Feature-extractor assets
-  (`melspectrogram.onnx` and `embedding_model.onnx`) bundled under `models/` so we can run
-  openWakeWord without its download helper.
-- `WAKE_WORD_SCORE_THRESHOLD` / `WAKE_WORD_CONSECUTIVE_FRAMES`: Confidence guard (default: score ≥ 0.5 for two consecutive frames).
-- `PREROLL_DURATION_SECONDS`: Length of buffered audio (default: 1 second) that is prepended to the first streamed chunk after activation.
-- `WAKE_WORD_TARGET_SAMPLE_RATE`: Leave at 16 kHz unless you re-train a model that expects a different input rate.
-
-Every detection above the configured `WAKE_WORD_SCORE_THRESHOLD` (and meeting `WAKE_WORD_CONSECUTIVE_FRAMES`) is logged with the `[WAKE]` label, and state transitions are reported with `[STATE]`. When the wake word fires, the controller flushes the pre-roll buffer plus live audio so the transcript includes the first spoken words after the selected phrase.
+Defaults live in `config/defaults.toml` and are surfaced via `pi_assistant.config`. Detailed environment-variable descriptions (assistant tuning, wake-word overrides, simulated queries, logging knobs, etc.) are documented in `docs/cli.md`.
 
 ## Project Structure
 
@@ -282,6 +220,9 @@ pi-assistant/
 ├── src/
 │   └── pi_assistant/
 │       ├── __init__.py
+│       ├── assistant/
+│       │   ├── llm.py             # Responses API + TTS orchestration
+│       │   └── transcript.py      # Turn-level transcript aggregation
 │       ├── audio/capture.py
 │       ├── cli/app.py       # CLI + orchestration
 │       ├── config/__init__.py
@@ -364,6 +305,14 @@ arecord -l
 - Run `uv run pi-assistant test-audio` to confirm sounddevice can capture samples.
 - Use `arecord -l` (or `sd.query_devices()` in Python) to note the correct ALSA card/index.
 - Export `AUDIO_INPUT_DEVICE=<index-or-name>` so the client selects the right microphone.
+
+**`Microphone <name> does not support SAMPLE_RATE=24000 Hz`:**
+- Your USB mic only exposes 48 kHz (or similar). Set `SAMPLE_RATE` to the hinted value from the error and keep `STREAM_SAMPLE_RATE=24000` so the client resamples before streaming.
+- Example for `.env`:
+  ```bash
+  echo "SAMPLE_RATE=48000" >> .env
+  ```
+- Re-run `uv run pi-assistant -v` to confirm audio capture succeeds.
 
 **Licensing for bundled wake-word models:**
 - `models/alexa_v0.1.(onnx|tflite)`, `models/hey_jarvis_v0.1.(onnx|tflite)`, `models/hey_rhasspy_v0.1.(onnx|tflite)`, `models/melspectrogram.onnx`, and `models/embedding_model.onnx` are distributed under the Apache 2.0 license from the [openWakeWord](https://github.com/dscripka/openWakeWord) project.

@@ -13,6 +13,7 @@ from pi_assistant.cli.logging_utils import console_print, verbose_print
 from pi_assistant.config import (
     ASSISTANT_LANGUAGE,
     ASSISTANT_MODEL,
+    ASSISTANT_REASONING_EFFORT,
     ASSISTANT_SYSTEM_PROMPT,
     ASSISTANT_TTS_ENABLED,
     ASSISTANT_TTS_FORMAT,
@@ -26,6 +27,8 @@ from pi_assistant.config import (
 )
 
 AudioResponseFormat = Literal["mp3", "opus", "aac", "flac", "wav", "pcm"]
+VALID_REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high"}
+MINIMAL_INCOMPATIBLE_TOOLS = {"web_search"}
 
 
 @dataclass
@@ -55,6 +58,7 @@ class LLMResponder:
         tts_format: str = ASSISTANT_TTS_FORMAT,
         tts_sample_rate: int = ASSISTANT_TTS_SAMPLE_RATE,
         language: str = ASSISTANT_LANGUAGE,
+        reasoning_effort: Optional[str] = ASSISTANT_REASONING_EFFORT,
         client: Optional[AsyncOpenAI] = None,
     ):
         self._client = client or AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -73,6 +77,18 @@ class LLMResponder:
         self._audio_fallback_logged = False
         self._phrase_audio_cache: dict[str, tuple[bytes, int]] = {}
         self._phrase_locks: dict[str, asyncio.Lock] = {}
+        normalized_reasoning = (reasoning_effort or "").strip().lower()
+        self._reasoning_effort = (
+            normalized_reasoning if normalized_reasoning in VALID_REASONING_EFFORTS else None
+        )
+        if self._reasoning_effort == "minimal" and self._enable_web_search:
+            console_print(
+                (
+                    "[ASSISTANT] Reasoning effort 'minimal' is not supported when web search is "
+                    "enabled; raising to 'low'."
+                )
+            )
+            self._reasoning_effort = "low"
 
     async def generate_reply(self, transcript: str) -> Optional[LLMReply]:
         """Send the transcript to the LLM and return the response text."""
@@ -126,6 +142,8 @@ class LLMResponder:
         }
         if self._enable_web_search:
             request_kwargs["tools"] = [{"type": "web_search"}]
+        if self._reasoning_effort:
+            request_kwargs["reasoning"] = {"effort": self._reasoning_effort}
 
         extra_body = self._build_audio_extra_body()
         console_print("[ASSISTANT] Awaiting OpenAI response...")
