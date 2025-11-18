@@ -66,6 +66,9 @@ class _DummySoundDevice:
     def check_output_settings(self, **_: Any) -> bool:
         return True
 
+    def check_input_settings(self, **_: Any) -> bool:
+        return True
+
     def play(self, *_: Any, **__: Any) -> None:
         return None
 

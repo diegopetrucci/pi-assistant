@@ -15,6 +15,7 @@ from pi_assistant.config import (
     CHANNELS,
     DTYPE,
     SAMPLE_RATE,
+    STREAM_SAMPLE_RATE,
 )
 
 from ._sounddevice import sounddevice as sd
@@ -90,6 +91,8 @@ class AudioCapture:
         self.input_device = device
         verbose_print(f"  Input device: {self._describe_device(device)}")
 
+        self._ensure_sample_rate_supported(device)
+
         # Initialize sounddevice input stream
         try:
             self.stream = sd.InputStream(
@@ -101,11 +104,7 @@ class AudioCapture:
                 device=device,
             )
         except Exception as exc:
-            raise RuntimeError(
-                "Unable to initialize audio input stream. "
-                "Verify that a microphone is connected and available. "
-                "Set AUDIO_INPUT_DEVICE to override the default device."
-            ) from exc
+            raise self._stream_initialization_error(exc, device) from exc
 
         self.stream.start()
         verbose_print("Audio stream started")
@@ -123,6 +122,65 @@ class AudioCapture:
             self.audio_queue.put_nowait(audio_bytes)
         except asyncio.QueueFull:
             print("Warning: Audio queue full, dropping frame", file=sys.stderr)
+
+    def _ensure_sample_rate_supported(self, device) -> None:
+        """Validate that the selected device accepts the configured sample rate."""
+
+        try:
+            sd.check_input_settings(
+                device=device,
+                channels=CHANNELS,
+                dtype=DTYPE,
+                samplerate=SAMPLE_RATE,
+            )
+        except Exception as exc:
+            raise self._unsupported_sample_rate_error(device) from exc
+
+    def _unsupported_sample_rate_error(self, device) -> RuntimeError:
+        """Return a descriptive error when the mic rejects SAMPLE_RATE."""
+
+        device_label = self._describe_device(device)
+        default_rate = self._device_default_sample_rate(device)
+        if default_rate:
+            suggestion = (
+                f"Try setting SAMPLE_RATE={default_rate} in your environment or .env file. "
+                f"Keep STREAM_SAMPLE_RATE={STREAM_SAMPLE_RATE} so capture audio can be "
+                "resampled for OpenAI."
+            )
+        else:
+            suggestion = (
+                "Set SAMPLE_RATE to one of the rates reported by `arecord --dump-hw-params` "
+                "for this microphone."
+            )
+
+        return RuntimeError(
+            f"Microphone {device_label} does not support SAMPLE_RATE={SAMPLE_RATE} Hz. {suggestion}"
+        )
+
+    def _device_default_sample_rate(self, device) -> int | None:
+        try:
+            info = device_info_dict(sd.query_devices(device))
+        except Exception:
+            return None
+
+        candidate = info.get("default_samplerate")
+        if isinstance(candidate, (int, float, str)):
+            try:
+                return int(float(candidate))
+            except ValueError:
+                return None
+        return None
+
+    def _stream_initialization_error(self, exc: Exception, device) -> RuntimeError:
+        message = str(exc).lower()
+        if "sample rate" in message or "painvalidsamplerate" in message:
+            return self._unsupported_sample_rate_error(device)
+
+        return RuntimeError(
+            "Unable to initialize audio input stream. "
+            "Verify that a microphone is connected and available. "
+            "Set AUDIO_INPUT_DEVICE to override the default device."
+        )
 
     async def get_audio_chunk(self):
         """
