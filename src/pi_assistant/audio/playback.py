@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
 from typing import Optional
 
 import numpy as np
 
 from ._sounddevice import sounddevice as sd
 from .resampler import LinearResampler
+from .utils import device_info_dict
 
 
 class SpeechPlayer:
@@ -138,17 +138,7 @@ class SpeechPlayer:
                 raw = sd.query_devices(self._output_device)
         except Exception:
             return {}
-        return self._device_info_dict(raw)
-
-    @staticmethod
-    def _device_info_dict(info: object) -> dict[str, object]:
-        if isinstance(info, dict):
-            return dict(info)
-        if isinstance(info, Mapping):
-            return dict(info.items())
-        if hasattr(info, "__dict__"):
-            return dict(vars(info))
-        return {}
+        return device_info_dict(raw)
 
     def _log_playback_override(self, requested: int, selected: int) -> None:
         if self._override_logged:

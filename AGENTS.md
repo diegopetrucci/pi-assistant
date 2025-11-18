@@ -15,7 +15,11 @@ After completing a change, always run `uv run pyright && uv run pytest`
 Target Python 3.9+ and follow Ruff’s formatter—never hand-tune spacing after running it. Stick to 4-space indentation and type-annotated functions. Modules, packages, and files use `snake_case`; CLIs expose kebab-case flags (e.g., `--no-force-always-on`). Keep public functions documented with concise docstrings that explain side effects or I/O expectations, and colocate constants next to the features they configure to avoid sprawling globals.
 
 ## Testing Guidelines
-Pytest is the primary harness, while targeted regressions may still use `unittest`. Mirror production behavior by loading fixtures from `tests/` (for example `tests/hey_jarvis.wav`) rather than embedding byte blobs. Name tests `test_<feature>.py` and organize helper coroutines inside `tests/utils.py` if you need reuse. Aim for coverage above 85% in critical modules (`audio`, `wake_word`, `network`) and gate new features on at least one positive and one failure-path assertion.
+* Pytest is the primary harness, while targeted regressions may still use `unittest`.
+* Mirror production behavior by loading fixtures from `tests/` (for example `tests/hey_jarvis.wav`) rather than embedding byte blobs.
+* Name tests `test_<feature>.py` and organize helper coroutines inside `tests/utils.py` if you need reuse.
+* Aim for coverage above 85% in critical modules (`audio`, `wake_word`, `network`) and gate new features on at least one positive and one failure-path assertion.
+* Always write unit tests to confirm new logic, or changes to existing one
 
 ## Commit & Pull Request Guidelines
 Write commits in the form `component: one-line summary` (e.g., `audio: harden portaudio fallback`) and keep bodies under 72 columns with “why” over “what”. Each PR should describe the user-facing behavior, link relevant issues, and include verification steps (`uv run pi-assistant --force-always-on`, `uv run pytest`). Attach screenshots or logs when the change impacts CLI output, note config additions in `README.md`, and seek a second review for hardware-touching changes.

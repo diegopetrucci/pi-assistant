@@ -5,7 +5,6 @@ Handles audio capture from USB microphone
 
 import asyncio
 import sys
-from collections.abc import Mapping
 from typing import Protocol, cast
 
 from pi_assistant.cli.logging_utils import verbose_print
@@ -19,6 +18,7 @@ from pi_assistant.config import (
 )
 
 from ._sounddevice import sounddevice as sd
+from .utils import device_info_dict
 
 
 class _AudioQueue(Protocol):
@@ -215,7 +215,7 @@ class AudioCapture:
             return "system default"
 
         try:
-            info = self._device_info_dict(sd.query_devices(device))
+            info = device_info_dict(sd.query_devices(device))
             name_obj = info.get("name")
             name = str(name_obj) if name_obj not in (None, "") else "Unknown device"
             idx_obj = info.get("index")
@@ -228,17 +228,7 @@ class AudioCapture:
 
     def _iter_device_records(self, devices: object) -> list[dict[str, object]]:
         if isinstance(devices, list):
-            return [self._device_info_dict(item) for item in devices]
+            return [device_info_dict(item) for item in devices]
         if isinstance(devices, tuple):
-            return [self._device_info_dict(item) for item in devices]
-        return [self._device_info_dict(devices)]
-
-    @staticmethod
-    def _device_info_dict(info: object) -> dict[str, object]:
-        if isinstance(info, dict):
-            return dict(info)
-        if isinstance(info, Mapping):
-            return dict(info.items())
-        if hasattr(info, "__dict__"):
-            return dict(vars(info))
-        return {}
+            return [device_info_dict(item) for item in devices]
+        return [device_info_dict(devices)]
