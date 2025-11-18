@@ -21,18 +21,48 @@ from pi_assistant.cli.logging_utils import (
     set_verbose_logging,
 )
 from pi_assistant.config import (
+    ASSISTANT_MODEL,
+    ASSISTANT_MODEL_REGISTRY,
+    ASSISTANT_REASONING_CHOICES,
+    ASSISTANT_REASONING_EFFORT,
     ASSISTANT_TTS_RESPONSES_ENABLED,
     ASSISTANT_TTS_SAMPLE_RATE,
+    ASSISTANT_WEB_SEARCH_ENABLED,
     CONFIRMATION_CUE_ENABLED,
     CONFIRMATION_CUE_TEXT,
     SIMULATED_QUERY_TEXT,
+    normalize_assistant_model_choice,
+    reasoning_effort_choices_for_model,
 )
 from pi_assistant.diagnostics import test_audio_capture, test_websocket_client
 from pi_assistant.network import WebSocketClient
 
 ASSISTANT_AUDIO_MODE_CHOICES = ("responses", "local-tts")
 DEFAULT_ASSISTANT_AUDIO_MODE = "responses" if ASSISTANT_TTS_RESPONSES_ENABLED else "local-tts"
+REASONING_EFFORT_CHOICES = ("none", "minimal", "low", "medium", "high")
 SIMULATED_QUERY_FALLBACK = "Hey Rhasspy, is it going to rain tomorrow?"
+
+
+def _assistant_model_help() -> str:
+    lines: list[str] = []
+    for key, data in ASSISTANT_MODEL_REGISTRY.items():
+        model_id = data["id"]
+        description = data["description"]
+        lines.append(f"  {key}: {description} [{model_id}]")
+    return "\n".join(lines)
+
+
+def _parse_assistant_model_arg(value: str) -> str:
+    normalized = normalize_assistant_model_choice(value)
+    if normalized:
+        return normalized
+    valid_tokens = sorted(
+        list(ASSISTANT_MODEL_REGISTRY.keys())
+        + [entry["id"] for entry in ASSISTANT_MODEL_REGISTRY.values()]
+    )
+    raise argparse.ArgumentTypeError(
+        f"Unknown assistant model '{value}'. Choose from: {', '.join(valid_tokens)}."
+    )
 
 
 async def _run_simulated_query_once(
@@ -76,6 +106,8 @@ async def run_transcription(
     *,
     assistant_audio_mode: Optional[str] = None,
     simulate_query: Optional[str] = None,
+    reasoning_effort: Optional[str] = None,
+    assistant_model: Optional[str] = None,
 ) -> None:
     """
     Main integration function - runs real-time transcription
@@ -92,8 +124,27 @@ async def run_transcription(
     configured_query = (
         simulate_query.strip() if simulate_query is not None else SIMULATED_QUERY_TEXT.strip()
     )
+    model_override = (assistant_model or ASSISTANT_MODEL).strip()
+    reasoning_choices = reasoning_effort_choices_for_model(model_override)
+    selected_reasoning_effort = (reasoning_effort or ASSISTANT_REASONING_EFFORT or "").strip()
+    selected_reasoning_effort = selected_reasoning_effort or None
+    if selected_reasoning_effort and selected_reasoning_effort not in reasoning_choices:
+        allowed = ", ".join(reasoning_choices)
+        raise ValueError(
+            f"Reasoning effort '{selected_reasoning_effort}' is not supported by {model_override}. "
+            f"Allowed values: {allowed}"
+        )
+    if selected_reasoning_effort == "minimal" and ASSISTANT_WEB_SEARCH_ENABLED:
+        raise ValueError(
+            "Reasoning effort 'minimal' cannot be used while web search is enabled. "
+            "Disable ASSISTANT_WEB_SEARCH_ENABLED or choose low/medium/high."
+        )
 
-    assistant = LLMResponder(use_responses_audio=use_responses_audio)
+    assistant = LLMResponder(
+        model=model_override,
+        use_responses_audio=use_responses_audio,
+        reasoning_effort=selected_reasoning_effort,
+    )
     console_print(f"{ASSISTANT_LOG_LABEL} Using assistant model: {assistant.model_name}")
     enabled_tools = assistant.enabled_tools
     tools_summary = ", ".join(enabled_tools) if enabled_tools else "none"
@@ -221,6 +272,16 @@ def parse_args():
         help="Show detailed diagnostic logs (wake word, state changes, etc.).",
     )
     parser.add_argument(
+        "--assistant-model",
+        type=_parse_assistant_model_arg,
+        help=(
+            "Override which assistant LLM to use for this run. "
+            "Accepts the preset key (mini, 5.1) or the full model id.\n"
+            f"{_assistant_model_help()}\n"
+            f"Default: {ASSISTANT_MODEL}"
+        ),
+    )
+    parser.add_argument(
         "--assistant-audio-mode",
         choices=ASSISTANT_AUDIO_MODE_CHOICES,
         help=(
@@ -240,6 +301,16 @@ def parse_args():
             f"{SIMULATED_QUERY_FALLBACK!r}. Defaults to the SIMULATED_QUERY_TEXT env var when set."
         ),
     )
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=REASONING_EFFORT_CHOICES,
+        help=(
+            "Override the GPT-5 reasoning level for this run. "
+            "Defaults to your saved selection (low is recommended). "
+            f"Supported for the current model: {', '.join(ASSISTANT_REASONING_CHOICES)}. "
+            "Note: 'minimal' requires web search to be disabled."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -257,6 +328,8 @@ def main():
             run_transcription,
             assistant_audio_mode=args.assistant_audio_mode,
             simulate_query=args.simulate_query,
+            reasoning_effort=args.reasoning_effort,
+            assistant_model=args.assistant_model,
         )
 
     try:
