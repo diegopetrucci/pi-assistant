@@ -156,7 +156,6 @@ async def run_audio_controller(
     audio_capture,
     ws_client: WebSocketClient,
     *,
-    force_always_on: bool,
     transcript_buffer: TurnTranscriptAggregator,
     assistant: LLMResponder,
     speech_player: SpeechPlayer,
@@ -168,24 +167,21 @@ async def run_audio_controller(
     verbose_print("[INFO] Starting audio controller...")
 
     wake_engine: Optional[WakeWordEngine] = None
-    if not force_always_on:
-        try:
-            wake_engine = WakeWordEngine(
-                WAKE_WORD_MODEL_PATH,
-                fallback_model_path=WAKE_WORD_MODEL_FALLBACK_PATH,
-                melspec_model_path=WAKE_WORD_MELSPEC_MODEL_PATH,
-                embedding_model_path=WAKE_WORD_EMBEDDING_MODEL_PATH,
-                source_sample_rate=SAMPLE_RATE,
-                target_sample_rate=WAKE_WORD_TARGET_SAMPLE_RATE,
-                threshold=WAKE_WORD_SCORE_THRESHOLD,
-                consecutive_required=WAKE_WORD_CONSECUTIVE_FRAMES,
-            )
-            verbose_print(
-                f"{WAKE_LOG_LABEL} Wake-word model: {WAKE_WORD_PHRASE} ({WAKE_WORD_NAME})"
-            )
-        except RuntimeError as exc:
-            print(f"{ERROR_LOG_LABEL} {exc}", file=sys.stderr)
-            raise
+    try:
+        wake_engine = WakeWordEngine(
+            WAKE_WORD_MODEL_PATH,
+            fallback_model_path=WAKE_WORD_MODEL_FALLBACK_PATH,
+            melspec_model_path=WAKE_WORD_MELSPEC_MODEL_PATH,
+            embedding_model_path=WAKE_WORD_EMBEDDING_MODEL_PATH,
+            source_sample_rate=SAMPLE_RATE,
+            target_sample_rate=WAKE_WORD_TARGET_SAMPLE_RATE,
+            threshold=WAKE_WORD_SCORE_THRESHOLD,
+            consecutive_required=WAKE_WORD_CONSECUTIVE_FRAMES,
+        )
+        verbose_print(f"{WAKE_LOG_LABEL} Wake-word model: {WAKE_WORD_PHRASE} ({WAKE_WORD_NAME})")
+    except RuntimeError as exc:
+        print(f"{ERROR_LOG_LABEL} {exc}", file=sys.stderr)
+        raise
 
     pre_roll = PreRollBuffer(PREROLL_DURATION_SECONDS, SAMPLE_RATE)
     stream_resampler: Optional[LinearResampler] = None
@@ -206,11 +202,8 @@ async def run_audio_controller(
         samples = stream_resampler.process(chunk)
         return samples.tobytes() if samples.size else b""
 
-    state = StreamState.STREAMING if force_always_on else StreamState.LISTENING
-    initial_reason = "wake-word override" if force_always_on else "awaiting wake phrase"
-    log_state_transition(None, state, initial_reason)
-    if force_always_on:
-        verbose_print(f"{WAKE_LOG_LABEL} Wake-word override active; streaming immediately")
+    state = StreamState.LISTENING
+    log_state_transition(None, state, "awaiting wake phrase")
 
     chunk_count = 0
     silence_duration = 0.0
@@ -285,7 +278,7 @@ async def run_audio_controller(
             audio_bytes = await audio_capture.get_audio_chunk()
             chunk_count += 1
 
-            if not force_always_on and speech_stopped_signal.is_set():
+            if speech_stopped_signal.is_set():
                 speech_stopped_signal.clear()
                 if suppress_next_server_stop_event:
                     suppress_next_server_stop_event = False
@@ -377,7 +370,7 @@ async def run_audio_controller(
                 if stream_chunk:
                     await ws_client.send_audio_chunk(stream_chunk)
 
-            if AUTO_STOP_ENABLED and state == StreamState.STREAMING and not force_always_on:
+            if AUTO_STOP_ENABLED and state == StreamState.STREAMING:
                 frames = len(audio_bytes) / (2 * CHANNELS)
                 chunk_duration = frames / SAMPLE_RATE if frames else 0.0
                 rms = calculate_rms(audio_bytes)

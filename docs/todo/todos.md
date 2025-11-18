@@ -5,6 +5,7 @@ Required:
 - [ ] Drop "hey wakeword" from user message
 - [ ] Don't wait for sentence to finish, stream / transcribe in smaller chunks
 - [ ] Measure real reply latency for each assistant model and update onboarding copy
+- [ ] add loading dots to the logs when loading response from llm
 
 Maybe:
 - [ ] Stream the reply

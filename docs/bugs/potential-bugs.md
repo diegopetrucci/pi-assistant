@@ -9,6 +9,7 @@ This document catalogs potential bugs and issues discovered through code analysi
 - **Impact:** The override skips wake-word gating but also disables every path that calls `_transition_stream_to_listening()`, so `schedule_turn_response()` is never invoked and no assistant response is produced.
 - **Root Cause:** Both the auto-stop logic (in the `auto_stop_streaming` handler) and the server `speech_stopped` event handler are guarded by `if not force_always_on`, leaving the controller stuck in `STREAMING` forever with no mechanism to finalize turns.
 - **Fix Required:** Add alternative finalization mechanism for force-always-on mode, or remove the guard and rely on other state checks.
+- **Resolution:** Removed the `--force-always-on` override entirely (Feb 2025), so the wake-word gating paths always stay active.
 
 ### 2. WebSocket operations have no timeouts
 - **Location:** `src/pi_assistant/network/websocket_client.py:135, 148`
@@ -132,7 +133,7 @@ This document catalogs potential bugs and issues discovered through code analysi
 2. Add tests for WebSocket disconnection/reconnection scenarios
 3. Add tests for all edge cases in wake word detection (retriggers, rapid triggers)
 4. Add tests for concurrent task cancellation scenarios
-5. Add integration tests for force-always-on mode
+5. Add integration tests covering manual stop commands and silence auto-stop
 
 ### Documentation Improvements
 1. Document thread-safety requirements for all shared state

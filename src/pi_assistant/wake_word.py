@@ -93,8 +93,7 @@ class WakeWordEngine:
     ):
         if Model is None:
             raise RuntimeError(
-                "openwakeword is not installed. Install the dependency or use "
-                "--force-always-on to bypass wake-word gating."
+                "openwakeword is not installed. Install the dependency to enable wake-word gating."
             ) from _IMPORT_ERROR
 
         self.threshold = threshold

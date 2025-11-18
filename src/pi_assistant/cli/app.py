@@ -25,7 +25,6 @@ from pi_assistant.config import (
     ASSISTANT_TTS_SAMPLE_RATE,
     CONFIRMATION_CUE_ENABLED,
     CONFIRMATION_CUE_TEXT,
-    FORCE_ALWAYS_ON,
     SIMULATED_QUERY_TEXT,
 )
 from pi_assistant.diagnostics import test_audio_capture, test_websocket_client
@@ -75,7 +74,6 @@ async def _run_simulated_query_once(
 
 async def run_transcription(
     *,
-    force_always_on: bool = False,
     assistant_audio_mode: Optional[str] = None,
     simulate_query: Optional[str] = None,
 ) -> None:
@@ -155,7 +153,6 @@ async def run_transcription(
             run_audio_controller(
                 audio_capture,
                 ws_client,
-                force_always_on=force_always_on,
                 transcript_buffer=transcript_buffer,
                 assistant=assistant,
                 speech_player=speech_player,
@@ -217,20 +214,6 @@ def parse_args():
         default="run",
         help="Select an execution mode (default: run)",
     )
-    parser.set_defaults(force_always_on=None)
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument(
-        "--force-always-on",
-        action="store_true",
-        dest="force_always_on",
-        help="Bypass wake-word gating and stream audio continuously.",
-    )
-    group.add_argument(
-        "--no-force-always-on",
-        action="store_false",
-        dest="force_always_on",
-        help="Explicitly disable the wake-word override even if the env var is set.",
-    )
     parser.add_argument(
         "-v",
         "--verbose",
@@ -270,10 +253,8 @@ def main():
     elif args.mode == "test-websocket":
         run_func = partial(test_websocket_client, handle_transcription_event)
     else:
-        force_flag = FORCE_ALWAYS_ON if args.force_always_on is None else args.force_always_on
         run_func = partial(
             run_transcription,
-            force_always_on=force_flag,
             assistant_audio_mode=args.assistant_audio_mode,
             simulate_query=args.simulate_query,
         )
