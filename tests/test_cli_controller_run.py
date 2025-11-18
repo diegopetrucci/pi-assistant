@@ -19,8 +19,8 @@ class FakeWebSocket:
     def __init__(self):
         self.sent_chunks = []
 
-    async def send_audio_chunk(self, chunk):
-        self.sent_chunks.append(chunk)
+    async def send_audio_chunk(self, audio_bytes: bytes):
+        self.sent_chunks.append(audio_bytes)
 
 
 class DummyTranscriptBuffer:
@@ -32,15 +32,43 @@ class DummyTranscriptBuffer:
     async def start_turn(self):
         self.started += 1
 
-    async def clear_current_turn(self, reason):
+    async def clear_current_turn(self, reason: str = ""):
         self.cleared.append(reason)
 
-    async def append_transcript(self, *args, **kwargs):
-        self.appended.append(args)
+    async def append_transcript(self, item_id, transcript):
+        self.appended.append((item_id, transcript))
         return None
 
     async def finalize_turn(self):
         return None
+
+
+class DummyAssistant:
+    def __init__(self):
+        self._tts_enabled = False
+        self.generated_transcripts = []
+
+    @property
+    def tts_enabled(self) -> bool:
+        return self._tts_enabled
+
+    def peek_phrase_audio(self, text):
+        return None
+
+    async def warm_phrase_audio(self, text):
+        return None
+
+    async def generate_reply(self, transcript):
+        self.generated_transcripts.append(transcript)
+        return None
+
+
+class DummySpeechPlayer:
+    def __init__(self):
+        self.play_calls = []
+
+    async def play(self, audio_bytes, sample_rate=None):
+        self.play_calls.append((audio_bytes, sample_rate))
 
 
 async def _shutdown_task(task):
@@ -56,8 +84,8 @@ async def test_run_audio_controller_handles_manual_stop(monkeypatch):
     capture.queue.put_nowait(np.ones(32, dtype=np.int16).tobytes())
     ws_client = FakeWebSocket()
     transcript_buffer = DummyTranscriptBuffer()
-    assistant = object()
-    speech_player = object()
+    assistant = DummyAssistant()
+    speech_player = DummySpeechPlayer()
     stop_signal = asyncio.Event()
     speech_stopped_signal = asyncio.Event()
 
@@ -87,10 +115,10 @@ async def test_run_audio_controller_handles_manual_stop(monkeypatch):
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,  # pyright: ignore[reportArgumentType]
-            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
-            assistant=assistant,  # pyright: ignore[reportArgumentType]
-            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            ws_client,
+            transcript_buffer=transcript_buffer,
+            assistant=assistant,
+            speech_player=speech_player,
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -120,8 +148,8 @@ async def test_run_audio_controller_streams_after_wake_word_and_auto_stop(monkey
         capture.queue.put_nowait(silence_chunk)
     ws_client = FakeWebSocket()
     transcript_buffer = DummyTranscriptBuffer()
-    assistant = object()
-    speech_player = object()
+    assistant = DummyAssistant()
+    speech_player = DummySpeechPlayer()
     stop_signal = asyncio.Event()
     speech_stopped_signal = asyncio.Event()
 
@@ -198,10 +226,10 @@ async def test_run_audio_controller_streams_after_wake_word_and_auto_stop(monkey
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,  # pyright: ignore[reportArgumentType]
-            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
-            assistant=assistant,  # pyright: ignore[reportArgumentType]
-            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            ws_client,
+            transcript_buffer=transcript_buffer,
+            assistant=assistant,
+            speech_player=speech_player,
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -235,8 +263,8 @@ async def test_run_audio_controller_handles_server_stop_signal(monkeypatch):
 
     ws_client = FakeWebSocket()
     transcript_buffer = DummyTranscriptBuffer()
-    assistant = object()
-    speech_player = object()
+    assistant = DummyAssistant()
+    speech_player = DummySpeechPlayer()
     stop_signal = asyncio.Event()
     speech_stopped_signal = asyncio.Event()
 
@@ -305,10 +333,10 @@ async def test_run_audio_controller_handles_server_stop_signal(monkeypatch):
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,  # pyright: ignore[reportArgumentType]
-            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
-            assistant=assistant,  # pyright: ignore[reportArgumentType]
-            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            ws_client,
+            transcript_buffer=transcript_buffer,
+            assistant=assistant,
+            speech_player=speech_player,
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -333,8 +361,8 @@ async def test_run_audio_controller_cancellation_cleans_response_tasks(monkeypat
 
     ws_client = FakeWebSocket()
     transcript_buffer = DummyTranscriptBuffer()
-    assistant = object()
-    speech_player = object()
+    assistant = DummyAssistant()
+    speech_player = DummySpeechPlayer()
     stop_signal = asyncio.Event()
     speech_stopped_signal = asyncio.Event()
 
@@ -401,10 +429,10 @@ async def test_run_audio_controller_cancellation_cleans_response_tasks(monkeypat
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,  # pyright: ignore[reportArgumentType]
-            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
-            assistant=assistant,  # pyright: ignore[reportArgumentType]
-            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            ws_client,
+            transcript_buffer=transcript_buffer,
+            assistant=assistant,
+            speech_player=speech_player,
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -431,8 +459,8 @@ async def test_run_audio_controller_manual_stop_clears_buffers(monkeypatch):
 
     ws_client = FakeWebSocket()
     transcript_buffer = DummyTranscriptBuffer()
-    assistant = object()
-    speech_player = object()
+    assistant = DummyAssistant()
+    speech_player = DummySpeechPlayer()
     stop_signal = asyncio.Event()
     speech_stopped_signal = asyncio.Event()
 
@@ -506,10 +534,10 @@ async def test_run_audio_controller_manual_stop_clears_buffers(monkeypatch):
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,  # pyright: ignore[reportArgumentType]
-            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
-            assistant=assistant,  # pyright: ignore[reportArgumentType]
-            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            ws_client,
+            transcript_buffer=transcript_buffer,
+            assistant=assistant,
+            speech_player=speech_player,
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -539,8 +567,8 @@ async def test_run_audio_controller_auto_stop_silence_transition(monkeypatch):
 
     ws_client = FakeWebSocket()
     transcript_buffer = DummyTranscriptBuffer()
-    assistant = object()
-    speech_player = object()
+    assistant = DummyAssistant()
+    speech_player = DummySpeechPlayer()
     stop_signal = asyncio.Event()
     speech_stopped_signal = asyncio.Event()
 
@@ -607,10 +635,10 @@ async def test_run_audio_controller_auto_stop_silence_transition(monkeypatch):
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,  # pyright: ignore[reportArgumentType]
-            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
-            assistant=assistant,  # pyright: ignore[reportArgumentType]
-            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            ws_client,
+            transcript_buffer=transcript_buffer,
+            assistant=assistant,
+            speech_player=speech_player,
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -643,8 +671,8 @@ async def test_run_audio_controller_resets_wake_engine_on_stream_start(monkeypat
 
     ws_client = FakeWebSocket()
     transcript_buffer = DummyTranscriptBuffer()
-    assistant = object()
-    speech_player = object()
+    assistant = DummyAssistant()
+    speech_player = DummySpeechPlayer()
     stop_signal = asyncio.Event()
     speech_stopped_signal = asyncio.Event()
 
@@ -689,10 +717,10 @@ async def test_run_audio_controller_resets_wake_engine_on_stream_start(monkeypat
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,  # pyright: ignore[reportArgumentType]
-            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
-            assistant=assistant,  # pyright: ignore[reportArgumentType]
-            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            ws_client,
+            transcript_buffer=transcript_buffer,
+            assistant=assistant,
+            speech_player=speech_player,
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -724,8 +752,8 @@ async def test_run_audio_controller_retrigger_delays_auto_stop(monkeypatch):
 
     ws_client = FakeWebSocket()
     transcript_buffer = DummyTranscriptBuffer()
-    assistant = object()
-    speech_player = object()
+    assistant = DummyAssistant()
+    speech_player = DummySpeechPlayer()
     stop_signal = asyncio.Event()
     speech_stopped_signal = asyncio.Event()
 
@@ -806,10 +834,10 @@ async def test_run_audio_controller_retrigger_delays_auto_stop(monkeypatch):
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,  # pyright: ignore[reportArgumentType]
-            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
-            assistant=assistant,  # pyright: ignore[reportArgumentType]
-            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            ws_client,
+            transcript_buffer=transcript_buffer,
+            assistant=assistant,
+            speech_player=speech_player,
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -854,8 +882,8 @@ async def test_auto_stop_wait_allows_new_wake(monkeypatch):
 
     ws_client = FakeWebSocket()
     transcript_buffer = DummyTranscriptBuffer()
-    assistant = object()
-    speech_player = object()
+    assistant = DummyAssistant()
+    speech_player = DummySpeechPlayer()
     stop_signal = asyncio.Event()
     speech_stopped_signal = asyncio.Event()
 
@@ -926,10 +954,10 @@ async def test_auto_stop_wait_allows_new_wake(monkeypatch):
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,  # pyright: ignore[reportArgumentType]
-            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
-            assistant=assistant,  # pyright: ignore[reportArgumentType]
-            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            ws_client,
+            transcript_buffer=transcript_buffer,
+            assistant=assistant,
+            speech_player=speech_player,
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -965,8 +993,8 @@ async def test_wake_phrase_override_cancels_pending_responses(monkeypatch):
 
     ws_client = FakeWebSocket()
     transcript_buffer = DummyTranscriptBuffer()
-    assistant = object()
-    speech_player = object()
+    assistant = DummyAssistant()
+    speech_player = DummySpeechPlayer()
     stop_signal = asyncio.Event()
     speech_stopped_signal = asyncio.Event()
 
@@ -1037,10 +1065,10 @@ async def test_wake_phrase_override_cancels_pending_responses(monkeypatch):
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,  # pyright: ignore[reportArgumentType]
-            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
-            assistant=assistant,  # pyright: ignore[reportArgumentType]
-            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            ws_client,
+            transcript_buffer=transcript_buffer,
+            assistant=assistant,
+            speech_player=speech_player,
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -1094,8 +1122,8 @@ async def test_wake_override_suppresses_stale_server_ack(monkeypatch):
 
     ws_client = FakeWebSocket()
     transcript_buffer = DummyTranscriptBuffer()
-    assistant = object()
-    speech_player = object()
+    assistant = DummyAssistant()
+    speech_player = DummySpeechPlayer()
     stop_signal = asyncio.Event()
     speech_stopped_signal = asyncio.Event()
 
@@ -1168,10 +1196,10 @@ async def test_wake_override_suppresses_stale_server_ack(monkeypatch):
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,  # pyright: ignore[reportArgumentType]
-            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
-            assistant=assistant,  # pyright: ignore[reportArgumentType]
-            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            ws_client,
+            transcript_buffer=transcript_buffer,
+            assistant=assistant,
+            speech_player=speech_player,
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )
@@ -1211,8 +1239,8 @@ async def test_run_audio_controller_stop_signal_during_preroll_flush(monkeypatch
 
     ws_client = FakeWebSocket()
     transcript_buffer = DummyTranscriptBuffer()
-    assistant = object()
-    speech_player = object()
+    assistant = DummyAssistant()
+    speech_player = DummySpeechPlayer()
     stop_signal = asyncio.Event()
     speech_stopped_signal = asyncio.Event()
 
@@ -1279,10 +1307,10 @@ async def test_run_audio_controller_stop_signal_during_preroll_flush(monkeypatch
     task = asyncio.create_task(
         controller.run_audio_controller(
             capture,
-            ws_client,  # pyright: ignore[reportArgumentType]
-            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
-            assistant=assistant,  # pyright: ignore[reportArgumentType]
-            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            ws_client,
+            transcript_buffer=transcript_buffer,
+            assistant=assistant,
+            speech_player=speech_player,
             stop_signal=stop_signal,
             speech_stopped_signal=speech_stopped_signal,
         )

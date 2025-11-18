@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from typing import Optional, Set
+from typing import Optional, Protocol, Set
 
 import numpy as np
 
-from pi_assistant.assistant import LLMResponder, TurnTranscriptAggregator
-from pi_assistant.audio import SpeechPlayer
+from pi_assistant.assistant import LLMReply
 from pi_assistant.audio.resampler import LinearResampler
 from pi_assistant.cli.logging_utils import (
     ASSISTANT_LOG_LABEL,
@@ -41,13 +40,41 @@ from pi_assistant.config import (
     WAKE_WORD_SCORE_THRESHOLD,
     WAKE_WORD_TARGET_SAMPLE_RATE,
 )
-from pi_assistant.network import WebSocketClient
 from pi_assistant.wake_word import (
     PreRollBuffer,
     StreamState,
     WakeWordDetection,
     WakeWordEngine,
 )
+
+
+class TranscriptBufferProtocol(Protocol):
+    async def start_turn(self) -> None: ...
+
+    async def append_transcript(self, item_id: Optional[str], transcript: str) -> None: ...
+
+    async def finalize_turn(self) -> Optional[str]: ...
+
+    async def clear_current_turn(self, reason: str = "") -> None: ...
+
+
+class AssistantResponderProtocol(Protocol):
+    @property
+    def tts_enabled(self) -> bool: ...
+
+    def peek_phrase_audio(self, text: str) -> Optional[tuple[bytes, int]]: ...
+
+    async def warm_phrase_audio(self, text: str) -> Optional[tuple[bytes, int]]: ...
+
+    async def generate_reply(self, transcript: str) -> Optional[LLMReply]: ...
+
+
+class SpeechPlayerProtocol(Protocol):
+    async def play(self, audio_bytes: bytes, sample_rate: Optional[int] = None) -> None: ...
+
+
+class AudioStreamClient(Protocol):
+    async def send_audio_chunk(self, audio_bytes: bytes) -> None: ...
 
 
 def calculate_rms(audio_bytes: bytes) -> float:
@@ -65,8 +92,8 @@ def calculate_rms(audio_bytes: bytes) -> float:
 
 
 def _maybe_schedule_confirmation_cue(
-    assistant: LLMResponder,
-    speech_player: SpeechPlayer,
+    assistant: AssistantResponderProtocol,
+    speech_player: SpeechPlayerProtocol,
 ) -> None:
     """Play a cached 'Got it' cue without blocking the main turn flow."""
 
@@ -92,9 +119,9 @@ def _maybe_schedule_confirmation_cue(
 
 
 async def finalize_turn_and_respond(
-    transcript_buffer: TurnTranscriptAggregator,
-    assistant: LLMResponder,
-    speech_player: SpeechPlayer,
+    transcript_buffer: TranscriptBufferProtocol,
+    assistant: AssistantResponderProtocol,
+    speech_player: SpeechPlayerProtocol,
 ) -> None:
     """Gather a completed turn transcript and fetch an assistant reply."""
 
@@ -130,9 +157,9 @@ async def finalize_turn_and_respond(
 
 
 def schedule_turn_response(
-    transcript_buffer: TurnTranscriptAggregator,
-    assistant: LLMResponder,
-    speech_player: SpeechPlayer,
+    transcript_buffer: TranscriptBufferProtocol,
+    assistant: AssistantResponderProtocol,
+    speech_player: SpeechPlayerProtocol,
 ) -> asyncio.Task:
     """Fire-and-forget helper for assistant calls with error reporting."""
 
@@ -154,11 +181,11 @@ def schedule_turn_response(
 
 async def run_audio_controller(
     audio_capture,
-    ws_client: WebSocketClient,
+    ws_client: AudioStreamClient,
     *,
-    transcript_buffer: TurnTranscriptAggregator,
-    assistant: LLMResponder,
-    speech_player: SpeechPlayer,
+    transcript_buffer: TranscriptBufferProtocol,
+    assistant: AssistantResponderProtocol,
+    speech_player: SpeechPlayerProtocol,
     stop_signal: asyncio.Event,
     speech_stopped_signal: asyncio.Event,
 ) -> None:

@@ -2,7 +2,7 @@ import asyncio
 import base64
 import unittest
 from types import SimpleNamespace
-from typing import cast
+from typing import Optional, cast
 from unittest.mock import patch
 
 import pytest
@@ -110,8 +110,9 @@ class TurnTranscriptAggregatorTest(unittest.IsolatedAsyncioTestCase):
 
         result = await aggregator.finalize_turn()
 
-        self.assertTrue(result.endswith("tail"))  # pyright: ignore[reportOptionalMemberAccess]
-        self.assertEqual(len(result), len(("chunk" * 10000) + " tail"))  # pyright: ignore[reportArgumentType]
+        assert result is not None
+        self.assertTrue(result.endswith("tail"))
+        self.assertEqual(len(result), len(("chunk" * 10000) + " tail"))
 
     async def test_finalize_turn_drops_segments_arriving_after_completion(self):
         aggregator = TurnTranscriptAggregator(
@@ -191,8 +192,8 @@ class FakeOpenAIClient:
         self.audio_calls = []
         self.audio_payload = b""
         self.audio = SimpleNamespace(speech=FakeAudioSpeechAPI(self))
-        self.error_to_raise = None
-        self.audio_error_to_raise = None
+        self.error_to_raise: Optional[Exception] = None
+        self.audio_error_to_raise: Optional[Exception] = None
 
 
 class DummyBadRequest(OpenAIBadRequestError):
@@ -215,12 +216,14 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
             ]
         }
         client = FakeOpenAIClient(payload)
-        responder = LLMResponder(client=client, enable_web_search=True)  # pyright: ignore[reportArgumentType]
+        responder = LLMResponder(client=cast(AsyncOpenAI, client), enable_web_search=True)
 
         reply = await responder.generate_reply("Weather update")
 
         self.assertIsNotNone(reply)
-        self.assertEqual(reply.text, "It is sunny.")  # pyright: ignore[reportOptionalMemberAccess]
+        assert reply is not None
+        assert reply.text is not None
+        self.assertEqual(reply.text, "It is sunny.")
         self.assertEqual(len(client.calls), 1)
         sent = client.calls[0]
         self.assertEqual(sent["input"][0]["content"][0]["type"], "input_text")
@@ -228,7 +231,7 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_returns_none_for_blank_transcript(self):
         client = FakeOpenAIClient({"output": []})
-        responder = LLMResponder(client=client, enable_web_search=False)  # pyright: ignore[reportArgumentType]
+        responder = LLMResponder(client=cast(AsyncOpenAI, client), enable_web_search=False)
 
         reply = await responder.generate_reply("   ")
 
@@ -237,7 +240,7 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_handles_missing_output_text(self):
         client = FakeOpenAIClient({"output": [{"content": []}]})
-        responder = LLMResponder(client=client, enable_web_search=False)  # pyright: ignore[reportArgumentType]
+        responder = LLMResponder(client=cast(AsyncOpenAI, client), enable_web_search=False)
 
         reply = await responder.generate_reply("Hello")
 
@@ -263,15 +266,21 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
             ]
         }
         client = FakeOpenAIClient(payload)
-        responder = LLMResponder(client=client, enable_web_search=False, enable_tts=True)  # pyright: ignore[reportArgumentType]
+        responder = LLMResponder(
+            client=cast(AsyncOpenAI, client), enable_web_search=False, enable_tts=True
+        )
 
         reply = await responder.generate_reply("Play audio")
 
         self.assertIsNotNone(reply)
-        self.assertIsNone(reply.text)  # pyright: ignore[reportOptionalMemberAccess]
-        self.assertEqual(reply.audio_bytes, b"\x01\x02\x03")  # pyright: ignore[reportOptionalMemberAccess]
-        self.assertEqual(reply.audio_format, "pcm16")  # pyright: ignore[reportOptionalMemberAccess]
-        self.assertEqual(reply.audio_sample_rate, 22050)  # pyright: ignore[reportOptionalMemberAccess]
+        assert reply is not None
+        self.assertIsNone(reply.text)
+        assert reply.audio_bytes is not None
+        assert reply.audio_format is not None
+        assert reply.audio_sample_rate is not None
+        self.assertEqual(reply.audio_bytes, b"\x01\x02\x03")
+        self.assertEqual(reply.audio_format, "pcm16")
+        self.assertEqual(reply.audio_sample_rate, 22050)
 
     async def test_synthesizes_audio_when_responses_returns_text_only(self):
         payload = {
@@ -280,22 +289,28 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
             ]
         }
         client = FakeOpenAIClient(payload)
-        responder = LLMResponder(client=client, enable_web_search=False, enable_tts=True)  # pyright: ignore[reportArgumentType]
+        responder = LLMResponder(
+            client=cast(AsyncOpenAI, client), enable_web_search=False, enable_tts=True
+        )
+
+        captured_text = {"value": None}
 
         async def fake_synthesize(self, text):
-            fake_synthesize.called_with = text  # pyright: ignore[reportFunctionMemberAccess]
+            captured_text["value"] = text
             return b"pcm-bytes", 12345
-
-        fake_synthesize.called_with = None  # pyright: ignore[reportFunctionMemberAccess]
 
         with patch.object(LLMResponder, "_synthesize_audio", new=fake_synthesize):
             reply = await responder.generate_reply("Need TTS please")
 
-        self.assertEqual(fake_synthesize.called_with, "Sure thing.")  # pyright: ignore[reportFunctionMemberAccess]
+        self.assertEqual(captured_text["value"], "Sure thing.")
         self.assertIsNotNone(reply)
-        self.assertEqual(reply.audio_bytes, b"pcm-bytes")  # pyright: ignore[reportOptionalMemberAccess]
-        self.assertEqual(reply.audio_sample_rate, 12345)  # pyright: ignore[reportOptionalMemberAccess]
-        self.assertEqual(reply.audio_format, responder._tts_format)  # pyright: ignore[reportOptionalMemberAccess]
+        assert reply is not None
+        assert reply.audio_bytes is not None
+        assert reply.audio_sample_rate is not None
+        assert reply.audio_format is not None
+        self.assertEqual(reply.audio_bytes, b"pcm-bytes")
+        self.assertEqual(reply.audio_sample_rate, 12345)
+        self.assertEqual(reply.audio_format, responder._tts_format)
 
     def test_build_audio_extra_body_respects_tts_flags(self):
         client = FakeOpenAIClient({"output": []})
@@ -331,7 +346,7 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
             use_responses_audio=True,
         )
         responder.set_responses_audio_supported(True)
-        client.error_to_raise = DummyBadRequest(  # pyright: ignore[reportAttributeAccessIssue]
+        client.error_to_raise = DummyBadRequest(
             message="Unknown parameter audio",
             body={"error": {"param": "audio", "message": "Unknown parameter audio"}},
         )
@@ -346,9 +361,11 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_send_response_request_propagates_unrelated_errors(self):
         client = FakeOpenAIClient({"output": []})
-        responder = LLMResponder(client=client, enable_tts=True, use_responses_audio=True)  # pyright: ignore[reportArgumentType]
+        responder = LLMResponder(
+            client=cast(AsyncOpenAI, client), enable_tts=True, use_responses_audio=True
+        )
         responder.set_responses_audio_supported(True)
-        client.error_to_raise = DummyBadRequest(message="Other failure")  # pyright: ignore[reportAttributeAccessIssue]
+        client.error_to_raise = DummyBadRequest(message="Other failure")
 
         with pytest.raises(DummyBadRequest):
             await responder._send_response_request({"input": []}, extra_body={"audio": {}})
@@ -365,7 +382,7 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
 
     def test_log_audio_fallback_warning_only_once(self):
         client = FakeOpenAIClient({"output": []})
-        responder = LLMResponder(client=client)  # pyright: ignore[reportArgumentType]
+        responder = LLMResponder(client=cast(AsyncOpenAI, client))
         err = DummyBadRequest(message="Unknown parameter audio")
 
         with patch("builtins.print") as mock_print:
@@ -392,11 +409,11 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
     async def test_verify_responses_audio_support_handles_audio_errors(self):
         client = FakeOpenAIClient({"output": []})
         responder = LLMResponder(
-            client=client,  # pyright: ignore[reportArgumentType]
+            client=cast(AsyncOpenAI, client),
             enable_tts=True,
             use_responses_audio=True,
         )
-        client.error_to_raise = DummyBadRequest(  # pyright: ignore[reportAttributeAccessIssue]
+        client.error_to_raise = DummyBadRequest(
             message="Unknown parameter audio",
             body={"error": {"param": "audio"}},
         )
@@ -410,11 +427,11 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
     async def test_verify_responses_audio_support_propagates_other_errors(self):
         client = FakeOpenAIClient({"output": []})
         responder = LLMResponder(
-            client=client,  # pyright: ignore[reportArgumentType]
+            client=cast(AsyncOpenAI, client),
             enable_tts=True,
             use_responses_audio=True,
         )
-        client.error_to_raise = DummyBadRequest(message="rate limited")  # pyright: ignore[reportAttributeAccessIssue]
+        client.error_to_raise = DummyBadRequest(message="rate limited")
 
         with pytest.raises(DummyBadRequest):
             await responder.verify_responses_audio_support()
@@ -438,7 +455,7 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
     async def test_synthesize_audio_handles_exceptions(self):
         client = FakeOpenAIClient({"output": []})
         responder = LLMResponder(client=cast(AsyncOpenAI, client), enable_tts=True)
-        client.audio_error_to_raise = RuntimeError("audio synth failure")  # pyright: ignore[reportAttributeAccessIssue]
+        client.audio_error_to_raise = RuntimeError("audio synth failure")
 
         audio_bytes, sample_rate = await responder._synthesize_audio("hello")
 
@@ -453,7 +470,7 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
             ]
         }
         client = FakeOpenAIClient(payload)
-        responder = LLMResponder(client=client, enable_web_search=False)  # pyright: ignore[reportArgumentType]
+        responder = LLMResponder(client=cast(AsyncOpenAI, client), enable_web_search=False)
 
         async def run_after_delay(text, delay):
             await asyncio.sleep(delay)
@@ -475,7 +492,7 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
         }
         client = FakeOpenAIClient(payload)
         responder = LLMResponder(
-            client=client,  # pyright: ignore[reportArgumentType]
+            client=cast(AsyncOpenAI, client),
             enable_web_search=False,
             system_prompt="Use markdown & emojis 😊",
             location_name="São Paulo, BR",
@@ -499,7 +516,7 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
         }
         client = FakeOpenAIClient(payload)
         responder = LLMResponder(
-            client=client,  # pyright: ignore[reportArgumentType]
+            client=cast(AsyncOpenAI, client),
             enable_web_search=False,
             system_prompt="",
             location_name="München 🏰 / 東京",
@@ -522,7 +539,7 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
         }
         client = FakeOpenAIClient(payload)
         responder = LLMResponder(
-            client=client,  # pyright: ignore[reportArgumentType]
+            client=cast(AsyncOpenAI, client),
             enable_web_search=False,
             system_prompt="X" * 5000,
             location_name="",
