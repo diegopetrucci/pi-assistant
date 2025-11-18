@@ -7,7 +7,7 @@ This document catalogs potential bugs and issues discovered through code analysi
 ### 1. Assistant replies never fire when `--force-always-on` is used
 - **Location:** `src/pi_assistant/cli/controller.py:209-299`
 - **Impact:** The override skips wake-word gating but also disables every path that calls `_transition_stream_to_listening()`, so `schedule_turn_response()` is never invoked and no assistant response is produced.
-- **Root Cause:** Auto-stop (line 380) and server `speech_stopped` events (line 288) are both guarded by `if not force_always_on`, leaving the controller stuck in `STREAMING` forever with no mechanism to finalize turns.
+- **Root Cause:** Both the auto-stop logic (in the `auto_stop_streaming` handler) and the server `speech_stopped` event handler are guarded by `if not force_always_on`, leaving the controller stuck in `STREAMING` forever with no mechanism to finalize turns.
 - **Fix Required:** Add alternative finalization mechanism for force-always-on mode, or remove the guard and rely on other state checks.
 
 ### 2. Race condition in concurrent access to `response_tasks` set
