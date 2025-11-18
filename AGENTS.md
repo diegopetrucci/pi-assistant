@@ -28,7 +28,7 @@ Write commits in the form `component: one-line summary` (e.g., `audio: harden po
 Never commit `.env`, API keys, or artifacts generated under `.uv/` or `.venv/`. Validate that `OPENAI_API_KEY` is set before invoking network code and prefer `config/defaults.toml` for new knobs so agents running headless Pis inherit sane defaults. When adding binaries or models, document their license in `docs/` and update `.gitignore` if they should remain local-only.
 
 ## Documentation Expectations
-* Whenever you add or change CLI flags, configuration keys, assistant behavior, or setup steps, mirror the change in `README.md` (usage + configuration sections) and drop any long-form writeups in `docs/`.
+* Whenever you add or change CLI flags, configuration keys, assistant behavior, or setup steps, mirror the change in `README.md` (usage + configuration sections) and drop any long-form writeups in `docs/`. Update CLI commands in `docs/cli.md`.
 * Keep this `AGENTS.md` file in sync with repo conventions—update it when workflows, required tools, or testing expectations evolve.
 
 ## PRs

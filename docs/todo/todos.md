@@ -3,7 +3,6 @@
 Required:
 - [ ] update the readme, agents, etc
 - [ ] the readme should be a readme not a dump
-- [ ] add all cli commannds for the project in docs/cli.md
 - [ ] clean up /docs
 - [ ] test if selecting via cli 5.1 super high reasoning actually selects it as it's very fast
 - [ ] if i shut down the assistant the logs appear not to save, or at least the convo, even if i wait for it to finish
