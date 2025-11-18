@@ -100,7 +100,7 @@ On first launch, if `.env` is missing or `OPENAI_API_KEY` is empty, the CLI prom
 You can run commands directly through uv (no manual activation needed) or activate `.venv/` yourself.
 
 ```bash
-# Full transcription pipeline (default mode)
+# Full transcription pipeline (wake-word gated; configure via WAKE_WORD_* env vars)
 uv run pi-assistant
 
 # Force responses audio streaming (default)
@@ -269,7 +269,7 @@ You can change it later by editing `.env` or exporting a new value before launch
 - `PREROLL_DURATION_SECONDS`: Length of buffered audio (default: 1 second) that is prepended to the first streamed chunk after activation.
 - `WAKE_WORD_TARGET_SAMPLE_RATE`: Leave at 16 kHz unless you re-train a model that expects a different input rate.
 
-Every detection above the configured threshold is logged with the `[WAKE]` label, and state transitions are reported with `[STATE]`. When the wake word fires, the controller flushes the pre-roll buffer plus live audio so the transcript includes the first spoken words after the selected phrase.
+Every detection above the configured `WAKE_WORD_SCORE_THRESHOLD` (and meeting `WAKE_WORD_CONSECUTIVE_FRAMES`) is logged with the `[WAKE]` label, and state transitions are reported with `[STATE]`. When the wake word fires, the controller flushes the pre-roll buffer plus live audio so the transcript includes the first spoken words after the selected phrase.
 
 ## Project Structure
 

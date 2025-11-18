@@ -54,7 +54,7 @@
 5. **Tests & scripts**
    - Create a fixture WAV (or reuse `tests/manual/test_recording.wav` if it contains the phrase), build `tests/test_wake_word.py`, and document a manual verification script in `README.md`.
 6. **Docs & logging**
-   - Update README usage section (wake-word mode, override flag) and ensure logs clearly indicate detection activity.
+   - Update README usage section (wake-word mode, wake-word configuration env vars) and ensure logs clearly indicate detection activity.
 
 ## Risks / Mitigations
 - **False positives**: expose thresholds in config and log raw scores to tune; add optional “N detections within M ms” rule if needed.
