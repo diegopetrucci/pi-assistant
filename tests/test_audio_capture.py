@@ -39,7 +39,7 @@ def test_select_input_device_prefers_override(monkeypatch):
     capture = AudioCapture()
     selected = capture._select_input_device()
 
-    assert selected == 5
+    assert selected == 5  # noqa: PLR2004
 
 
 def test_select_input_device_uses_default_when_valid(monkeypatch):
@@ -53,7 +53,7 @@ def test_select_input_device_uses_default_when_valid(monkeypatch):
 
     capture = AudioCapture()
 
-    assert capture._select_input_device() == 3
+    assert capture._select_input_device() == 3  # noqa: PLR2004
 
 
 def test_select_input_device_scans_available_when_needed(monkeypatch):
@@ -196,7 +196,7 @@ def test_callback_logs_status(monkeypatch):
 
 def test_parse_device_override_whitespace():
     assert AudioCapture._parse_device_override("   ") is None
-    assert AudioCapture._parse_device_override("\n\t 3 ") == 3
+    assert AudioCapture._parse_device_override("\n\t 3 ") == 3  # noqa: PLR2004
 
 
 def test_select_input_device_raises_when_no_options(monkeypatch):

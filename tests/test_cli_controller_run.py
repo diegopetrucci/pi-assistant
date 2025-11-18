@@ -37,7 +37,7 @@ class DummyTranscriptBuffer:
 
     async def append_transcript(self, *args, **kwargs):
         self.appended.append(args)
-        return None
+        return None  # noqa: PLR1711
 
     async def finalize_turn(self):
         return None
@@ -655,7 +655,7 @@ async def test_run_audio_controller_resets_wake_engine_on_stream_start(monkeypat
 
         def process_chunk(self, chunk):
             self.calls += 1
-            if self.calls == 2:
+            if self.calls == 2:  # noqa: PLR2004
                 return WakeWordDetection(score=0.95, triggered=True)
             return WakeWordDetection(score=0.1, triggered=False)
 
@@ -947,7 +947,7 @@ async def test_auto_stop_wait_allows_new_wake(monkeypatch):
     capture.queue.put_nowait(loud_chunk)
     await asyncio.sleep(0.05)
 
-    assert transcript_buffer.started == 2  # new wake starts another turn even while waiting
+    assert transcript_buffer.started == 2  # noqa: PLR2004  # new wake starts another turn even while waiting
 
     speech_stopped_signal.set()
     await asyncio.sleep(0.05)
@@ -1069,7 +1069,7 @@ async def test_wake_phrase_override_cancels_pending_responses(monkeypatch):
     try:
 
         async def wait_for_cancellation() -> None:
-            while not (transcript_buffer.started >= 2 and scheduled[0].cancelled()):
+            while not (transcript_buffer.started >= 2 and scheduled[0].cancelled()):  # noqa: PLR2004
                 await asyncio.sleep(0.01)
 
         await asyncio.wait_for(wait_for_cancellation(), timeout=1.0)

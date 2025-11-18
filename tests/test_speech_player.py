@@ -28,7 +28,7 @@ class DummySD:
 
     def check_output_settings(self, device, samplerate, channels):
         self.check_calls.append((device, samplerate, channels))
-        if samplerate == 44100:
+        if samplerate == 44100:  # noqa: PLR2004
             raise RuntimeError("unsupported rate")
         return True
 
@@ -105,7 +105,7 @@ def test_select_playback_rate_logs_override_once(monkeypatch, capsys):
     monkeypatch.setattr(playback_module, "sd", dummy_sd)
 
     player = SpeechPlayer(default_sample_rate=44100)
-    assert player._playback_sample_rate != 44100
+    assert player._playback_sample_rate != 44100  # noqa: PLR2004
 
     captured = capsys.readouterr()
     assert "does not support 44100 Hz" in captured.out

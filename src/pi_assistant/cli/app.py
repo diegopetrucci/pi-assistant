@@ -102,7 +102,7 @@ async def _run_simulated_query_once(
             )
 
 
-async def run_transcription(
+async def run_transcription(  # noqa: PLR0912, PLR0915
     *,
     assistant_audio_mode: Optional[str] = None,
     simulate_query: Optional[str] = None,
