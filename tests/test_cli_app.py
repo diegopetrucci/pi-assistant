@@ -50,6 +50,7 @@ def test_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert args.simulate_query is None
     assert args.reasoning_effort is None
     assert args.assistant_model is None
+    assert args.reset is False
 
 
 def test_parse_args_invalid_mode(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -99,6 +100,18 @@ def test_parse_args_assistant_model_flag(monkeypatch: pytest.MonkeyPatch) -> Non
     assert args.assistant_model == "gpt-5.1-2025-11-13"
 
 
+def test_parse_args_assistant_model_nano_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _run_parse(monkeypatch, ["pi-assistant", "--assistant-model", "nano"])
+
+    assert args.assistant_model == "gpt-5-nano-2025-08-07"
+
+
+def test_parse_args_reset_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _run_parse(monkeypatch, ["pi-assistant", "--reset"])
+
+    assert args.reset is True
+
+
 class _StubAudioCapture:
     def __init__(self):
         self.loop = None
@@ -139,11 +152,13 @@ class _StubAssistant:
         supports_audio: bool = True,
         model_name: str = "test-model",
         tools: tuple[str, ...] = (),
+        location_name: str = "Test City",
     ):
         self.tts_enabled = tts_enabled
         self._supports_audio = supports_audio
         self._model_name = model_name
         self._tools = tools
+        self._location_name = location_name
         self.verify_calls = 0
         self.resp_audio_supported = None
         self.warm_calls: list[str] = []
@@ -181,6 +196,10 @@ class _StubAssistant:
     @property
     def enabled_tools(self) -> tuple[str, ...]:
         return self._tools
+
+    @property
+    def location_name(self) -> str:
+        return self._location_name
 
 
 class _StubSpeechPlayer:
@@ -361,6 +380,7 @@ async def test_run_transcription_logs_reasoning_effort(monkeypatch: pytest.Monke
     await run_transcription(assistant_audio_mode="responses", reasoning_effort="medium")
 
     assert any("Reasoning effort: medium" in entry for entry in logs)
+    assert any("Location context: Test City" in entry for entry in logs)
 
 
 @pytest.mark.asyncio
@@ -419,6 +439,7 @@ def test_main_run_mode_invokes_transcription(monkeypatch: pytest.MonkeyPatch) ->
         simulate_query=None,
         reasoning_effort=None,
         assistant_model=None,
+        reset=False,
     )
     monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
 
@@ -450,6 +471,41 @@ def test_main_run_mode_invokes_transcription(monkeypatch: pytest.MonkeyPatch) ->
     assert calls["simulate_query"] is None
     assert calls["reasoning_effort"] is None
     assert calls["assistant_model"] is None
+
+
+def test_main_reset_short_circuits(monkeypatch: pytest.MonkeyPatch) -> None:
+    args = types.SimpleNamespace(
+        mode="run",
+        verbose=False,
+        assistant_audio_mode=None,
+        simulate_query=None,
+        reasoning_effort=None,
+        assistant_model=None,
+        reset=True,
+    )
+    monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
+
+    logs: list[str] = []
+
+    def fake_console_print(message: str, *unused_args, **unused_kwargs):
+        logs.append(message)
+
+    monkeypatch.setattr("pi_assistant.cli.app.console_print", fake_console_print)
+
+    cleared = {"ASSISTANT_MODEL", "LOCATION_NAME"}
+    monkeypatch.setattr("pi_assistant.cli.app.reset_first_launch_choices", lambda: cleared)
+
+    asyncio_called = {"value": False}
+
+    def fake_asyncio_run(*_args, **_kwargs):
+        asyncio_called["value"] = True
+
+    monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", fake_asyncio_run)
+
+    main()
+
+    assert any("Cleared saved selections" in entry for entry in logs)
+    assert asyncio_called["value"] is False
 
 
 def test_main_runs_audio_diagnostics(monkeypatch: pytest.MonkeyPatch) -> None:

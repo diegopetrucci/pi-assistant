@@ -33,6 +33,7 @@ from pi_assistant.config import (
     SIMULATED_QUERY_TEXT,
     normalize_assistant_model_choice,
     reasoning_effort_choices_for_model,
+    reset_first_launch_choices,
 )
 from pi_assistant.diagnostics import test_audio_capture, test_websocket_client
 from pi_assistant.network import WebSocketClient
@@ -151,6 +152,8 @@ async def run_transcription(
     console_print(f"{ASSISTANT_LOG_LABEL} Tools enabled: {tools_summary}")
     reasoning_summary = selected_reasoning_effort or "auto"
     console_print(f"{ASSISTANT_LOG_LABEL} Reasoning effort: {reasoning_summary}")
+    location_summary = (assistant.location_name or "").strip() or "unspecified"
+    console_print(f"{ASSISTANT_LOG_LABEL} Location context: {location_summary}")
     speech_player = SpeechPlayer(default_sample_rate=ASSISTANT_TTS_SAMPLE_RATE)
     if assistant.tts_enabled and CONFIRMATION_CUE_ENABLED and CONFIRMATION_CUE_TEXT:
         cue_task = asyncio.create_task(assistant.warm_phrase_audio(CONFIRMATION_CUE_TEXT))
@@ -313,6 +316,14 @@ def parse_args():
             "Note: 'minimal' requires web search to be disabled."
         ),
     )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help=(
+            "Remove saved first-launch answers (assistant model, reasoning effort, location) "
+            "from .env and exit."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -320,6 +331,20 @@ def main():
     """Main entry point"""
 
     args = parse_args()
+    if getattr(args, "reset", False):
+        cleared = sorted(reset_first_launch_choices())
+        if cleared:
+            console_print(
+                f"{ASSISTANT_LOG_LABEL} Cleared saved selections: {', '.join(cleared)}. "
+                "They will be requested again on next run."
+            )
+        else:
+            console_print(
+                f"{ASSISTANT_LOG_LABEL} No saved first-launch selections were present. "
+                "Defaults will be used on next run."
+            )
+        return
+
     set_verbose_logging(args.verbose)
     if args.mode == "test-audio":
         run_func = test_audio_capture
