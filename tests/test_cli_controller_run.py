@@ -1,10 +1,18 @@
 import asyncio
+from typing import Any, Callable
 
 import numpy as np
 import pytest
 
 from pi_assistant.cli import controller
 from pi_assistant.wake_word import WakeWordDetection
+
+
+@pytest.fixture(autouse=True)
+def _disable_server_stop_guard(monkeypatch):
+    """Disable the server-stop guard so tests can finalize turns without waiting."""
+
+    monkeypatch.setattr(controller, "SERVER_STOP_MIN_SILENCE_SECONDS", 0.0)
 
 
 class FakeCapture:
@@ -43,7 +51,17 @@ class DummyTranscriptBuffer:
         return None
 
 
-def _make_response_scheduler(storage, *, auto_complete: bool = False):
+def _chunk_with_duration(seconds: float, amplitude: int = 0) -> bytes:
+    frames = max(1, int(seconds * controller.SAMPLE_RATE))
+    samples = np.full(frames * controller.CHANNELS, amplitude, dtype=np.int16)
+    return samples.tobytes()
+
+
+def _make_response_scheduler(
+    storage: list[asyncio.Task[None]],
+    *,
+    auto_complete: bool = False,
+) -> Callable[..., asyncio.Task[None]]:
     """Return a schedule_turn_response stub that toggles lifecycle callbacks."""
 
     sleep_duration = 0 if auto_complete else 10
@@ -69,10 +87,46 @@ def _make_response_scheduler(storage, *, auto_complete: bool = False):
     return _schedule
 
 
-async def _shutdown_task(task):
+async def _shutdown_task(task: asyncio.Task[Any]) -> None:
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+async def _wait_for_condition(
+    predicate: Callable[[], bool],
+    *,
+    timeout: float,
+    poll_interval: float = 0.01,
+    timeout_message: str,
+) -> None:
+    """Poll ``predicate`` until it returns True or fail after ``timeout`` seconds."""
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
+        if predicate():
+            return
+        if loop.time() >= deadline:
+            pytest.fail(timeout_message)
+        await asyncio.sleep(poll_interval)
+
+
+async def _ensure_condition_stays_false(
+    predicate: Callable[[], bool],
+    *,
+    duration: float,
+    poll_interval: float = 0.01,
+    failure_message: str,
+) -> None:
+    """Assert ``predicate`` remains False for ``duration`` seconds."""
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + duration
+    while loop.time() < deadline:
+        if predicate():
+            pytest.fail(failure_message)
+        await asyncio.sleep(poll_interval)
 
 
 @pytest.mark.asyncio
@@ -274,6 +328,92 @@ async def test_run_audio_controller_streams_after_wake_word_and_auto_stop(monkey
     assert transcript_buffer.started >= 1
     assert ws_client.sent_chunks  # pre-roll and live chunks sent
     assert scheduled  # auto-stop transition scheduled a response
+
+
+@pytest.mark.asyncio
+async def test_server_stop_event_respects_min_silence(monkeypatch):
+    monkeypatch.setattr(controller, "SERVER_STOP_MIN_SILENCE_SECONDS", 0.3)
+
+    capture = FakeCapture()
+    loud_chunk = _chunk_with_duration(0.2, amplitude=20000)
+    silence_chunk = _chunk_with_duration(0.05, amplitude=0)
+
+    capture.queue.put_nowait(loud_chunk)
+    capture.queue.put_nowait(loud_chunk)
+
+    ws_client = FakeWebSocket()
+    transcript_buffer = DummyTranscriptBuffer()
+    assistant = object()
+    speech_player = object()
+    stop_signal = asyncio.Event()
+    speech_stopped_signal = asyncio.Event()
+
+    class DummyWakeWordEngine:
+        def __init__(self, *args, **kwargs):
+            self.called = False
+
+        def process_chunk(self, chunk):
+            if not self.called:
+                self.called = True
+                return WakeWordDetection(score=0.95, triggered=True)
+            return WakeWordDetection(score=0.1, triggered=False)
+
+        def reset_detection(self):
+            return None
+
+    monkeypatch.setattr(controller, "WakeWordEngine", DummyWakeWordEngine)
+    monkeypatch.setattr(controller, "AUTO_STOP_ENABLED", False)
+
+    scheduled = []
+    monkeypatch.setattr(
+        controller,
+        "schedule_turn_response",
+        _make_response_scheduler(scheduled, auto_complete=True),
+    )
+
+    task = asyncio.create_task(
+        controller.run_audio_controller(
+            capture,
+            ws_client,  # pyright: ignore[reportArgumentType]
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            stop_signal=stop_signal,
+            speech_stopped_signal=speech_stopped_signal,
+        )
+    )
+
+    await _wait_for_condition(
+        lambda: transcript_buffer.started >= 1,
+        timeout=2.0,
+        timeout_message="wake phrase never started a turn",
+    )
+
+    speech_stopped_signal.set()
+    capture.queue.put_nowait(silence_chunk)
+    await _ensure_condition_stays_false(
+        lambda: bool(scheduled),
+        duration=0.2,
+        failure_message="server stop finalized before silence elapsed",
+    )
+
+    for _ in range(10):
+        capture.queue.put_nowait(silence_chunk)
+    await _wait_for_condition(
+        lambda: capture.queue.empty(),
+        timeout=2.0,
+        timeout_message="controller did not drain silence queue",
+    )
+    speech_stopped_signal.set()
+    capture.queue.put_nowait(silence_chunk)
+
+    await _wait_for_condition(
+        lambda: bool(scheduled),
+        timeout=2.0,
+        timeout_message="server stop never finalized after silence",
+    )
+
+    await _shutdown_task(task)
 
 
 @pytest.mark.asyncio

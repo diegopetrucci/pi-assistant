@@ -37,6 +37,7 @@ from pi_assistant.config import (
     CONFIRMATION_CUE_TEXT,
     PREROLL_DURATION_SECONDS,
     SAMPLE_RATE,
+    SERVER_STOP_MIN_SILENCE_SECONDS,
     STREAM_SAMPLE_RATE,
     WAKE_WORD_CONSECUTIVE_FRAMES,
     WAKE_WORD_EMBEDDING_MODEL_PATH,
@@ -55,6 +56,25 @@ from pi_assistant.wake_word import (
     WakeWordDetection,
     WakeWordEngine,
 )
+
+
+def should_ignore_server_stop_event(
+    state_manager: StreamStateManager,
+    silence_tracker: SilenceTracker,
+    min_silence_seconds: float,
+) -> str | None:
+    """Return a reason to ignore a server VAD stop, or ``None`` if it may proceed."""
+
+    if state_manager.state != StreamState.STREAMING:
+        # Defensive: the server stop acknowledgement may arrive after we've already
+        # returned to listening, in which case we can safely treat it as handled.
+        return None
+    if not silence_tracker.heard_speech:
+        return None
+    if not silence_tracker.has_observed_silence(min_silence_seconds):
+        current = silence_tracker.silence_duration
+        return f"{current:.2f}s silence < {min_silence_seconds:.2f}s minimum"
+    return None
 
 
 def _maybe_schedule_confirmation_cue(
@@ -286,13 +306,35 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
             audio_bytes = await audio_capture.get_audio_chunk()
             chunk_index = state_manager.increment_chunk_count()
 
+            was_streaming = state_manager.state == StreamState.STREAMING
+            silence_reached = False
+            observed_silence_for_chunk = False
+            if was_streaming:
+                # Track silence for every streaming chunk, even if we drop it later,
+                # so the auto-stop timers stay accurate.
+                silence_reached = silence_tracker.observe(audio_bytes)
+                observed_silence_for_chunk = True
+
             if speech_stopped_signal.is_set():
-                speech_stopped_signal.clear()
                 if state_manager.consume_suppressed_stop_event():
+                    speech_stopped_signal.clear()
                     verbose_print(
                         f"{TURN_LOG_LABEL} Ignoring stale server speech stop acknowledgement."
                     )
-                elif state_manager.awaiting_server_stop:
+                    continue
+
+                ignore_reason = should_ignore_server_stop_event(
+                    state_manager,
+                    silence_tracker,
+                    SERVER_STOP_MIN_SILENCE_SECONDS,
+                )
+                if ignore_reason:
+                    speech_stopped_signal.clear()
+                    verbose_print(f"{TURN_LOG_LABEL} Server speech stop ignored: {ignore_reason}")
+                    continue
+
+                speech_stopped_signal.clear()
+                if state_manager.awaiting_server_stop:
                     reason = state_manager.complete_deferred_finalize("server speech stop event")
                     if reason:
                         finalize_turn(reason)
@@ -384,13 +426,19 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
                         f"(count={retrigger_count})"
                     )
 
-            if state_manager.state == StreamState.STREAMING and not skip_current_chunk:
+            now_streaming = state_manager.state == StreamState.STREAMING
+            if now_streaming and not observed_silence_for_chunk:
+                # Streaming just started mid-iteration; register this chunk for silence tracking.
+                silence_reached = silence_tracker.observe(audio_bytes)
+                observed_silence_for_chunk = True
+
+            if now_streaming and not skip_current_chunk:
                 stream_chunk = chunk_preparer.prepare(audio_bytes)
                 if stream_chunk:
                     await ws_client.send_audio_chunk(stream_chunk)
 
             if AUTO_STOP_ENABLED and state_manager.state == StreamState.STREAMING:
-                if silence_tracker.observe(audio_bytes):
+                if silence_reached:
                     if state_manager.retrigger_budget == 0:
                         if state_manager.awaiting_server_stop:
                             verbose_print(

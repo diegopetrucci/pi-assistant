@@ -206,6 +206,10 @@ arecord --device=hw:1,0 --format S16_LE --rate 24000 -c 1 test.wav
 
 Defaults live in `config/defaults.toml` and are surfaced via `pi_assistant.config`. Detailed environment-variable descriptions (assistant tuning, wake-word overrides, simulated queries, logging knobs, etc.) are documented in `docs/cli.md`.
 
+If the assistant acknowledges a wake word before you're done speaking, increase `SERVER_STOP_MIN_SILENCE_SECONDS`
+in `.env` (default `0.75`) so the controller ignores premature server VAD stop events until it hears a longer
+stretch of local silence.
+
 ## Project Structure
 
 ```
