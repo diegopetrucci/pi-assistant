@@ -138,17 +138,27 @@ class TranscriptionTaskCoordinator:
         self._speech_stopped_signal = asyncio.Event()
 
     async def run(self) -> None:
-        async with asyncio.TaskGroup() as task_group:
-            task_group.create_task(self._run_audio_controller())
-            task_group.create_task(self._run_event_receiver())
-            if self._simulated_query:
-                task_group.create_task(
-                    run_simulated_query_once(
-                        self._simulated_query,
-                        self._components.assistant,
-                        self._components.speech_player,
-                    )
+        coroutines = [
+            self._run_audio_controller(),
+            self._run_event_receiver(),
+        ]
+        if self._simulated_query:
+            coroutines.append(
+                run_simulated_query_once(
+                    self._simulated_query,
+                    self._components.assistant,
+                    self._components.speech_player,
                 )
+            )
+
+        if hasattr(asyncio, "TaskGroup"):
+            async with asyncio.TaskGroup() as task_group:
+                for coroutine in coroutines:
+                    task_group.create_task(coroutine)
+            return
+
+        # Python 3.9–3.10 fallback: emulate TaskGroup with gather.
+        await asyncio.gather(*(asyncio.create_task(coro) for coro in coroutines))
 
     async def _run_audio_controller(self) -> None:
         from pi_assistant.cli.controller import run_audio_controller
