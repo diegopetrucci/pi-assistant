@@ -23,6 +23,7 @@ Required:
 
 Maybe:
 - [ ] Stream the reply
+- [ ] add a way to generate code coverage, write it in a gitignored file. it should have what entry points are missing unit tests
 - [ ] wake word logs are too much in non -v
 - [ ] explore if we can add more custom names for wake words
 - [ ] Add speaker diarization
