@@ -294,12 +294,8 @@ arecord -l
 - Export `AUDIO_INPUT_DEVICE=<index-or-name>` so the client selects the right microphone.
 
 **`Microphone <name> does not support SAMPLE_RATE=24000 Hz`:**
-- Your USB mic only exposes 48 kHz (or similar). Set `SAMPLE_RATE` to the hinted value from the error and keep `STREAM_SAMPLE_RATE=24000` so the client resamples before streaming.
-- Example for `.env`:
-  ```bash
-  echo "SAMPLE_RATE=48000" >> .env
-  ```
-- Re-run `uv run pi-assistant -v` to confirm audio capture succeeds.
+- The client now probes the hardware and, when possible, saves the microphone's preferred rate (for example 44100/48000 Hz) to `.env`. Look for the `[INFO] … Saved SAMPLE_RATE to .env` log, then restart the assistant so the new value takes effect.
+- If the device does not report any supported rate, set `SAMPLE_RATE` manually (keep `STREAM_SAMPLE_RATE=24000` so capture audio is resampled before streaming) and re-run `uv run pi-assistant -v`.
 
 **Licensing for bundled wake-word models:**
 - `models/alexa_v0.1.(onnx|tflite)`, `models/hey_jarvis_v0.1.(onnx|tflite)`, `models/hey_rhasspy_v0.1.(onnx|tflite)`, `models/melspectrogram.onnx`, and `models/embedding_model.onnx` are distributed under the Apache 2.0 license from the [openWakeWord](https://github.com/dscripka/openWakeWord) project.

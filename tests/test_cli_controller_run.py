@@ -495,7 +495,8 @@ async def test_run_audio_controller_manual_stop_clears_buffers(monkeypatch):
     monkeypatch.setattr(controller, "WakeWordEngine", wake_factory)
     monkeypatch.setattr(controller, "PreRollBuffer", lambda *args, **kwargs: preroll_buffer)
     monkeypatch.setattr(controller, "LinearResampler", lambda *args, **kwargs: resampler)
-    monkeypatch.setattr(controller, "STREAM_SAMPLE_RATE", controller.SAMPLE_RATE // 2 or 1)
+    sample_rate = controller.SAMPLE_RATE
+    monkeypatch.setattr(controller, "STREAM_SAMPLE_RATE", sample_rate // 2 or 1)
     monkeypatch.setattr(controller, "AUTO_STOP_ENABLED", False)
 
     def fake_schedule(*args, **kwargs):

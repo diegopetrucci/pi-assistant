@@ -28,4 +28,4 @@ Maybe:
 - [ ] wake word logs are too much in non -v
 - [ ] explore if we can add more custom names for wake words
 - [ ] Add speaker diarization
-- [ ] Auto-detect microphone sample rate support and adjust capture/session config when defaults fail (avoid manual SAMPLE_RATE exports)
+- [x] Auto-detect microphone sample rate support and adjust capture/session config when defaults fail (avoid manual SAMPLE_RATE exports)

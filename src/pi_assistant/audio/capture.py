@@ -4,6 +4,7 @@ Handles audio capture from USB microphone
 """
 
 import asyncio
+import os
 import sys
 from typing import Protocol, cast
 
@@ -15,8 +16,8 @@ from pi_assistant.config import (
     CHANNELS,
     DTYPE,
     SAMPLE_RATE,
-    STREAM_SAMPLE_RATE,
 )
+from pi_assistant.config.base import _persist_env_value
 
 from ._sounddevice import sounddevice as sd
 from .utils import device_info_dict
@@ -39,6 +40,7 @@ class AudioCapture:
         self.loop = None
         self.callback_count = 0  # Debug counter
         self.input_device = None
+        self.sample_rate = SAMPLE_RATE
 
     def callback(self, indata, frames, time_info, status):
         """
@@ -80,9 +82,10 @@ class AudioCapture:
             loop: asyncio event loop for threadsafe operations
         """
         self.loop = loop
+        self.sample_rate = SAMPLE_RATE
 
         verbose_print("Initializing audio stream...")
-        verbose_print(f"  Sample rate: {SAMPLE_RATE} Hz")
+        verbose_print(f"  Sample rate: {self.sample_rate} Hz")
         verbose_print(f"  Channels: {CHANNELS} (mono)")
         verbose_print(f"  Buffer size: {BUFFER_SIZE} frames")
         verbose_print(f"  Data type: {DTYPE}")
@@ -96,7 +99,7 @@ class AudioCapture:
         # Initialize sounddevice input stream
         try:
             self.stream = sd.InputStream(
-                samplerate=SAMPLE_RATE,
+                samplerate=self.sample_rate,
                 channels=CHANNELS,
                 dtype=DTYPE,
                 blocksize=BUFFER_SIZE,
@@ -131,30 +134,32 @@ class AudioCapture:
                 device=device,
                 channels=CHANNELS,
                 dtype=DTYPE,
-                samplerate=SAMPLE_RATE,
+                samplerate=self.sample_rate,
             )
         except Exception as exc:
+            fallback_rate = self._device_default_sample_rate(device)
+            if fallback_rate and fallback_rate != self.sample_rate:
+                self._persist_sample_rate_hint(device, fallback_rate)
             raise self._unsupported_sample_rate_error(device) from exc
+
+    def _persist_sample_rate_hint(self, device, fallback_rate: int) -> None:
+        """Save the suggested sample rate so the next launch succeeds."""
+
+        device_label = self._describe_device(device)
+        _persist_env_value("SAMPLE_RATE", str(fallback_rate))
+        os.environ["SAMPLE_RATE"] = str(fallback_rate)
+        print(
+            "[INFO] "
+            f"Detected microphone {device_label} prefers {fallback_rate} Hz. "
+            "Saved SAMPLE_RATE to .env; restart the assistant to apply."
+        )
 
     def _unsupported_sample_rate_error(self, device) -> RuntimeError:
         """Return a descriptive error when the mic rejects SAMPLE_RATE."""
 
         device_label = self._describe_device(device)
-        default_rate = self._device_default_sample_rate(device)
-        if default_rate:
-            suggestion = (
-                f"Try setting SAMPLE_RATE={default_rate} in your environment or .env file. "
-                f"Keep STREAM_SAMPLE_RATE={STREAM_SAMPLE_RATE} so capture audio can be "
-                "resampled for OpenAI."
-            )
-        else:
-            suggestion = (
-                "Set SAMPLE_RATE to one of the rates reported by `arecord --dump-hw-params` "
-                "for this microphone."
-            )
-
         return RuntimeError(
-            f"Microphone {device_label} does not support SAMPLE_RATE={SAMPLE_RATE} Hz. {suggestion}"
+            f"Microphone {device_label} does not support SAMPLE_RATE={self.sample_rate} Hz."
         )
 
     def _device_default_sample_rate(self, device) -> int | None:

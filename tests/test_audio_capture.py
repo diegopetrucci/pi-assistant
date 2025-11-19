@@ -304,7 +304,7 @@ def test_start_and_stop_stream_success(monkeypatch):
     assert dummy_stream.closed is True
 
 
-def test_start_stream_reports_samplerate_hint(monkeypatch):
+def test_start_stream_auto_updates_env_when_hint_available(monkeypatch, capsys):
     capture = AudioCapture()
     monkeypatch.setattr(capture, "_select_input_device", lambda: 2)
 
@@ -322,6 +322,43 @@ def test_start_stream_reports_samplerate_hint(monkeypatch):
         },
     )
 
+    recorded: dict[str, str] = {}
+
+    def fake_persist(key, value):
+        recorded[key] = value
+
+    monkeypatch.setattr(capture_module, "_persist_env_value", fake_persist)
+
+    loop = asyncio.new_event_loop()
+    try:
+        with pytest.raises(RuntimeError):
+            capture.start_stream(loop=loop)
+    finally:
+        loop.close()
+
+    assert recorded == {"SAMPLE_RATE": "48000"}
+    out = capsys.readouterr().out
+    assert "Saved SAMPLE_RATE" in out
+
+
+def test_start_stream_reports_samplerate_hint_when_no_fallback(monkeypatch):
+    capture = AudioCapture()
+    monkeypatch.setattr(capture, "_select_input_device", lambda: 2)
+
+    def fail_check(**_):
+        raise ValueError("Invalid sample rate")
+
+    monkeypatch.setattr(capture_module.sd, "check_input_settings", fail_check)
+    monkeypatch.setattr(
+        capture_module.sd,
+        "query_devices",
+        lambda device=None: {
+            "name": "USB Mic",
+            "index": device,
+            "default_samplerate": None,
+        },
+    )
+
     loop = asyncio.new_event_loop()
     try:
         with pytest.raises(RuntimeError) as excinfo:
@@ -331,4 +368,4 @@ def test_start_stream_reports_samplerate_hint(monkeypatch):
 
     message = str(excinfo.value)
     assert "SAMPLE_RATE" in message
-    assert "48000" in message
+    assert "Try setting" not in message
