@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from collections.abc import Callable
+from dataclasses import dataclass
 from functools import partial
 from typing import Optional
 
-from pi_assistant.assistant import LLMResponder, TurnTranscriptAggregator
+from pi_assistant.assistant import LLMReply, LLMResponder, TurnTranscriptAggregator
 from pi_assistant.audio import SpeechPlayer
 from pi_assistant.audio.resampler import LinearResampler
 from pi_assistant.cli.controller_components import (
@@ -82,14 +84,72 @@ def _maybe_schedule_confirmation_cue(
     task.add_done_callback(_log_task_error)
 
 
+@dataclass(slots=True)
+class ResponseLifecycleHooks:
+    on_transcript_ready: Optional[Callable[[], None]] = None
+    on_reply_start: Optional[Callable[[], None]] = None
+    on_reply_complete: Optional[Callable[[], None]] = None
+
+
+async def _finalize_transcript(
+    transcript_buffer: TurnTranscriptAggregator,
+    hooks: Optional[ResponseLifecycleHooks],
+) -> Optional[str]:
+    """Return the finalized transcript while honoring lifecycle hooks."""
+
+    try:
+        return await transcript_buffer.finalize_turn()
+    finally:
+        if hooks and hooks.on_transcript_ready:
+            hooks.on_transcript_ready()
+
+
+async def _request_assistant_reply(
+    transcript: str,
+    assistant: LLMResponder,
+    hooks: Optional[ResponseLifecycleHooks],
+) -> Optional[LLMReply]:
+    """Fetch an assistant reply and handle lifecycle notifications."""
+
+    reply_started = False
+    if hooks and hooks.on_reply_start:
+        hooks.on_reply_start()
+        reply_started = True
+
+    reply: Optional[LLMReply] = None
+    try:
+        reply = await assistant.generate_reply(transcript)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # pragma: no cover - network failure
+        print(f"{ASSISTANT_LOG_LABEL} Error requesting assistant reply: {exc}", file=sys.stderr)
+        return None
+    finally:
+        if reply_started and hooks and hooks.on_reply_complete:
+            hooks.on_reply_complete()
+
+    return reply
+
+
+async def _play_assistant_audio(reply: LLMReply, speech_player: SpeechPlayer) -> None:
+    if not reply.audio_bytes:
+        return
+    try:
+        await speech_player.play(reply.audio_bytes, sample_rate=reply.audio_sample_rate)
+    except Exception as exc:  # pragma: no cover - host audio failure
+        print(f"{ASSISTANT_LOG_LABEL} Error playing audio reply: {exc}", file=sys.stderr)
+
+
 async def finalize_turn_and_respond(
     transcript_buffer: TurnTranscriptAggregator,
     assistant: LLMResponder,
     speech_player: SpeechPlayer,
+    *,
+    hooks: Optional[ResponseLifecycleHooks] = None,
 ) -> None:
     """Gather a completed turn transcript and fetch an assistant reply."""
 
-    transcript = await transcript_buffer.finalize_turn()
+    transcript = await _finalize_transcript(transcript_buffer, hooks)
     if not transcript:
         return
 
@@ -98,12 +158,7 @@ async def finalize_turn_and_respond(
     print(f"{TURN_LOG_LABEL} Transcript ready ({len(transcript)} chars); requesting assistant...")
     verbose_print(f"{TURN_LOG_LABEL} Sending transcript to assistant: {transcript}")
 
-    try:
-        reply = await assistant.generate_reply(transcript)
-    except Exception as exc:  # pragma: no cover - network failure
-        print(f"{ASSISTANT_LOG_LABEL} Error requesting assistant reply: {exc}", file=sys.stderr)
-        return
-
+    reply = await _request_assistant_reply(transcript, assistant, hooks)
     if not reply:
         print(f"{ASSISTANT_LOG_LABEL} (empty response)")
         return
@@ -113,22 +168,25 @@ async def finalize_turn_and_respond(
     else:
         print(f"{ASSISTANT_LOG_LABEL} (no text content)")
 
-    if reply.audio_bytes:
-        try:
-            await speech_player.play(reply.audio_bytes, sample_rate=reply.audio_sample_rate)
-        except Exception as exc:  # pragma: no cover - host audio failure
-            print(f"{ASSISTANT_LOG_LABEL} Error playing audio reply: {exc}", file=sys.stderr)
+    await _play_assistant_audio(reply, speech_player)
 
 
 def schedule_turn_response(
     transcript_buffer: TurnTranscriptAggregator,
     assistant: LLMResponder,
     speech_player: SpeechPlayer,
+    *,
+    hooks: Optional[ResponseLifecycleHooks] = None,
 ) -> asyncio.Task:
     """Fire-and-forget helper for assistant calls with error reporting."""
 
     task = asyncio.create_task(
-        finalize_turn_and_respond(transcript_buffer, assistant, speech_player)
+        finalize_turn_and_respond(
+            transcript_buffer,
+            assistant,
+            speech_player,
+            hooks=hooks,
+        )
     )
 
     def _log_task_error(fut: asyncio.Task):
@@ -186,7 +244,19 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
         sample_rate=capture_sample_rate,
     )
     state_manager = StreamStateManager()
-    task_factory = partial(schedule_turn_response, transcript_buffer, assistant, speech_player)
+    lifecycle_hooks = ResponseLifecycleHooks(
+        on_transcript_ready=state_manager.clear_finalizing_turn,
+        on_reply_start=state_manager.mark_awaiting_assistant_reply,
+        on_reply_complete=state_manager.clear_awaiting_assistant_reply,
+    )
+
+    task_factory = partial(
+        schedule_turn_response,
+        transcript_buffer,
+        assistant,
+        speech_player,
+        hooks=lifecycle_hooks,
+    )
     response_tasks = ResponseTaskManager(task_factory=task_factory)
 
     if chunk_preparer.is_resampling:
@@ -201,6 +271,7 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
 
     def finalize_turn(reason: str) -> None:
         verbose_print(f"{TURN_LOG_LABEL} Speech ended (reason={reason}) – finalizing turn.")
+        state_manager.mark_finalizing_turn()
         response_tasks.schedule(reason)
 
     def reset_stream_resources() -> None:
@@ -270,15 +341,21 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
             if wake_engine and detection.triggered:
                 if state_manager.awaiting_server_stop:
                     verbose_print(
-                        f"{WAKE_LOG_LABEL} Wake phrase overriding prior turn awaiting server stop."
+                        f"{WAKE_LOG_LABEL} Wake phrase ignored while awaiting server stop "
+                        "confirmation."
                     )
-                    reason = state_manager.complete_deferred_finalize("wake phrase override")
-                    if reason:
-                        finalize_turn(reason)
-                    state_manager.suppress_next_server_stop_event()
+                    continue
                 if state_manager.state == StreamState.LISTENING:
+                    if state_manager.finalizing_turn:
+                        verbose_print(
+                            f"{WAKE_LOG_LABEL} Wake phrase ignored while finalizing previous turn."
+                        )
+                        continue
+                    if state_manager.awaiting_assistant_reply:
+                        verbose_print(f"{TURN_LOG_LABEL} Wake phrase overriding assistant reply.")
+                        state_manager.clear_awaiting_assistant_reply()
+                        response_tasks.cancel("wake phrase override")
                     previous_state = state_manager.transition_to_streaming()
-                    response_tasks.cancel("wake phrase override")
                     await transcript_buffer.start_turn()
                     if wake_engine:
                         wake_engine.reset_detection()

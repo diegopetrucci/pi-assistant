@@ -43,10 +43,66 @@ class DummyTranscriptBuffer:
         return None
 
 
+def _make_response_scheduler(storage, *, auto_complete: bool = False):
+    """Return a schedule_turn_response stub that toggles lifecycle callbacks."""
+
+    sleep_duration = 0 if auto_complete else 10
+
+    def _schedule(tb, assistant, player, **kwargs):
+        hooks = kwargs.get("hooks")
+
+        async def _task():
+            if hooks and hooks.on_transcript_ready:
+                hooks.on_transcript_ready()
+            if hooks and hooks.on_reply_start:
+                hooks.on_reply_start()
+            try:
+                await asyncio.sleep(sleep_duration)
+            finally:
+                if hooks and hooks.on_reply_complete:
+                    hooks.on_reply_complete()
+
+        task = asyncio.create_task(_task())
+        storage.append(task)
+        return task
+
+    return _schedule
+
+
 async def _shutdown_task(task):
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+@pytest.mark.asyncio
+async def test_run_audio_controller_wake_engine_failure(monkeypatch, capsys):
+    capture = FakeCapture()
+    ws_client = FakeWebSocket()
+    transcript_buffer = DummyTranscriptBuffer()
+    assistant = object()
+    speech_player = object()
+    stop_signal = asyncio.Event()
+    speech_stopped_signal = asyncio.Event()
+
+    def failing_wake_engine(*args, **kwargs):
+        raise RuntimeError("missing model")
+
+    monkeypatch.setattr(controller, "WakeWordEngine", failing_wake_engine)
+
+    with pytest.raises(RuntimeError, match="missing model"):
+        await controller.run_audio_controller(
+            capture,
+            ws_client,  # pyright: ignore[reportArgumentType]
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            stop_signal=stop_signal,
+            speech_stopped_signal=speech_stopped_signal,
+        )
+
+    captured = capsys.readouterr()
+    assert "missing model" in captured.err
 
 
 @pytest.mark.asyncio
@@ -77,10 +133,7 @@ async def test_run_audio_controller_handles_manual_stop(monkeypatch):
     monkeypatch.setattr(controller, "WakeWordEngine", DummyWakeWordEngine)
 
     scheduled = []
-
-    def fake_schedule(tb, assistant, player):
-        scheduled.append(True)
-        return asyncio.create_task(asyncio.sleep(0))
+    fake_schedule = _make_response_scheduler(scheduled, auto_complete=True)
 
     monkeypatch.setattr(controller, "schedule_turn_response", fake_schedule)
 
@@ -188,10 +241,7 @@ async def test_run_audio_controller_streams_after_wake_word_and_auto_stop(monkey
     monkeypatch.setattr(controller, "log_state_transition", fake_log)
 
     scheduled = []
-
-    def fake_schedule(tb, assistant, player):
-        scheduled.append(True)
-        return asyncio.create_task(asyncio.sleep(0))
+    fake_schedule = _make_response_scheduler(scheduled)
 
     monkeypatch.setattr(controller, "schedule_turn_response", fake_schedule)
 
@@ -297,10 +347,11 @@ async def test_run_audio_controller_handles_server_stop_signal(monkeypatch):
 
     monkeypatch.setattr(controller, "log_state_transition", fake_log_transition)
 
-    def fake_schedule(*args, **kwargs):
-        return asyncio.create_task(asyncio.sleep(0))
-
-    monkeypatch.setattr(controller, "schedule_turn_response", fake_schedule)
+    monkeypatch.setattr(
+        controller,
+        "schedule_turn_response",
+        _make_response_scheduler([], auto_complete=True),
+    )
 
     task = asyncio.create_task(
         controller.run_audio_controller(
@@ -388,10 +439,20 @@ async def test_run_audio_controller_cancellation_cleans_response_tasks(monkeypat
     pending_event = asyncio.Event()
     scheduled_tasks = []
 
-    async def _sleep_forever():
-        await pending_event.wait()
-
     def fake_schedule(*args, **kwargs):
+        hooks = kwargs.get("hooks")
+
+        async def _sleep_forever():
+            if hooks and hooks.on_transcript_ready:
+                hooks.on_transcript_ready()
+            if hooks and hooks.on_reply_start:
+                hooks.on_reply_start()
+            try:
+                await pending_event.wait()
+            finally:
+                if hooks and hooks.on_reply_complete:
+                    hooks.on_reply_complete()
+
         task = asyncio.create_task(_sleep_forever())
         scheduled_tasks.append(task)
         return task
@@ -499,10 +560,11 @@ async def test_run_audio_controller_manual_stop_clears_buffers(monkeypatch):
     monkeypatch.setattr(controller, "STREAM_SAMPLE_RATE", sample_rate // 2 or 1)
     monkeypatch.setattr(controller, "AUTO_STOP_ENABLED", False)
 
-    def fake_schedule(*args, **kwargs):
-        return asyncio.create_task(asyncio.sleep(0))
-
-    monkeypatch.setattr(controller, "schedule_turn_response", fake_schedule)
+    monkeypatch.setattr(
+        controller,
+        "schedule_turn_response",
+        _make_response_scheduler([], auto_complete=True),
+    )
 
     task = asyncio.create_task(
         controller.run_audio_controller(
@@ -597,12 +659,7 @@ async def test_run_audio_controller_auto_stop_silence_transition(monkeypatch):
     monkeypatch.setattr(controller, "log_state_transition", fake_log_transition)
 
     scheduled = []
-
-    def fake_schedule(*args, **kwargs):
-        task = asyncio.create_task(asyncio.sleep(0))
-        scheduled.append(task)
-        return task
-
+    fake_schedule = _make_response_scheduler(scheduled)
     monkeypatch.setattr(controller, "schedule_turn_response", fake_schedule)
 
     task = asyncio.create_task(
@@ -796,12 +853,7 @@ async def test_run_audio_controller_retrigger_delays_auto_stop(monkeypatch):
     monkeypatch.setattr(controller, "log_state_transition", fake_log_transition)
 
     scheduled = []
-
-    def fake_schedule(*args, **kwargs):
-        task = asyncio.create_task(asyncio.sleep(0))
-        scheduled.append(task)
-        return task
-
+    fake_schedule = _make_response_scheduler(scheduled)
     monkeypatch.setattr(controller, "schedule_turn_response", fake_schedule)
 
     task = asyncio.create_task(
@@ -840,6 +892,98 @@ async def test_run_audio_controller_retrigger_delays_auto_stop(monkeypatch):
     reasons = [reason for _, _, reason in transitions]
     assert "silence detected" in reasons
     assert scheduled
+
+
+@pytest.mark.asyncio
+async def test_wake_word_ignored_while_finalizing_previous_turn(monkeypatch):
+    capture = FakeCapture()
+    loud_chunk = (np.ones(128, dtype=np.int16) * 20000).tobytes()
+    silence_chunk = np.zeros(128, dtype=np.int16).tobytes()
+    capture.queue.put_nowait(loud_chunk)
+    capture.queue.put_nowait(silence_chunk)
+    capture.queue.put_nowait(silence_chunk)
+
+    ws_client = FakeWebSocket()
+    transcript_buffer = DummyTranscriptBuffer()
+    assistant = object()
+    speech_player = object()
+    stop_signal = asyncio.Event()
+    speech_stopped_signal = asyncio.Event()
+
+    class DummyWakeWordEngine:
+        def __init__(self, *args, **kwargs):
+            self.calls = 0
+
+        def process_chunk(self, chunk):
+            triggered = self.calls in {0, 3}
+            score = 0.95 if triggered else 0.1
+            self.calls += 1
+            return WakeWordDetection(score=score, triggered=triggered)
+
+        def reset_detection(self):
+            return None
+
+    monkeypatch.setattr(controller, "WakeWordEngine", DummyWakeWordEngine)
+    monkeypatch.setattr(controller, "AUTO_STOP_ENABLED", False)
+
+    release_event = asyncio.Event()
+    scheduled = []
+    observed_hooks: list[controller.ResponseLifecycleHooks] = []
+
+    def fake_schedule(tb, assistant, player, **kw):
+        hooks = kw.get("hooks")
+        observed_hooks.clear()
+        if hooks:
+            observed_hooks.append(hooks)
+
+        async def _task():
+            await release_event.wait()
+
+        task = asyncio.create_task(_task())
+        scheduled.append(task)
+        return task
+
+    monkeypatch.setattr(controller, "schedule_turn_response", fake_schedule)
+
+    task = asyncio.create_task(
+        controller.run_audio_controller(
+            capture,
+            ws_client,  # pyright: ignore[reportArgumentType]
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            stop_signal=stop_signal,
+            speech_stopped_signal=speech_stopped_signal,
+        )
+    )
+
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if transcript_buffer.started >= 1:
+            break
+    else:
+        pytest.fail("initial wake phrase did not start streaming")
+
+    speech_stopped_signal.set()
+    capture.queue.put_nowait(silence_chunk)
+
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if scheduled:
+            break
+    else:
+        pytest.fail("response task was not scheduled")
+
+    capture.queue.put_nowait(loud_chunk)
+    await asyncio.sleep(0.05)
+    assert transcript_buffer.started == 1
+
+    if observed_hooks and observed_hooks[0].on_transcript_ready:
+        observed_hooks[0].on_transcript_ready()
+    release_event.set()
+    await _shutdown_task(task)
+    for pending in scheduled:
+        pending.cancel()
 
 
 @pytest.mark.asyncio
@@ -948,7 +1092,7 @@ async def test_auto_stop_wait_allows_new_wake(monkeypatch):
     capture.queue.put_nowait(loud_chunk)
     await asyncio.sleep(0.05)
 
-    assert transcript_buffer.started == 2  # noqa: PLR2004  # new wake starts another turn even while waiting
+    assert transcript_buffer.started == 1  # retrigger ignored until server confirms stop
 
     speech_stopped_signal.set()
     await asyncio.sleep(0.05)
@@ -1027,12 +1171,7 @@ async def test_wake_phrase_override_cancels_pending_responses(monkeypatch):
     monkeypatch.setattr(controller, "AUTO_STOP_ENABLED", False)
 
     scheduled = []
-
-    def fake_schedule(*args, **kwargs):
-        task = asyncio.create_task(asyncio.sleep(10))
-        scheduled.append(task)
-        return task
-
+    fake_schedule = _make_response_scheduler(scheduled)
     monkeypatch.setattr(controller, "schedule_turn_response", fake_schedule)
 
     task = asyncio.create_task(
@@ -1084,7 +1223,7 @@ async def test_wake_phrase_override_cancels_pending_responses(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_wake_override_suppresses_stale_server_ack(monkeypatch):
+async def test_wake_phrase_waits_for_server_ack_before_override(monkeypatch):
     capture = FakeCapture()
     loud_chunk = (np.ones(128, dtype=np.int16) * 20000).tobytes()
     silence_chunk = np.zeros(128, dtype=np.int16).tobytes()
@@ -1158,12 +1297,7 @@ async def test_wake_override_suppresses_stale_server_ack(monkeypatch):
     monkeypatch.setattr(controller, "AUTO_STOP_MAX_SILENCE_SECONDS", 0.0)
 
     scheduled = []
-
-    def fake_schedule(*args, **kwargs):
-        task = asyncio.create_task(asyncio.sleep(10))
-        scheduled.append(task)
-        return task
-
+    fake_schedule = _make_response_scheduler(scheduled)
     monkeypatch.setattr(controller, "schedule_turn_response", fake_schedule)
 
     task = asyncio.create_task(
@@ -1188,13 +1322,19 @@ async def test_wake_override_suppresses_stale_server_ack(monkeypatch):
     wake_engine.allow_retry = True
     capture.queue.put_nowait(loud_chunk)
     await asyncio.sleep(0.05)
-    assert scheduled  # first finalize scheduled before override cleanup runs
+    assert not scheduled  # wake ignored until server confirms stop
 
     speech_stopped_signal.set()
     capture.queue.put_nowait(silence_chunk)
-    await asyncio.sleep(0.05)
 
-    assert len(scheduled) == 1  # stale server ack did not trigger another schedule
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if scheduled:
+            break
+    else:
+        pytest.fail("response not scheduled after server ack")
+
+    assert len(scheduled) == 1
 
     await _shutdown_task(task)
     for pending in scheduled:
@@ -1272,10 +1412,11 @@ async def test_run_audio_controller_stop_signal_during_preroll_flush(monkeypatch
     )
     monkeypatch.setattr(controller, "AUTO_STOP_ENABLED", False)
 
-    def fake_schedule(*args, **kwargs):
-        return asyncio.create_task(asyncio.sleep(0))
-
-    monkeypatch.setattr(controller, "schedule_turn_response", fake_schedule)
+    monkeypatch.setattr(
+        controller,
+        "schedule_turn_response",
+        _make_response_scheduler([], auto_complete=True),
+    )
 
     task = asyncio.create_task(
         controller.run_audio_controller(

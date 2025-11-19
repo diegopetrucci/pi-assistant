@@ -1,4 +1,7 @@
 import asyncio
+import contextlib
+import io
+from typing import cast
 
 import numpy as np
 import pytest
@@ -133,6 +136,18 @@ def test_stream_state_manager_tracks_deferred_finalize():
     assert manager.consume_suppressed_stop_event() is True
     assert manager.consume_suppressed_stop_event() is False
 
+    assert manager.awaiting_assistant_reply is False
+    manager.mark_awaiting_assistant_reply()
+    assert manager.awaiting_assistant_reply is True
+    manager.clear_awaiting_assistant_reply()
+    assert manager.awaiting_assistant_reply is False
+
+    assert manager.finalizing_turn is False
+    manager.mark_finalizing_turn()
+    assert manager.finalizing_turn is True
+    manager.clear_finalizing_turn()
+    assert manager.finalizing_turn is False
+
 
 @pytest.mark.asyncio
 async def test_response_task_manager_schedules_and_cleanup():
@@ -196,3 +211,330 @@ async def test_response_task_manager_drain_cancels_pending_tasks():
     await manager.drain()
 
     assert all(task.cancelled() for task in tasks)
+
+
+class _DummyAssistant:
+    def __init__(self):
+        self.tts_enabled: bool = True
+        self.peek_result: tuple[bytes, int | None] | None = None
+        self.peek_calls: int = 0
+        self.warm_calls: list[str] = []
+
+    def peek_phrase_audio(self, text):
+        self.peek_calls += 1
+        return self.peek_result
+
+    async def warm_phrase_audio(self, text):
+        self.warm_calls.append(text)
+
+
+class _DummySpeechPlayer:
+    def __init__(self):
+        self.play_calls: list[tuple[bytes, int]] = []
+
+    async def play(self, audio_bytes, *, sample_rate):
+        self.play_calls.append((audio_bytes, sample_rate))
+
+
+class _DummyTranscriptBuffer:
+    def __init__(self, result: str | None = None, to_raise: BaseException | None = None):
+        self.result = result
+        self.to_raise = to_raise
+        self.finalize_calls = 0
+
+    async def finalize_turn(self):
+        self.finalize_calls += 1
+        if self.to_raise:
+            raise self.to_raise
+        return self.result
+
+
+class _DummyResponder:
+    def __init__(self, reply=None, to_raise: BaseException | None = None):
+        self.reply = reply
+        self.to_raise = to_raise
+        self.calls: list[str] = []
+
+    async def generate_reply(self, transcript):
+        self.calls.append(transcript)
+        if self.to_raise:
+            raise self.to_raise
+        return self.reply
+
+
+@pytest.mark.asyncio
+async def test_maybe_schedule_confirmation_cue_warms_cache(monkeypatch):
+    assistant = _DummyAssistant()
+    assistant.peek_result = None
+    player = _DummySpeechPlayer()
+
+    monkeypatch.setattr(controller, "CONFIRMATION_CUE_ENABLED", True)
+    monkeypatch.setattr(controller, "CONFIRMATION_CUE_TEXT", "Got it")
+
+    controller._maybe_schedule_confirmation_cue(
+        cast(controller.LLMResponder, assistant),
+        cast(controller.SpeechPlayer, player),
+    )
+    await asyncio.sleep(0)
+
+    assert assistant.warm_calls == ["Got it"]
+    assert player.play_calls == []
+
+
+@pytest.mark.asyncio
+async def test_maybe_schedule_confirmation_cue_plays_cached_audio(monkeypatch):
+    assistant = _DummyAssistant()
+    assistant.peek_result = (b"123", None)
+    player = _DummySpeechPlayer()
+
+    monkeypatch.setattr(controller, "CONFIRMATION_CUE_ENABLED", True)
+    monkeypatch.setattr(controller, "CONFIRMATION_CUE_TEXT", "Got it")
+    monkeypatch.setattr(controller, "ASSISTANT_TTS_SAMPLE_RATE", 11025)
+
+    controller._maybe_schedule_confirmation_cue(
+        cast(controller.LLMResponder, assistant),
+        cast(controller.SpeechPlayer, player),
+    )
+    await asyncio.sleep(0)
+
+    assert assistant.warm_calls == []
+    assert player.play_calls == [(b"123", 11025)]
+
+
+@pytest.mark.asyncio
+async def test_finalize_transcript_notifies_hooks():
+    buffer = _DummyTranscriptBuffer(result="hello")
+    calls: list[str] = []
+    hooks = controller.ResponseLifecycleHooks(
+        on_transcript_ready=lambda: calls.append("ready"),
+    )
+
+    transcript = await controller._finalize_transcript(
+        cast(controller.TurnTranscriptAggregator, buffer),
+        hooks,
+    )
+
+    assert transcript == "hello"
+    assert calls == ["ready"]
+
+
+@pytest.mark.asyncio
+async def test_finalize_transcript_still_calls_hook_on_error():
+    buffer = _DummyTranscriptBuffer(to_raise=RuntimeError("boom"))
+    calls: list[str] = []
+    hooks = controller.ResponseLifecycleHooks(
+        on_transcript_ready=lambda: calls.append("ready"),
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await controller._finalize_transcript(
+            cast(controller.TurnTranscriptAggregator, buffer),
+            hooks,
+        )
+
+    assert calls == ["ready"]
+
+
+@pytest.mark.asyncio
+async def test_request_assistant_reply_runs_hooks():
+    reply = controller.LLMReply(text="ok", audio_bytes=None, audio_sample_rate=None)
+    responder = _DummyResponder(reply=reply)
+    calls: list[str] = []
+    hooks = controller.ResponseLifecycleHooks(
+        on_reply_start=lambda: calls.append("start"),
+        on_reply_complete=lambda: calls.append("complete"),
+    )
+
+    result = await controller._request_assistant_reply(
+        "hi",
+        cast(controller.LLMResponder, responder),
+        hooks,
+    )
+
+    assert result is reply
+    assert calls == ["start", "complete"]
+
+
+@pytest.mark.asyncio
+async def test_request_assistant_reply_handles_errors(capsys):
+    responder = _DummyResponder(to_raise=RuntimeError("network down"))
+    calls: list[str] = []
+    hooks = controller.ResponseLifecycleHooks(
+        on_reply_start=lambda: calls.append("start"),
+        on_reply_complete=lambda: calls.append("complete"),
+    )
+
+    result = await controller._request_assistant_reply(
+        "hi",
+        cast(controller.LLMResponder, responder),
+        hooks,
+    )
+
+    captured = capsys.readouterr()
+    assert "network down" in captured.err
+    assert result is None
+    assert calls == ["start", "complete"]
+
+
+@pytest.mark.asyncio
+async def test_request_assistant_reply_propagates_cancellation():
+    responder = _DummyResponder(to_raise=asyncio.CancelledError())
+    calls: list[str] = []
+    hooks = controller.ResponseLifecycleHooks(
+        on_reply_start=lambda: calls.append("start"),
+        on_reply_complete=lambda: calls.append("complete"),
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await controller._request_assistant_reply(
+            "hi",
+            cast(controller.LLMResponder, responder),
+            hooks,
+        )
+
+    assert calls == ["start", "complete"]
+
+
+@pytest.mark.asyncio
+async def test_play_assistant_audio_streams_bytes():
+    reply = controller.LLMReply(text="ok", audio_bytes=b"bytes", audio_sample_rate=8000)
+    player = _DummySpeechPlayer()
+
+    await controller._play_assistant_audio(
+        cast(controller.LLMReply, reply),
+        cast(controller.SpeechPlayer, player),
+    )
+
+    assert player.play_calls == [(b"bytes", 8000)]
+
+
+@pytest.mark.asyncio
+async def test_play_assistant_audio_ignores_missing_audio():
+    reply = controller.LLMReply(text=None, audio_bytes=None, audio_sample_rate=8000)
+    player = _DummySpeechPlayer()
+
+    await controller._play_assistant_audio(
+        cast(controller.LLMReply, reply),
+        cast(controller.SpeechPlayer, player),
+    )
+
+    assert player.play_calls == []
+
+
+@pytest.mark.asyncio
+async def test_finalize_turn_and_respond_skips_empty_transcript(monkeypatch):
+    called = {"cue": 0, "request": 0, "play": 0}
+
+    async def fake_finalize(tb, hooks):
+        return None
+
+    def fake_cue(*args, **kwargs):
+        called["cue"] += 1
+
+    async def fake_request(*args, **kwargs):
+        called["request"] += 1
+
+    async def fake_play(reply, player):
+        called["play"] += 1
+
+    monkeypatch.setattr(controller, "_finalize_transcript", fake_finalize)
+    monkeypatch.setattr(controller, "_maybe_schedule_confirmation_cue", fake_cue)
+    monkeypatch.setattr(controller, "_request_assistant_reply", fake_request)
+    monkeypatch.setattr(controller, "_play_assistant_audio", fake_play)
+
+    assistant = _DummyAssistant()
+    player = _DummySpeechPlayer()
+
+    await controller.finalize_turn_and_respond(
+        transcript_buffer=cast(controller.TurnTranscriptAggregator, _DummyTranscriptBuffer()),
+        assistant=cast(controller.LLMResponder, assistant),
+        speech_player=cast(controller.SpeechPlayer, player),
+    )
+
+    assert called == {"cue": 0, "request": 0, "play": 0}
+
+
+@pytest.mark.asyncio
+async def test_finalize_turn_and_respond_happy_path(monkeypatch):
+    reply = controller.LLMReply(text="hello", audio_bytes=b"x", audio_sample_rate=123)
+    calls: list[str] = []
+
+    async def fake_finalize(tb, hooks):
+        calls.append("finalize")
+        return "transcript"
+
+    def fake_cue(*args, **kwargs):
+        calls.append("cue")
+
+    async def fake_request(*args, **kwargs):
+        calls.append("request")
+        return reply
+
+    async def fake_play(reply_obj, player):
+        assert reply_obj is reply
+        calls.append("play")
+
+    monkeypatch.setattr(controller, "_finalize_transcript", fake_finalize)
+    monkeypatch.setattr(controller, "_maybe_schedule_confirmation_cue", fake_cue)
+    monkeypatch.setattr(controller, "_request_assistant_reply", fake_request)
+    monkeypatch.setattr(controller, "_play_assistant_audio", fake_play)
+
+    assistant = _DummyAssistant()
+    player = _DummySpeechPlayer()
+
+    await controller.finalize_turn_and_respond(
+        transcript_buffer=cast(controller.TurnTranscriptAggregator, _DummyTranscriptBuffer()),
+        assistant=cast(controller.LLMResponder, assistant),
+        speech_player=cast(controller.SpeechPlayer, player),
+    )
+
+    assert calls == ["finalize", "cue", "request", "play"]
+
+
+@pytest.mark.asyncio
+async def test_schedule_turn_response_logs_cancellation(monkeypatch):
+    event = asyncio.Event()
+
+    async def pending(*args, **kwargs):
+        await event.wait()
+
+    monkeypatch.setattr(controller, "finalize_turn_and_respond", pending)
+
+    logs: list[str] = []
+    monkeypatch.setattr(controller, "verbose_print", lambda message: logs.append(message))
+
+    task = controller.schedule_turn_response(
+        transcript_buffer=cast(controller.TurnTranscriptAggregator, _DummyTranscriptBuffer()),
+        assistant=cast(controller.LLMResponder, _DummyAssistant()),
+        speech_player=cast(controller.SpeechPlayer, _DummySpeechPlayer()),
+    )
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert any("Assistant reply task cancelled" in msg for msg in logs)
+
+
+@pytest.mark.asyncio
+async def test_schedule_turn_response_reports_errors(monkeypatch):
+    async def failing(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(controller, "finalize_turn_and_respond", failing)
+    buffer = io.StringIO()
+    with contextlib.redirect_stderr(buffer):
+        task = controller.schedule_turn_response(
+            transcript_buffer=cast(controller.TurnTranscriptAggregator, _DummyTranscriptBuffer()),
+            assistant=cast(controller.LLMResponder, _DummyAssistant()),
+            speech_player=cast(controller.SpeechPlayer, _DummySpeechPlayer()),
+        )
+
+        await asyncio.sleep(0)
+
+        with pytest.raises(RuntimeError):
+            await task
+
+        await asyncio.sleep(0)
+
+    assert "Unexpected assistant error" in buffer.getvalue()
