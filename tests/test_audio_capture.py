@@ -7,6 +7,7 @@ import pytest
 
 from pi_assistant.audio import capture as capture_module
 from pi_assistant.audio.capture import AudioCapture
+from pi_assistant.exceptions import AssistantRestartRequired
 
 
 def make_dummy_query(devices_by_index, device_lists=None):
@@ -197,6 +198,33 @@ def test_callback_logs_status(monkeypatch):
 def test_parse_device_override_whitespace():
     assert AudioCapture._parse_device_override("   ") is None
     assert AudioCapture._parse_device_override("\n\t 3 ") == 3  # noqa: PLR2004
+
+
+def test_ensure_sample_rate_requires_restart(monkeypatch):
+    capture = AudioCapture()
+    capture.sample_rate = 24000
+    fallback_rate = 44100
+
+    def fake_check_input_settings(**_):
+        raise RuntimeError("unsupported sample rate")
+
+    monkeypatch.setattr(capture_module.sd, "check_input_settings", fake_check_input_settings)
+    monkeypatch.setattr(
+        AudioCapture, "_device_default_sample_rate", lambda self, device: fallback_rate
+    )
+
+    recorded = {}
+
+    def fake_persist(self, device, fallback_rate):
+        recorded["rate"] = fallback_rate
+
+    monkeypatch.setattr(AudioCapture, "_persist_sample_rate_hint", fake_persist)
+
+    with pytest.raises(AssistantRestartRequired) as excinfo:
+        capture._ensure_sample_rate_supported(device=1)
+
+    assert recorded["rate"] == fallback_rate
+    assert "Launch pi-assistant again" in str(excinfo.value)
 
 
 def test_select_input_device_raises_when_no_options(monkeypatch):

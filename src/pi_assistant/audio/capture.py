@@ -18,6 +18,7 @@ from pi_assistant.config import (
     SAMPLE_RATE,
 )
 from pi_assistant.config.base import _persist_env_value
+from pi_assistant.exceptions import AssistantRestartRequired
 
 from ._sounddevice import sounddevice as sd
 from .utils import device_info_dict
@@ -140,6 +141,13 @@ class AudioCapture:
             fallback_rate = self._device_default_sample_rate(device)
             if fallback_rate and fallback_rate != self.sample_rate:
                 self._persist_sample_rate_hint(device, fallback_rate)
+                device_label = self._describe_device(device)
+                raise AssistantRestartRequired(
+                    (
+                        f"SAMPLE_RATE updated to {fallback_rate} Hz for microphone {device_label}. "
+                        "Launch pi-assistant again to continue."
+                    )
+                ) from exc
             raise self._unsupported_sample_rate_error(device) from exc
 
     def _persist_sample_rate_hint(self, device, fallback_rate: int) -> None:
@@ -151,7 +159,7 @@ class AudioCapture:
         print(
             "[INFO] "
             f"Detected microphone {device_label} prefers {fallback_rate} Hz. "
-            "Saved SAMPLE_RATE to .env; restart the assistant to apply."
+            "Saved SAMPLE_RATE to .env; launch pi-assistant again to apply."
         )
 
     def _unsupported_sample_rate_error(self, device) -> RuntimeError:
