@@ -2,6 +2,7 @@
 
 Required:
 - [ ] update the readme, agents, etc
+- [ ] make the CLI flags shorter, no need to prefix them with `assistant`
 - [ ] make the assistant reply even more succint
 - [ ] set default model to nano
 - [ ] the readme should be a readme not a dump

@@ -43,8 +43,11 @@ class SilenceTracker:
         if not chunk:
             return False
 
-        frames = len(chunk) / (2 * self._channels)
-        chunk_duration = frames / self._sample_rate if frames else 0.0
+        if self._channels <= 0:
+            return False
+
+        frames = len(chunk) / (2.0 * self._channels)
+        chunk_duration = frames / self._sample_rate if frames and self._sample_rate > 0 else 0.0
         rms = self._calculate_rms(chunk)
 
         if rms >= self._threshold:

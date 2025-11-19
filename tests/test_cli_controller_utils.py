@@ -6,6 +6,9 @@ import pytest
 from pi_assistant.audio.metrics import calculate_rms
 from pi_assistant.cli import controller
 
+EXPECTED_RMS_MIN = 26000
+EXPECTED_RMS_MAX = 28000
+
 
 def test_calculate_rms_handles_empty_bytes():
     assert calculate_rms(b"") == 0.0
@@ -16,7 +19,7 @@ def test_calculate_rms_returns_expected_value():
     samples = np.array([0, 32767, -32768], dtype=np.int16).tobytes()
     rms = calculate_rms(samples)
 
-    assert 26000 < rms < 28000  # noqa: PLR2004  # approximate RMS for the provided samples
+    assert EXPECTED_RMS_MIN < rms < EXPECTED_RMS_MAX
 
 
 def _chunk_with_duration(seconds: float, amplitude: int = 0) -> bytes:

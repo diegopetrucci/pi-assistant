@@ -199,7 +199,7 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
     log_state_transition(None, state_manager.state, "awaiting wake phrase")
 
     def finalize_turn(reason: str) -> None:
-        print(f"{TURN_LOG_LABEL} Speech ended (reason={reason}) – finalizing turn.")
+        verbose_print(f"{TURN_LOG_LABEL} Speech ended (reason={reason}) – finalizing turn.")
         response_tasks.schedule(reason)
 
     def reset_stream_resources() -> None:

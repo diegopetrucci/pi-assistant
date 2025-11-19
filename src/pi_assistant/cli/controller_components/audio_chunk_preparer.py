@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Optional, Protocol, TypeVar
+from typing import Optional, Protocol
 
 from pi_assistant.audio.resampler import LinearResampler
-
-ResamplerT = TypeVar("ResamplerT", bound=LinearResampler)
 
 
 class ResamplerFactory(Protocol):

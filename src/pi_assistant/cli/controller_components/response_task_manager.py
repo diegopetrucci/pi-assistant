@@ -20,8 +20,8 @@ class ResponseTaskManager:
         task = self._task_factory()
         self._tasks.add(task)
 
-        def _discard_on_completion(fut: asyncio.Task, s=self._tasks):
-            s.discard(fut)
+        def _discard_on_completion(fut: asyncio.Task) -> None:
+            self._tasks.discard(fut)
 
         task.add_done_callback(_discard_on_completion)
         verbose_print(f"{TURN_LOG_LABEL} Scheduled assistant reply ({reason}).")
