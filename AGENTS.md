@@ -9,7 +9,7 @@
 
 ## Build, Test, and Development Commands
 * Use `uv sync --group dev` to provision the managed `.venv/` plus lint/test tooling.
-* Run the CLI via `uv run pi-assistant` and pass flags such as `--force-always-on`, `--assistant-audio-mode local-tts`, or `--simulate-query` depending on the scenario.
+* Run the CLI via `uv run pi-assistant` and pass flags such as `--force-always-on`, `--audio-mode local-tts`, or `--simulate-query` depending on the scenario.
 * Format and lint with `uv run ruff format .` and `uv run ruff check --fix .`, respectively.
 * Execute the fast wake-word regression with `uv run python -m unittest tests/test_wake_word.py`, and prefer `uv run pytest -v` (optionally `--cov`) for the full suite.
 * When invoking the interpreter directly, call `python3` (not `python`) to avoid hitting the system stub.
@@ -18,7 +18,7 @@
 
 ## Coding Style & Naming Conventions
 * Target Python 3.9+ and follow Ruff’s formatter—never hand-tune spacing after running it. Stick to 4-space indentation and type-annotated functions.
-* Modules, packages, and files use `snake_case`; CLIs expose kebab-case flags (e.g., `--assistant-audio-mode`).
+* Modules, packages, and files use `snake_case`; CLIs expose kebab-case flags (e.g., `--audio-mode`).
 * Keep public functions documented with concise docstrings that explain side effects or I/O expectations, and colocate constants next to the features they configure to avoid sprawling globals.
 
 ## Testing Guidelines
