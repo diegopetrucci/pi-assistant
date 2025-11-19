@@ -16,3 +16,7 @@ def test_normalize_reasoning_retains_minimal_choice() -> None:
 def test_reasoning_choices_for_nano_exclude_minimal() -> None:
     choices = reasoning_effort_choices_for_model("gpt-5-nano-2025-08-07")
     assert choices == ("low", "medium", "high")
+
+
+def test_reasoning_choices_for_gpt41_are_empty() -> None:
+    assert reasoning_effort_choices_for_model("gpt-4.1-2025-04-14") == ()

@@ -28,6 +28,8 @@ def _coerce_assistant_model_key(choice: str | None) -> str | None:
         "nano": "nano",
         "mini": "mini",
         "fast": "mini",
+        "4": "4.1",
+        "4.1": "4.1",
         "5.1": "5.1",
         "5": "5.1",
         "full": "5.1",
@@ -56,6 +58,11 @@ _ASSISTANT_MODEL_CHOICES: dict[str, dict[str, object]] = {
         "value": "gpt-5.1-2025-11-13",
         "description": "5.1 - slower (~5s per reply), more precise",
         "reasoning_efforts": ("none", "low", "medium", "high"),
+    },
+    "4.1": {
+        "value": "gpt-4.1-2025-04-14",
+        "description": "4.1 - legacy compatibility tier (no reasoning)",
+        "reasoning_efforts": (),
     },
 }
 
@@ -112,6 +119,9 @@ def _prompt_for_reasoning_effort(
 ) -> str | None:
     """Interactively ask which reasoning effort to use on first launch."""
 
+    if not allowed_choices:
+        return None
+
     if not sys.stdin.isatty():
         return None
 
@@ -148,18 +158,29 @@ def reasoning_effort_choices_for_model(model_name: str) -> tuple[str, ...]:
     for entry in _ASSISTANT_MODEL_CHOICES.values():
         if entry.get("value") == model_name:
             configured = entry.get("reasoning_efforts")
-            if isinstance(configured, (list, tuple)) and configured:
+            if isinstance(configured, (list, tuple)):
                 return tuple(str(level) for level in configured)
     lowered = model_name.lower()
     if "mini" in lowered:
         return ("minimal", "low", "medium", "high")
     if "5.1" in lowered or "gpt-5.1" in lowered:
         return ("none", "low", "medium", "high")
+    if "4.1" in lowered or "gpt-4.1" in lowered:
+        return ()
     return ("low", "medium", "high")
 
 
 def _resolve_reasoning_effort(default_choice: str, allowed_choices: tuple[str, ...]) -> str:
     """Return the configured reasoning effort, prompting/persisting when needed."""
+
+    if not allowed_choices:
+        env_value = os.getenv("ASSISTANT_REASONING_EFFORT")
+        if env_value:
+            sys.stderr.write(
+                "ASSISTANT_REASONING_EFFORT is ignored because the selected model "
+                "does not support reasoning tokens.\n"
+            )
+        return ""
 
     fallback = allowed_choices[0] if allowed_choices else "low"
     normalized_default = _normalize_reasoning_effort(default_choice, allowed_choices) or fallback

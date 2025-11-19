@@ -51,10 +51,10 @@ The legacy script remains available for direct Python use: `uv run python start.
 | Flag | Description |
 | --- | --- |
 | `-v`, `--verbose` | Enables verbose logging (wake-word scores, state transitions, controller state). |
-| `--model <preset-or-id>` | Overrides the assistant model for one run. Accepts presets defined in `ASSISTANT_MODEL_REGISTRY` (`mini`, `nano`, `5.1`, etc.) or full model IDs. |
+| `--model <preset-or-id>` | Overrides the assistant model for one run. Accepts presets defined in `ASSISTANT_MODEL_REGISTRY` (`nano`, `mini`, `4.1`, `5.1`, etc.) or full model IDs. |
 | `--audio-mode {responses,local-tts}` | Chooses how assistant audio is delivered. Defaults to `responses` if `ASSISTANT_TTS_RESPONSES_ENABLED=1`, otherwise `local-tts`. |
 | `--simulate-query [text]` | Injects a one-off transcript instead of waiting for speech. Pass custom text or omit to use the fallback `"Hey Rhasspy, is it going to rain tomorrow?"`. If unset, the CLI checks `SIMULATED_QUERY_TEXT`. |
-| `--reasoning-effort {none,minimal,low,medium,high}` | Overrides the GPT-5 reasoning effort. Only values supported by the selected model are allowed; `minimal` is rejected when `ASSISTANT_WEB_SEARCH_ENABLED=1`. |
+| `--reasoning-effort {none,minimal,low,medium,high}` | Overrides the GPT-5 reasoning effort. Only values supported by the selected model are allowed; models without reasoning (e.g., GPT-4.1) reject this flag. `minimal` is rejected when `ASSISTANT_WEB_SEARCH_ENABLED=1`. |
 | `--reset` | Clears saved onboarding selections (assistant model, reasoning effort, location) from `.env` and exits so the prompts reappear next time. |
 
 ## Assistant Models & Reasoning
@@ -64,8 +64,9 @@ The legacy script remains available for direct Python use: `uv run python start.
 - `nano` (default) → `gpt-5-nano-2025-08-07`
 - `mini` → `gpt-5-mini-2025-08-07`
 - `5.1` → `gpt-5.1-2025-11-13`
+- `4.1` → `gpt-4.1-2025-04-14` (reasoning disabled; ignores `ASSISTANT_REASONING_EFFORT`)
 - `nano` runs with `low`/`medium`/`high` reasoning only. `minimal` is disabled so web search (which this tier needs) keeps working without the CLI raising errors.
-- Reasoning effort falls back to `ASSISTANT_REASONING_EFFORT` or auto when unset. Use the flag above for per-run overrides.
+- Reasoning effort falls back to `ASSISTANT_REASONING_EFFORT` or auto when unset (and is ignored for presets without reasoning).
 - Set `ASSISTANT_WEB_SEARCH_ENABLED=0` if you need `minimal` reasoning with streaming tool calls disabled.
 
 ## Assistant Audio Modes & TTS
