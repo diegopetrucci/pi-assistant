@@ -157,8 +157,28 @@ class TranscriptionTaskCoordinator:
                     task_group.create_task(coroutine)
             return
 
-        # Python 3.9–3.10 fallback: emulate TaskGroup with gather.
-        await asyncio.gather(*(asyncio.create_task(coro) for coro in coroutines))
+        # Python 3.9–3.10 fallback: emulate TaskGroup cancellation semantics.
+        tasks = [asyncio.create_task(coro) for coro in coroutines]
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+
+        first_exception: Optional[BaseException] = None
+        for task in done:
+            try:
+                task.result()
+            except Exception as exc:  # pragma: no cover - re-raise original failure
+                first_exception = exc
+                break
+
+        if first_exception is None:
+            if pending:
+                await asyncio.gather(*pending)
+            return
+
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        raise first_exception
 
     async def _run_audio_controller(self) -> None:
         from pi_assistant.cli.controller import run_audio_controller
@@ -201,7 +221,7 @@ class TranscriptionSession:
         self._responses_audio_enabled = False
         self._audio_started = False
         self._ws_connected = False
-        self._cue_task: asyncio.Task | None = None
+        self._cue_task: Optional[asyncio.Task] = None
 
     async def __aenter__(self) -> TranscriptionSession:
         try:
@@ -216,10 +236,8 @@ class TranscriptionSession:
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         print("Cleaning up...")
-        try:
-            await self._teardown_partial()
-        finally:
-            print("✓ Shutdown complete\n")
+        await self._teardown_partial()
+        print("✓ Shutdown complete\n")
 
     async def run(self) -> None:
         coordinator = self._task_coordinator_cls(self._components, self._config.simulated_query)
@@ -246,8 +264,11 @@ class TranscriptionSession:
         def _log_cue_error(fut: asyncio.Task) -> None:
             try:
                 fut.result()
-            except Exception:
-                pass
+            except Exception as exc:
+                print(
+                    f"{ASSISTANT_LOG_LABEL} Failed to warm confirmation cue: {exc}",
+                    file=sys.stderr,
+                )
 
         self._cue_task.add_done_callback(_log_cue_error)
 
@@ -306,6 +327,21 @@ class TranscriptionSession:
                 await self._components.ws_client.close()
             finally:
                 self._ws_connected = False
+
+        cue_task = self._cue_task
+        self._cue_task = None
+        if cue_task:
+            if not cue_task.done():
+                cue_task.cancel()
+            try:
+                await cue_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                print(
+                    f"{ASSISTANT_LOG_LABEL} Confirmation cue cleanup failed: {exc}",
+                    file=sys.stderr,
+                )
 
 
 async def run_simulated_query_once(
