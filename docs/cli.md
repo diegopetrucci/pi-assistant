@@ -14,13 +14,13 @@ uv run pi-assistant
 uv run pi-assistant -v
 
 # Force assistant replies to stream directly from the Responses API
-uv run pi-assistant --assistant-audio-mode responses
+uv run pi-assistant --audio-mode responses
 
 # Fetch text first, then synthesize locally over the Audio API
-uv run pi-assistant --assistant-audio-mode local-tts
+uv run pi-assistant --audio-mode local-tts
 
 # Pin the model and reasoning effort for this run only
-uv run pi-assistant --assistant-model 5.1 --reasoning-effort high
+uv run pi-assistant --model 5.1 --reasoning-effort high
 
 # Inject a default simulated query (from SIMULATED_QUERY_TEXT or fallback prompt)
 uv run pi-assistant --simulate-query
@@ -51,8 +51,8 @@ The legacy script remains available for direct Python use: `uv run python start.
 | Flag | Description |
 | --- | --- |
 | `-v`, `--verbose` | Enables verbose logging (wake-word scores, state transitions, controller state). |
-| `--assistant-model <preset-or-id>` | Overrides the assistant model for one run. Accepts presets defined in `ASSISTANT_MODEL_REGISTRY` (`mini`, `nano`, `5.1`, etc.) or full model IDs. |
-| `--assistant-audio-mode {responses,local-tts}` | Chooses how assistant audio is delivered. Defaults to `responses` if `ASSISTANT_TTS_RESPONSES_ENABLED=1`, otherwise `local-tts`. |
+| `--model <preset-or-id>` | Overrides the assistant model for one run. Accepts presets defined in `ASSISTANT_MODEL_REGISTRY` (`mini`, `nano`, `5.1`, etc.) or full model IDs. |
+| `--audio-mode {responses,local-tts}` | Chooses how assistant audio is delivered. Defaults to `responses` if `ASSISTANT_TTS_RESPONSES_ENABLED=1`, otherwise `local-tts`. |
 | `--simulate-query [text]` | Injects a one-off transcript instead of waiting for speech. Pass custom text or omit to use the fallback `"Hey Rhasspy, is it going to rain tomorrow?"`. If unset, the CLI checks `SIMULATED_QUERY_TEXT`. |
 | `--reasoning-effort {none,minimal,low,medium,high}` | Overrides the GPT-5 reasoning effort. Only values supported by the selected model are allowed; `minimal` is rejected when `ASSISTANT_WEB_SEARCH_ENABLED=1`. |
 | `--reset` | Clears saved onboarding selections (assistant model, reasoning effort, location) from `.env` and exits so the prompts reappear next time. |
@@ -61,9 +61,9 @@ The legacy script remains available for direct Python use: `uv run python start.
 
 - `pi_assistant.assistant.LLMResponder` reads the selected preset from `.env` (`ASSISTANT_MODEL`) or the CLI flag.
 - Presets include:
-  - `mini` (default) → `gpt-5-mini-2025-08-07`
-  - `nano` → `gpt-5-nano-2025-08-07`
-  - `5.1` → `gpt-5.1-2025-11-13`
+- `nano` (default) → `gpt-5-nano-2025-08-07`
+- `mini` → `gpt-5-mini-2025-08-07`
+- `5.1` → `gpt-5.1-2025-11-13`
 - `nano` runs with `low`/`medium`/`high` reasoning only. `minimal` is disabled so web search (which this tier needs) keeps working without the CLI raising errors.
 - Reasoning effort falls back to `ASSISTANT_REASONING_EFFORT` or auto when unset. Use the flag above for per-run overrides.
 - Set `ASSISTANT_WEB_SEARCH_ENABLED=0` if you need `minimal` reasoning with streaming tool calls disabled.
@@ -125,7 +125,7 @@ If `uv run pi-assistant` stops with `Microphone <name> does not support SAMPLE_R
 - `ASSISTANT_TTS_RESPONSES_ENABLED` (toggles streaming audio)
 - `ASSISTANT_TTS_MODEL`, `ASSISTANT_TTS_VOICE`, `ASSISTANT_TTS_FORMAT`, `ASSISTANT_TTS_SAMPLE_RATE`
 - `ASSISTANT_LANGUAGE`, `TRANSCRIPTION_LANGUAGE`
-- `ASSISTANT_TTS_RESPONSES_ENABLED=0` pairs well with `--assistant-audio-mode local-tts`.
+- `ASSISTANT_TTS_RESPONSES_ENABLED=0` pairs well with `--audio-mode local-tts`.
 
 ### Location & Context
 

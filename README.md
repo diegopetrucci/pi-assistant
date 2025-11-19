@@ -108,7 +108,8 @@ Say "Hey Rhaspy stop" (or "Rhaspy stop") while the assistant is talking to immed
 
 | Preset | Model ID | Recommended use |
 | --- | --- | --- |
-| `mini` (default) | `gpt-5-mini-2025-08-07` | Low-latency replies with optional `minimal`, `low`, `medium`, or `high` reasoning. |
+| `nano` (default) | `gpt-5-nano-2025-08-07` | Ultra-fast replies tuned for `low`, `medium`, or `high` reasoning. |
+| `mini` | `gpt-5-mini-2025-08-07` | Balanced latency with optional `minimal`, `low`, `medium`, or `high` reasoning. |
 | `5.1` | `gpt-5.1-2025-11-13` | Higher accuracy with `none`, `low`, `medium`, or `high` reasoning. |
 
 - `ASSISTANT_REASONING_EFFORT` falls back to `low` when unset; `minimal` cannot be used while `ASSISTANT_WEB_SEARCH_ENABLED=1`.

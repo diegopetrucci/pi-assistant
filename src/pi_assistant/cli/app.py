@@ -120,7 +120,8 @@ def parse_args():
         help="Show detailed diagnostic logs (wake word, state changes, etc.).",
     )
     parser.add_argument(
-        "--assistant-model",
+        "--model",
+        dest="assistant_model",
         type=_parse_assistant_model_arg,
         help=(
             "Override which assistant LLM to use for this run. "
@@ -130,7 +131,8 @@ def parse_args():
         ),
     )
     parser.add_argument(
-        "--assistant-audio-mode",
+        "--audio-mode",
+        dest="assistant_audio_mode",
         choices=ASSISTANT_AUDIO_MODE_CHOICES,
         help=(
             "How to deliver assistant replies: 'responses' streams audio directly from "

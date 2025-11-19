@@ -7,7 +7,7 @@ import pytest
 # Ensure interactive prompts remain dormant during module import in tests.
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 os.environ.setdefault("LOCATION_NAME", "Test City")
-os.environ.setdefault("ASSISTANT_MODEL", "gpt-5-mini-2025-08-07")
+os.environ.setdefault("ASSISTANT_MODEL", "gpt-5-nano-2025-08-07")
 os.environ.setdefault("ASSISTANT_REASONING_EFFORT", "low")
 
 from pi_assistant.config import assistant_settings, base  # noqa: E402

@@ -8,11 +8,11 @@ from pi_assistant.config.base import reset_first_launch_choices
 def test_reset_first_launch_choices_clears_env(tmp_path, monkeypatch):
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "ASSISTANT_MODEL=gpt-5-mini-2025-08-07\nLOCATION_NAME=Lisbon, PT\nOTHER=value\n",
+        "ASSISTANT_MODEL=gpt-5-nano-2025-08-07\nLOCATION_NAME=Lisbon, PT\nOTHER=value\n",
         encoding="utf-8",
     )
     monkeypatch.setattr("pi_assistant.config.base.ENV_PATH", env_file)
-    monkeypatch.setenv("ASSISTANT_MODEL", "gpt-5-mini-2025-08-07")
+    monkeypatch.setenv("ASSISTANT_MODEL", "gpt-5-nano-2025-08-07")
     monkeypatch.setenv("ASSISTANT_REASONING_EFFORT", "low")
     monkeypatch.setenv("LOCATION_NAME", "Lisbon, PT")
 

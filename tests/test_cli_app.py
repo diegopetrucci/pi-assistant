@@ -70,7 +70,7 @@ def test_parse_args_test_websocket_mode(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_parse_args_with_audio_mode_flag(monkeypatch: pytest.MonkeyPatch) -> None:
-    args = _run_parse(monkeypatch, ["pi-assistant", "--assistant-audio-mode", "local-tts"])
+    args = _run_parse(monkeypatch, ["pi-assistant", "--audio-mode", "local-tts"])
 
     assert args.assistant_audio_mode == "local-tts"
 
@@ -94,13 +94,13 @@ def test_parse_args_reasoning_effort_flag(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_parse_args_assistant_model_flag(monkeypatch: pytest.MonkeyPatch) -> None:
-    args = _run_parse(monkeypatch, ["pi-assistant", "--assistant-model", "5.1"])
+    args = _run_parse(monkeypatch, ["pi-assistant", "--model", "5.1"])
 
     assert args.assistant_model == "gpt-5.1-2025-11-13"
 
 
 def test_parse_args_assistant_model_nano_flag(monkeypatch: pytest.MonkeyPatch) -> None:
-    args = _run_parse(monkeypatch, ["pi-assistant", "--assistant-model", "nano"])
+    args = _run_parse(monkeypatch, ["pi-assistant", "--model", "nano"])
 
     assert args.assistant_model == "gpt-5-nano-2025-08-07"
 
@@ -117,7 +117,7 @@ def test_parse_args_rejects_minimal_for_nano(
     with pytest.raises(SystemExit):
         _run_parse(
             monkeypatch,
-            ["pi-assistant", "--assistant-model", "nano", "--reasoning-effort", "minimal"],
+            ["pi-assistant", "--model", "nano", "--reasoning-effort", "minimal"],
         )
 
     stderr = capsys.readouterr().err
