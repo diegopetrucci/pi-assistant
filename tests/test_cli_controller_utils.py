@@ -143,7 +143,7 @@ def test_should_ignore_server_stop_event_logic():
 
     manager.transition_to_streaming()
     reason = controller.should_ignore_server_stop_event(manager, tracker, 0.25)
-    assert reason == "no local speech detected yet"
+    assert reason is None
 
     tracker.observe(_chunk_with_duration(0.02, amplitude=2000))
     tracker.observe(_chunk_with_duration(0.1, amplitude=0))

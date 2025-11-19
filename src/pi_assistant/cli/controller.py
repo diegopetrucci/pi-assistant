@@ -67,9 +67,9 @@ def should_ignore_server_stop_event(
 
     if state_manager.state != StreamState.STREAMING:
         return None
-    if not silence_tracker.heard_speech:
-        return "no local speech detected yet"
     if min_silence_seconds <= 0:
+        return None
+    if not silence_tracker.heard_speech:
         return None
     if not silence_tracker.has_observed_silence(min_silence_seconds):
         current = silence_tracker.silence_duration
