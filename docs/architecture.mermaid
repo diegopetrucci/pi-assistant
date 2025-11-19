@@ -1,21 +1,48 @@
 flowchart TB
-    Config[["config/defaults.toml\n+ env vars"]] --> Capture
-    Config --> Controller
-    Config --> WSClient
-    Config --> Responder
+    subgraph Launch["CLI bootstrap (pi_assistant.cli.app)"]
+        Config[["config/defaults.toml\n+ env vars"]] --> Validator["TranscriptionConfigValidator"]
+        Validator --> Builder["TranscriptionComponentBuilder"]
+        Builder --> Session["TranscriptionSession"]
+        Session --> Coordinator["TranscriptionTaskCoordinator"]
+    end
 
-    Mic((USB Mic)) -->|PCM16 24kHz| Capture["pi_assistant.audio.AudioCapture"]
-    Capture -->|async queue| Controller["CLI audio controller\n(run_audio_controller)"]
-    Controller --> PreRoll["PreRollBuffer\n+ WakeWordEngine"]
-    PreRoll --> Controller
-    Controller --> Resampler["LinearResampler"]
-    Resampler -->|base64 chunks| WSClient["network.WebSocketClient"]
-    WSClient --> OpenAI[("OpenAI Realtime API\nturn detection + VAD")]
+    Session --> AudioCap["audio.AudioCapture"]
+    Session --> WSClient["network.WebSocketClient"]
+    Session --> Assistant["assistant.LLMResponder"]
+    Session --> Speech["audio.SpeechPlayer"]
 
-    OpenAI --> Events["receive_transcription_events"]
-    Events --> Buffer["TurnTranscriptAggregator"]
-    Events -->|stop commands| Controller
-    Buffer -->|finalize turn| Responder["assistant.LLMResponder\n(Responses API)"]
-    Responder --> Speech["SpeechPlayer"]
-    Speech --> User((Speaker / LED cue))
-    Responder --> Console["CLI transcript + logs"]
+    Coordinator --> AudioCtrl["run_audio_controller\n(cli.controller)"]
+    Coordinator --> EventRx["receive_transcription_events\n(cli.events)"]
+    Coordinator -. optional .-> SimQuery["run_simulated_query_once"]
+
+    Mic((USB Mic)) --> AudioCap
+    AudioCap --> AudioCtrl
+
+    subgraph Streaming["Wake-word gated streaming"]
+        AudioCtrl --> PreRoll["PreRollBuffer"]
+        PreRoll --> AudioCtrl
+        AudioCtrl --> WakeWord["WakeWordEngine"]
+        WakeWord --> AudioCtrl
+        AudioCtrl --> ChunkPrep["AudioChunkPreparer\n+ LinearResampler"]
+    end
+
+    ChunkPrep --> WSClient
+    WSClient --> Realtime[("OpenAI Realtime API\n(VAD + transcripts)")]
+
+    Realtime --> EventRx
+    EventRx --> Buffer["TurnTranscriptAggregator"]
+    AudioCtrl -->|"start / finish turns"| Buffer
+    Buffer -->|"final transcript"| Assistant
+    SimQuery -->|"synthetic prompt"| Assistant
+
+    Assistant --> ResponsesAPI[("OpenAI Responses API\n+ Audio API fallback")]
+    ResponsesAPI --> Assistant
+
+    Assistant --> Speech
+    Speech --> User((Speaker / CLI))
+    Assistant --> Console["CLI transcript + logs"]
+
+    EventRx -- "stop commands" --> Speech
+    EventRx -- "stop signal" --> AudioCtrl
+    EventRx -- "speech_stopped ack" --> AudioCtrl
+    Assistant -. "confirmation cue cache" .-> Speech
