@@ -113,13 +113,7 @@ Default values live in `config/defaults.toml` and can be overridden with environ
 - `AUDIO_QUEUE_MAX_SIZE`, `AUDIO_INPUT_DEVICE`
 - Auto-stop: `AUTO_STOP_ENABLED`, `AUTO_STOP_SILENCE_THRESHOLD`, `AUTO_STOP_MAX_SILENCE_SECONDS`
 
-When hardware only exposes 48 kHz, set `SAMPLE_RATE=48000` and keep `STREAM_SAMPLE_RATE=24000`. Append to `.env`:
-
-```bash
-echo "SAMPLE_RATE=48000" >> .env
-```
-
-If `uv run pi-assistant` stops with `Microphone <name> does not support SAMPLE_RATE=24000 Hz`, the client already probed PortAudio and detected the mismatch. Set `SAMPLE_RATE` to the hinted default (often 48000) but leave `STREAM_SAMPLE_RATE=24000` so the controller keeps resampling capture audio for OpenAI.
+When hardware only exposes 44.1/48 kHz, the client now probes PortAudio, saves the detected sample rate to `.env`, and asks you to restart (look for `[INFO] … Saved SAMPLE_RATE to .env`). Leave `STREAM_SAMPLE_RATE=24000` so capture audio continues to be resampled for OpenAI. Manual overrides are still supported if you want to pin a specific sample rate.
 ### Assistant Delivery & Language
 
 - `ASSISTANT_TTS_RESPONSES_ENABLED` (toggles streaming audio)

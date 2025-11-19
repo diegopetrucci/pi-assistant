@@ -156,6 +156,7 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
     """Multiplex microphone audio between the wake-word detector and the OpenAI stream."""
 
     verbose_print("[INFO] Starting audio controller...")
+    capture_sample_rate = SAMPLE_RATE
 
     wake_engine: Optional[WakeWordEngine] = None
     try:
@@ -164,7 +165,7 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
             fallback_model_path=WAKE_WORD_MODEL_FALLBACK_PATH,
             melspec_model_path=WAKE_WORD_MELSPEC_MODEL_PATH,
             embedding_model_path=WAKE_WORD_EMBEDDING_MODEL_PATH,
-            source_sample_rate=SAMPLE_RATE,
+            source_sample_rate=capture_sample_rate,
             target_sample_rate=WAKE_WORD_TARGET_SAMPLE_RATE,
             threshold=WAKE_WORD_SCORE_THRESHOLD,
             consecutive_required=WAKE_WORD_CONSECUTIVE_FRAMES,
@@ -173,16 +174,16 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
     except RuntimeError as exc:
         print(f"{ERROR_LOG_LABEL} {exc}", file=sys.stderr)
         raise
-    pre_roll = PreRollBuffer(PREROLL_DURATION_SECONDS, SAMPLE_RATE)
+    pre_roll = PreRollBuffer(PREROLL_DURATION_SECONDS, capture_sample_rate)
     chunk_preparer = AudioChunkPreparer(
-        SAMPLE_RATE,
+        capture_sample_rate,
         STREAM_SAMPLE_RATE,
         resampler_factory=LinearResampler,
     )
     silence_tracker = SilenceTracker(
         silence_threshold=AUTO_STOP_SILENCE_THRESHOLD,
         max_silence_seconds=AUTO_STOP_MAX_SILENCE_SECONDS,
-        sample_rate=SAMPLE_RATE,
+        sample_rate=capture_sample_rate,
     )
     state_manager = StreamStateManager()
     task_factory = partial(schedule_turn_response, transcript_buffer, assistant, speech_player)
@@ -191,7 +192,7 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
     if chunk_preparer.is_resampling:
         verbose_print(
             f"{CONTROL_LOG_LABEL} Resampling capture audio "
-            f"{SAMPLE_RATE} Hz -> {STREAM_SAMPLE_RATE} Hz for OpenAI."
+            f"{capture_sample_rate} Hz -> {STREAM_SAMPLE_RATE} Hz for OpenAI."
         )
     else:
         verbose_print(f"{CONTROL_LOG_LABEL} Streaming audio at {STREAM_SAMPLE_RATE} Hz.")
@@ -288,7 +289,7 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
                     silence_tracker.reset()
                     payload = pre_roll.flush()
                     if payload:
-                        duration_ms = (len(payload) / (2 * CHANNELS)) / SAMPLE_RATE * 1000
+                        duration_ms = (len(payload) / (2 * CHANNELS)) / capture_sample_rate * 1000
                         verbose_print(
                             f"{WAKE_LOG_LABEL} Triggered -> streaming "
                             f"(sent {duration_ms:.0f} ms of buffered audio)"
