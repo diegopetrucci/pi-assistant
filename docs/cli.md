@@ -61,9 +61,9 @@ The legacy script remains available for direct Python use: `uv run python start.
 
 - `pi_assistant.assistant.LLMResponder` reads the selected preset from `.env` (`ASSISTANT_MODEL`) or the CLI flag.
 - Presets include:
-  - `mini` (default) → `gpt-5-mini-2025-08-07`
-  - `nano` → `gpt-5-nano-2025-08-07`
-  - `5.1` → `gpt-5.1-2025-11-13`
+- `nano` (default) → `gpt-5-nano-2025-08-07`
+- `mini` → `gpt-5-mini-2025-08-07`
+- `5.1` → `gpt-5.1-2025-11-13`
 - `nano` runs with `low`/`medium`/`high` reasoning only. `minimal` is disabled so web search (which this tier needs) keeps working without the CLI raising errors.
 - Reasoning effort falls back to `ASSISTANT_REASONING_EFFORT` or auto when unset. Use the flag above for per-run overrides.
 - Set `ASSISTANT_WEB_SEARCH_ENABLED=0` if you need `minimal` reasoning with streaming tool calls disabled.

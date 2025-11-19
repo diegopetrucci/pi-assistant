@@ -44,12 +44,12 @@ def _coerce_assistant_model_key(choice: str | None) -> str | None:
 _ASSISTANT_MODEL_CHOICES: dict[str, dict[str, object]] = {
     "mini": {
         "value": "gpt-5-mini-2025-08-07",
-        "description": "Mini - faster (~2s per reply), less precise (default)",
+        "description": "Mini - faster (~2s per reply), less precise than 5.1",
         "reasoning_efforts": ("minimal", "low", "medium", "high"),
     },
     "nano": {
         "value": "gpt-5-nano-2025-08-07",
-        "description": "Nano - newest ultra-fast tier (experimental reasoning support)",
+        "description": "Nano - newest ultra-fast tier (default, experimental reasoning support)",
         "reasoning_efforts": ("low", "medium", "high"),
     },
     "5.1": {

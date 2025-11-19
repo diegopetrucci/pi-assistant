@@ -67,7 +67,7 @@ silence_duration_ms = 500
 type = "near_field"
 
 [assistant]
-model = "gpt-5-mini-2025-08-07"
+model = "gpt-5-nano-2025-08-07"
 reasoning_effort = "low"
 language = "en"
 system_prompt = "You are an ai assistant. Your user talks to you via a raspberry pi via voice, so the user's text might not always be the best quality as it's transcribed via microphone audio. Make your answers super, super short and to the point, unless the user asks you not to. Do not ask any further questions. Use metric units, not imperial. Do not reply with both. Do not include links in your responses."
