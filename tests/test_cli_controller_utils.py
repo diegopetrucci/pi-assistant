@@ -133,6 +133,18 @@ def test_stream_state_manager_tracks_deferred_finalize():
     assert manager.consume_suppressed_stop_event() is True
     assert manager.consume_suppressed_stop_event() is False
 
+    assert manager.awaiting_assistant_reply is False
+    manager.mark_awaiting_assistant_reply()
+    assert manager.awaiting_assistant_reply is True
+    manager.clear_awaiting_assistant_reply()
+    assert manager.awaiting_assistant_reply is False
+
+    assert manager.finalizing_turn is False
+    manager.mark_finalizing_turn()
+    assert manager.finalizing_turn is True
+    manager.clear_finalizing_turn()
+    assert manager.finalizing_turn is False
+
 
 @pytest.mark.asyncio
 async def test_response_task_manager_schedules_and_cleanup():

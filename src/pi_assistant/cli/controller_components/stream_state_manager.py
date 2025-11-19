@@ -15,6 +15,8 @@ class StreamStateManager:
         self.chunk_count = 0
         self.retrigger_budget = 0
         self.awaiting_server_stop = False
+        self.awaiting_assistant_reply = False
+        self.finalizing_turn = False
         self.pending_finalize_reason: Optional[str] = None
         self._suppress_next_server_stop_event = False
 
@@ -30,6 +32,8 @@ class StreamStateManager:
         self.awaiting_server_stop = False
         self.pending_finalize_reason = None
         self.reset_retrigger_budget()
+        self.clear_awaiting_assistant_reply()
+        self.clear_finalizing_turn()
         return previous
 
     def transition_to_listening(
@@ -57,6 +61,18 @@ class StreamStateManager:
     def increment_retrigger_budget(self) -> int:
         self.retrigger_budget += 1
         return self.retrigger_budget
+
+    def mark_awaiting_assistant_reply(self) -> None:
+        self.awaiting_assistant_reply = True
+
+    def clear_awaiting_assistant_reply(self) -> None:
+        self.awaiting_assistant_reply = False
+
+    def mark_finalizing_turn(self) -> None:
+        self.finalizing_turn = True
+
+    def clear_finalizing_turn(self) -> None:
+        self.finalizing_turn = False
 
     def complete_deferred_finalize(self, fallback_reason: str) -> Optional[str]:
         if not self.awaiting_server_stop:
