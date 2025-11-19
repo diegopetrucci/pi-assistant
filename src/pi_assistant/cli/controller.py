@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from typing import Optional, Set
-
-import numpy as np
+from functools import partial
+from typing import Optional
 
 from pi_assistant.assistant import LLMResponder, TurnTranscriptAggregator
 from pi_assistant.audio import SpeechPlayer
 from pi_assistant.audio.resampler import LinearResampler
+from pi_assistant.cli.controller_components import (
+    AudioChunkPreparer,
+    ResponseTaskManager,
+    SilenceTracker,
+    StreamStateManager,
+)
 from pi_assistant.cli.logging_utils import (
     ASSISTANT_LOG_LABEL,
     CONTROL_LOG_LABEL,
@@ -48,20 +53,6 @@ from pi_assistant.wake_word import (
     WakeWordDetection,
     WakeWordEngine,
 )
-
-
-def calculate_rms(audio_bytes: bytes) -> float:
-    """Compute the root-mean-square amplitude for a PCM16 chunk."""
-
-    if not audio_bytes:
-        return 0.0
-
-    samples = np.frombuffer(audio_bytes, dtype=np.int16)
-    if samples.size == 0:
-        return 0.0
-
-    float_samples = samples.astype(np.float32)
-    return float(np.sqrt(np.mean(float_samples**2)))
 
 
 def _maybe_schedule_confirmation_cue(
@@ -182,11 +173,22 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
     except RuntimeError as exc:
         print(f"{ERROR_LOG_LABEL} {exc}", file=sys.stderr)
         raise
-
     pre_roll = PreRollBuffer(PREROLL_DURATION_SECONDS, SAMPLE_RATE)
-    stream_resampler: Optional[LinearResampler] = None
-    if SAMPLE_RATE != STREAM_SAMPLE_RATE:
-        stream_resampler = LinearResampler(SAMPLE_RATE, STREAM_SAMPLE_RATE)
+    chunk_preparer = AudioChunkPreparer(
+        SAMPLE_RATE,
+        STREAM_SAMPLE_RATE,
+        resampler_factory=LinearResampler,
+    )
+    silence_tracker = SilenceTracker(
+        silence_threshold=AUTO_STOP_SILENCE_THRESHOLD,
+        max_silence_seconds=AUTO_STOP_MAX_SILENCE_SECONDS,
+        sample_rate=SAMPLE_RATE,
+    )
+    state_manager = StreamStateManager()
+    task_factory = partial(schedule_turn_response, transcript_buffer, assistant, speech_player)
+    response_tasks = ResponseTaskManager(task_factory=task_factory)
+
+    if chunk_preparer.is_resampling:
         verbose_print(
             f"{CONTROL_LOG_LABEL} Resampling capture audio "
             f"{SAMPLE_RATE} Hz -> {STREAM_SAMPLE_RATE} Hz for OpenAI."
@@ -194,153 +196,96 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
     else:
         verbose_print(f"{CONTROL_LOG_LABEL} Streaming audio at {STREAM_SAMPLE_RATE} Hz.")
 
-    def _prepare_for_stream(chunk: bytes) -> bytes:
-        if not chunk:
-            return b""
-        if not stream_resampler:
-            return chunk
-        samples = stream_resampler.process(chunk)
-        return samples.tobytes() if samples.size else b""
+    log_state_transition(None, state_manager.state, "awaiting wake phrase")
 
-    state = StreamState.LISTENING
-    log_state_transition(None, state, "awaiting wake phrase")
+    def finalize_turn(reason: str) -> None:
+        verbose_print(f"{TURN_LOG_LABEL} Speech ended (reason={reason}) – finalizing turn.")
+        response_tasks.schedule(reason)
 
-    chunk_count = 0
-    silence_duration = 0.0
-    heard_speech = False
-    retrigger_budget = 0
-    awaiting_server_stop = False
-    pending_finalize_reason: Optional[str] = None
-    suppress_next_server_stop_event = False
-    response_tasks: Set[asyncio.Task] = set()
-
-    if state == StreamState.STREAMING:
-        await transcript_buffer.start_turn()
-
-    def _schedule_response_task(reason: str) -> None:
-        task = schedule_turn_response(transcript_buffer, assistant, speech_player)
-        response_tasks.add(task)
-
-        def _discard_on_completion(fut: asyncio.Task, s=response_tasks):
-            s.discard(fut)
-
-        task.add_done_callback(_discard_on_completion)
-        verbose_print(f"{TURN_LOG_LABEL} Scheduled assistant reply ({reason}).")
-
-    def _cancel_response_tasks(reason: str) -> None:
-        if not response_tasks:
-            return
-        verbose_print(
-            f"{TURN_LOG_LABEL} Canceling {len(response_tasks)} pending assistant reply task(s) "
-            f"({reason})."
-        )
-        for pending in tuple(response_tasks):
-            pending.cancel()
-
-    def _transition_stream_to_listening(reason: str, *, defer_finalize: bool = False) -> None:
-        nonlocal state, heard_speech, silence_duration, retrigger_budget
-        nonlocal awaiting_server_stop, pending_finalize_reason
-        if state != StreamState.STREAMING:
-            return
-        previous_state = state
-        state = StreamState.LISTENING
-        log_state_transition(previous_state, state, reason)
+    def reset_stream_resources() -> None:
         pre_roll.clear()
-        heard_speech = False
-        silence_duration = 0.0
-        retrigger_budget = 0
+        silence_tracker.reset()
+        chunk_preparer.reset()
         if wake_engine:
             wake_engine.reset_detection()
-        if stream_resampler:
-            stream_resampler.reset()
-        if defer_finalize:
-            awaiting_server_stop = True
-            pending_finalize_reason = reason
-            verbose_print(f"{TURN_LOG_LABEL} Awaiting server confirmation before finalizing turn.")
-            return
-        print(f"{TURN_LOG_LABEL} Speech ended (reason={reason}) – finalizing turn.")
-        awaiting_server_stop = False
-        pending_finalize_reason = None
-        _schedule_response_task(reason)
-
-    def _complete_deferred_finalize(fallback_reason: str) -> None:
-        nonlocal awaiting_server_stop, pending_finalize_reason
-        if not awaiting_server_stop:
-            return
-        reason = pending_finalize_reason or fallback_reason
-        print(f"{TURN_LOG_LABEL} Speech ended (reason={reason}) – finalizing turn.")
-        awaiting_server_stop = False
-        pending_finalize_reason = None
-        _schedule_response_task(reason)
 
     try:
         while True:
             audio_bytes = await audio_capture.get_audio_chunk()
-            chunk_count += 1
+            chunk_index = state_manager.increment_chunk_count()
 
             if speech_stopped_signal.is_set():
                 speech_stopped_signal.clear()
-                if suppress_next_server_stop_event:
-                    suppress_next_server_stop_event = False
+                if state_manager.consume_suppressed_stop_event():
                     verbose_print(
                         f"{TURN_LOG_LABEL} Ignoring stale server speech stop acknowledgement."
                     )
-                elif awaiting_server_stop:
-                    _complete_deferred_finalize("server speech stop event")
+                elif state_manager.awaiting_server_stop:
+                    reason = state_manager.complete_deferred_finalize("server speech stop event")
+                    if reason:
+                        finalize_turn(reason)
                 else:
-                    _transition_stream_to_listening("server speech stop event")
+                    previous_state = state_manager.transition_to_listening(
+                        "server speech stop event"
+                    )
+                    if previous_state:
+                        log_state_transition(
+                            previous_state, state_manager.state, "server speech stop event"
+                        )
+                        reset_stream_resources()
+                        finalize_turn("server speech stop event")
 
-            if state == StreamState.LISTENING:
+            if state_manager.state == StreamState.LISTENING:
                 pre_roll.add(audio_bytes)
 
             if stop_signal.is_set():
                 stop_signal.clear()
-                if state == StreamState.STREAMING:
+                if state_manager.state == StreamState.STREAMING:
                     verbose_print(
                         f"{CONTROL_LOG_LABEL} Stop command received; returning to listening."
                     )
-                    previous_state = state
-                    state = StreamState.LISTENING
-                    log_state_transition(previous_state, state, "stop command received")
-                    pre_roll.clear()
-                    heard_speech = False
-                    silence_duration = 0.0
-                    retrigger_budget = 0
-                    if wake_engine:
-                        wake_engine.reset_detection()
-                    if stream_resampler:
-                        stream_resampler.reset()
-                    awaiting_server_stop = False
-                    pending_finalize_reason = None
+                    previous_state = state_manager.transition_to_listening("stop command received")
+                    if previous_state:
+                        log_state_transition(
+                            previous_state, state_manager.state, "stop command received"
+                        )
+                        reset_stream_resources()
                     await transcript_buffer.clear_current_turn("manual stop command")
-                    _cancel_response_tasks("manual stop command")
+                    response_tasks.cancel("manual stop command")
                 continue
 
             detection = WakeWordDetection()
             if wake_engine:
                 detection = wake_engine.process_chunk(audio_bytes)
                 if detection.score >= WAKE_WORD_SCORE_THRESHOLD:
-                    verbose_print(
+                    score_log = (
                         f"{WAKE_LOG_LABEL} score={detection.score:.2f} "
-                        f"(threshold {WAKE_WORD_SCORE_THRESHOLD:.2f}) state={state.value}"
+                        f"(threshold {WAKE_WORD_SCORE_THRESHOLD:.2f}) "
+                        f"state={state_manager.state.value}"
                     )
+                    verbose_print(score_log)
 
             skip_current_chunk = False
             if wake_engine and detection.triggered:
-                if awaiting_server_stop:
+                if state_manager.awaiting_server_stop:
                     verbose_print(
                         f"{WAKE_LOG_LABEL} Wake phrase overriding prior turn awaiting server stop."
                     )
-                    _complete_deferred_finalize("wake phrase override")
-                    suppress_next_server_stop_event = True
-                if state == StreamState.LISTENING:
-                    previous_state = state
-                    state = StreamState.STREAMING
-                    _cancel_response_tasks("wake phrase override")
+                    reason = state_manager.complete_deferred_finalize("wake phrase override")
+                    if reason:
+                        finalize_turn(reason)
+                    state_manager.suppress_next_server_stop_event()
+                if state_manager.state == StreamState.LISTENING:
+                    previous_state = state_manager.transition_to_streaming()
+                    response_tasks.cancel("wake phrase override")
                     await transcript_buffer.start_turn()
                     if wake_engine:
                         wake_engine.reset_detection()
-                    log_state_transition(previous_state, state, "wake phrase detected")
+                    if previous_state:
+                        log_state_transition(
+                            previous_state, state_manager.state, "wake phrase detected"
+                        )
+                    silence_tracker.reset()
                     payload = pre_roll.flush()
                     if payload:
                         duration_ms = (len(payload) / (2 * CHANNELS)) / SAMPLE_RATE * 1000
@@ -348,69 +293,70 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
                             f"{WAKE_LOG_LABEL} Triggered -> streaming "
                             f"(sent {duration_ms:.0f} ms of buffered audio)"
                         )
-                        resampled_payload = _prepare_for_stream(payload)
+                        resampled_payload = chunk_preparer.prepare(payload)
                         if resampled_payload:
                             await ws_client.send_audio_chunk(resampled_payload)
                         skip_current_chunk = True
                     else:
                         skip_current_chunk = False
-
-                    heard_speech = False
-                    silence_duration = 0.0
-                    retrigger_budget = 0
                 else:
-                    retrigger_budget += 1
+                    retrigger_count = state_manager.increment_retrigger_budget()
                     print(
                         f"{WAKE_LOG_LABEL} Wake word retrigger detected during streaming "
-                        f"(count={retrigger_budget})"
+                        f"(count={retrigger_count})"
                     )
 
-            if state == StreamState.STREAMING and not skip_current_chunk:
-                stream_chunk = _prepare_for_stream(audio_bytes)
+            if state_manager.state == StreamState.STREAMING and not skip_current_chunk:
+                stream_chunk = chunk_preparer.prepare(audio_bytes)
                 if stream_chunk:
                     await ws_client.send_audio_chunk(stream_chunk)
 
-            if AUTO_STOP_ENABLED and state == StreamState.STREAMING:
-                frames = len(audio_bytes) / (2 * CHANNELS)
-                chunk_duration = frames / SAMPLE_RATE if frames else 0.0
-                rms = calculate_rms(audio_bytes)
-
-                if rms >= AUTO_STOP_SILENCE_THRESHOLD:
-                    heard_speech = True
-                    silence_duration = 0.0
-                elif heard_speech:
-                    silence_duration += chunk_duration
-                    if silence_duration >= AUTO_STOP_MAX_SILENCE_SECONDS:
-                        if retrigger_budget == 0:
-                            if awaiting_server_stop:
-                                message = (
-                                    f"{TURN_LOG_LABEL} Silence timer fired but awaiting server "
-                                    "stop; skipping duplicate close request."
-                                )
-                                verbose_print(message)
-                            else:
-                                _transition_stream_to_listening(
-                                    "silence detected", defer_finalize=True
-                                )
-                        else:
+            if AUTO_STOP_ENABLED and state_manager.state == StreamState.STREAMING:
+                if silence_tracker.observe(audio_bytes):
+                    if state_manager.retrigger_budget == 0:
+                        if state_manager.awaiting_server_stop:
                             verbose_print(
-                                f"{TURN_LOG_LABEL} Silence detected but "
-                                f"{retrigger_budget} retrigger(s) observed; keeping stream open"
+                                f"{TURN_LOG_LABEL} Silence timer fired but awaiting server "
+                                "stop; skipping duplicate close request."
                             )
-                            retrigger_budget = 0
-                            silence_duration = 0.0
+                        else:
+                            previous_state = state_manager.transition_to_listening(
+                                "silence detected", defer_finalize=True
+                            )
+                            if previous_state:
+                                log_state_transition(
+                                    previous_state, state_manager.state, "silence detected"
+                                )
+                                reset_stream_resources()
+                                verbose_print(
+                                    f"{TURN_LOG_LABEL} Awaiting server confirmation before "
+                                    "finalizing turn."
+                                )
+                    else:
+                        retrigger_count = state_manager.retrigger_budget
+                        retrigger_log = (
+                            f"{TURN_LOG_LABEL} Silence detected but "
+                            f"{retrigger_count} retrigger(s) observed; "
+                            "keeping stream open"
+                        )
+                        verbose_print(retrigger_log)
+                        state_manager.reset_retrigger_budget()
+                        silence_tracker.clear_silence()
 
-            if chunk_count % 100 == 0:
-                verbose_print(f"[DEBUG] Processed {chunk_count} audio chunks (state={state.value})")
+            if chunk_index % 100 == 0:
+                debug_log = (
+                    f"[DEBUG] Processed {chunk_index} audio chunks "
+                    f"(state={state_manager.state.value})"
+                )
+                verbose_print(debug_log)
 
     except asyncio.CancelledError:
-        verbose_print(f"[INFO] Audio controller stopped ({chunk_count} chunks processed)")
+        verbose_print(
+            f"[INFO] Audio controller stopped ({state_manager.chunk_count} chunks processed)"
+        )
         raise
     except Exception as exc:
         print(f"{ERROR_LOG_LABEL} Audio controller error: {exc}", file=sys.stderr)
         raise
     finally:
-        if response_tasks:
-            for task in response_tasks:
-                task.cancel()
-            await asyncio.gather(*response_tasks, return_exceptions=True)
+        await response_tasks.drain()

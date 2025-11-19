@@ -2,6 +2,7 @@
 
 Required:
 - [ ] update the readme, agents, etc
+- [ ] make the CLI flags shorter, no need to prefix them with `assistant`
 - [ ] make the assistant reply even more succint
 - [ ] set default model to nano
 - [ ] the readme should be a readme not a dump
@@ -23,6 +24,7 @@ Required:
 
 Maybe:
 - [ ] Stream the reply
+- [ ] add a way to generate code coverage, write it in a gitignored file. it should have what entry points are missing unit tests
 - [ ] wake word logs are too much in non -v
 - [ ] explore if we can add more custom names for wake words
 - [ ] Add speaker diarization
