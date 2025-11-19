@@ -76,6 +76,36 @@ async def _shutdown_task(task):
 
 
 @pytest.mark.asyncio
+async def test_run_audio_controller_wake_engine_failure(monkeypatch, capsys):
+    capture = FakeCapture()
+    ws_client = FakeWebSocket()
+    transcript_buffer = DummyTranscriptBuffer()
+    assistant = object()
+    speech_player = object()
+    stop_signal = asyncio.Event()
+    speech_stopped_signal = asyncio.Event()
+
+    def failing_wake_engine(*args, **kwargs):
+        raise RuntimeError("missing model")
+
+    monkeypatch.setattr(controller, "WakeWordEngine", failing_wake_engine)
+
+    with pytest.raises(RuntimeError, match="missing model"):
+        await controller.run_audio_controller(
+            capture,
+            ws_client,  # pyright: ignore[reportArgumentType]
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            stop_signal=stop_signal,
+            speech_stopped_signal=speech_stopped_signal,
+        )
+
+    captured = capsys.readouterr()
+    assert "missing model" in captured.err
+
+
+@pytest.mark.asyncio
 async def test_run_audio_controller_handles_manual_stop(monkeypatch):
     capture = FakeCapture()
     capture.queue.put_nowait(np.zeros(32, dtype=np.int16).tobytes())
