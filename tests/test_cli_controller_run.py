@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any, Callable
 
 import numpy as np
 import pytest
@@ -9,7 +10,7 @@ from pi_assistant.wake_word import WakeWordDetection
 
 @pytest.fixture(autouse=True)
 def _disable_server_stop_guard(monkeypatch):
-    """Allow controller tests to finalize immediately after server stop events."""
+    """Disable the server-stop guard so tests can finalize turns without waiting."""
 
     monkeypatch.setattr(controller, "SERVER_STOP_MIN_SILENCE_SECONDS", 0.0)
 
@@ -56,7 +57,11 @@ def _chunk_with_duration(seconds: float, amplitude: int = 0) -> bytes:
     return samples.tobytes()
 
 
-def _make_response_scheduler(storage, *, auto_complete: bool = False):
+def _make_response_scheduler(
+    storage: list[asyncio.Task[None]],
+    *,
+    auto_complete: bool = False,
+) -> Callable[..., asyncio.Task[None]]:
     """Return a schedule_turn_response stub that toggles lifecycle callbacks."""
 
     sleep_duration = 0 if auto_complete else 10
@@ -82,10 +87,46 @@ def _make_response_scheduler(storage, *, auto_complete: bool = False):
     return _schedule
 
 
-async def _shutdown_task(task):
+async def _shutdown_task(task: asyncio.Task[Any]) -> None:
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+async def _wait_for_condition(
+    predicate: Callable[[], bool],
+    *,
+    timeout: float,
+    poll_interval: float = 0.01,
+    timeout_message: str,
+) -> None:
+    """Poll ``predicate`` until it returns True or fail after ``timeout`` seconds."""
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
+        if predicate():
+            return
+        if loop.time() >= deadline:
+            pytest.fail(timeout_message)
+        await asyncio.sleep(poll_interval)
+
+
+async def _ensure_condition_stays_false(
+    predicate: Callable[[], bool],
+    *,
+    duration: float,
+    poll_interval: float = 0.01,
+    failure_message: str,
+) -> None:
+    """Assert ``predicate`` remains False for ``duration`` seconds."""
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + duration
+    while loop.time() < deadline:
+        if predicate():
+            pytest.fail(failure_message)
+        await asyncio.sleep(poll_interval)
 
 
 @pytest.mark.asyncio
@@ -342,30 +383,35 @@ async def test_server_stop_event_respects_min_silence(monkeypatch):
         )
     )
 
-    for _ in range(200):
-        await asyncio.sleep(0.01)
-        if transcript_buffer.started >= 1:
-            break
-    else:
-        pytest.fail("wake phrase never started a turn")
+    await _wait_for_condition(
+        lambda: transcript_buffer.started >= 1,
+        timeout=2.0,
+        timeout_message="wake phrase never started a turn",
+    )
 
     speech_stopped_signal.set()
     capture.queue.put_nowait(silence_chunk)
-    await asyncio.sleep(0.1)
-    assert not scheduled
+    await _ensure_condition_stays_false(
+        lambda: bool(scheduled),
+        duration=0.2,
+        failure_message="server stop finalized before silence elapsed",
+    )
 
     for _ in range(10):
         capture.queue.put_nowait(silence_chunk)
-    await asyncio.sleep(0.05)
+    await _wait_for_condition(
+        lambda: capture.queue.empty(),
+        timeout=2.0,
+        timeout_message="controller did not drain silence queue",
+    )
     speech_stopped_signal.set()
     capture.queue.put_nowait(silence_chunk)
 
-    for _ in range(200):
-        await asyncio.sleep(0.01)
-        if scheduled:
-            break
-    else:
-        pytest.fail("server stop never finalized after silence")
+    await _wait_for_condition(
+        lambda: bool(scheduled),
+        timeout=2.0,
+        timeout_message="server stop never finalized after silence",
+    )
 
     await _shutdown_task(task)
 

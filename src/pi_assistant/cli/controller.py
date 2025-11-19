@@ -66,8 +66,8 @@ def should_ignore_server_stop_event(
     """Return a reason to ignore a server VAD stop, or ``None`` if it may proceed."""
 
     if state_manager.state != StreamState.STREAMING:
-        return None
-    if min_silence_seconds <= 0:
+        # Defensive: the server stop acknowledgement may arrive after we've already
+        # returned to listening, in which case we can safely treat it as handled.
         return None
     if not silence_tracker.heard_speech:
         return None
@@ -306,9 +306,18 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
             audio_bytes = await audio_capture.get_audio_chunk()
             chunk_index = state_manager.increment_chunk_count()
 
+            was_streaming = state_manager.state == StreamState.STREAMING
+            silence_reached = False
+            observed_silence_for_chunk = False
+            if was_streaming:
+                # Track silence for every streaming chunk, even if we drop it later,
+                # so the auto-stop timers stay accurate.
+                silence_reached = silence_tracker.observe(audio_bytes)
+                observed_silence_for_chunk = True
+
             if speech_stopped_signal.is_set():
-                speech_stopped_signal.clear()
                 if state_manager.consume_suppressed_stop_event():
+                    speech_stopped_signal.clear()
                     verbose_print(
                         f"{TURN_LOG_LABEL} Ignoring stale server speech stop acknowledgement."
                     )
@@ -320,11 +329,11 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
                     SERVER_STOP_MIN_SILENCE_SECONDS,
                 )
                 if ignore_reason:
-                    verbose_print(
-                        f"{TURN_LOG_LABEL} Premature server speech stop ignored ({ignore_reason})."
-                    )
+                    speech_stopped_signal.clear()
+                    verbose_print(f"{TURN_LOG_LABEL} Server speech stop ignored: {ignore_reason}")
                     continue
 
+                speech_stopped_signal.clear()
                 if state_manager.awaiting_server_stop:
                     reason = state_manager.complete_deferred_finalize("server speech stop event")
                     if reason:
@@ -417,14 +426,16 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
                         f"(count={retrigger_count})"
                     )
 
-            silence_reached = False
-            if state_manager.state == StreamState.STREAMING:
+            now_streaming = state_manager.state == StreamState.STREAMING
+            if now_streaming and not observed_silence_for_chunk:
+                # Streaming just started mid-iteration; register this chunk for silence tracking.
                 silence_reached = silence_tracker.observe(audio_bytes)
+                observed_silence_for_chunk = True
 
-                if not skip_current_chunk:
-                    stream_chunk = chunk_preparer.prepare(audio_bytes)
-                    if stream_chunk:
-                        await ws_client.send_audio_chunk(stream_chunk)
+            if now_streaming and not skip_current_chunk:
+                stream_chunk = chunk_preparer.prepare(audio_bytes)
+                if stream_chunk:
+                    await ws_client.send_audio_chunk(stream_chunk)
 
             if AUTO_STOP_ENABLED and state_manager.state == StreamState.STREAMING:
                 if silence_reached:
