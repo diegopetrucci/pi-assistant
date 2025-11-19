@@ -157,7 +157,7 @@ class AudioCapture:
         _persist_env_value("SAMPLE_RATE", str(fallback_rate))
         os.environ["SAMPLE_RATE"] = str(fallback_rate)
         print(
-            "[INFO] "
+            "[ERROR] "
             f"Detected microphone {device_label} prefers {fallback_rate} Hz. "
             "Saved SAMPLE_RATE to .env; launch pi-assistant again to apply."
         )
