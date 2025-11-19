@@ -37,6 +37,7 @@ from pi_assistant.config import (
     CONFIRMATION_CUE_TEXT,
     PREROLL_DURATION_SECONDS,
     SAMPLE_RATE,
+    SERVER_STOP_MIN_SILENCE_SECONDS,
     STREAM_SAMPLE_RATE,
     WAKE_WORD_CONSECUTIVE_FRAMES,
     WAKE_WORD_EMBEDDING_MODEL_PATH,
@@ -55,6 +56,25 @@ from pi_assistant.wake_word import (
     WakeWordDetection,
     WakeWordEngine,
 )
+
+
+def should_ignore_server_stop_event(
+    state_manager: StreamStateManager,
+    silence_tracker: SilenceTracker,
+    min_silence_seconds: float,
+) -> str | None:
+    """Return a reason to ignore a server VAD stop, or ``None`` if it may proceed."""
+
+    if state_manager.state != StreamState.STREAMING:
+        return None
+    if not silence_tracker.heard_speech:
+        return "no local speech detected yet"
+    if min_silence_seconds <= 0:
+        return None
+    if not silence_tracker.has_observed_silence(min_silence_seconds):
+        current = silence_tracker.silence_duration
+        return f"{current:.2f}s silence < {min_silence_seconds:.2f}s minimum"
+    return None
 
 
 def _maybe_schedule_confirmation_cue(
@@ -292,7 +312,20 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
                     verbose_print(
                         f"{TURN_LOG_LABEL} Ignoring stale server speech stop acknowledgement."
                     )
-                elif state_manager.awaiting_server_stop:
+                    continue
+
+                ignore_reason = should_ignore_server_stop_event(
+                    state_manager,
+                    silence_tracker,
+                    SERVER_STOP_MIN_SILENCE_SECONDS,
+                )
+                if ignore_reason:
+                    verbose_print(
+                        f"{TURN_LOG_LABEL} Premature server speech stop ignored ({ignore_reason})."
+                    )
+                    continue
+
+                if state_manager.awaiting_server_stop:
                     reason = state_manager.complete_deferred_finalize("server speech stop event")
                     if reason:
                         finalize_turn(reason)
@@ -384,13 +417,17 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
                         f"(count={retrigger_count})"
                     )
 
-            if state_manager.state == StreamState.STREAMING and not skip_current_chunk:
-                stream_chunk = chunk_preparer.prepare(audio_bytes)
-                if stream_chunk:
-                    await ws_client.send_audio_chunk(stream_chunk)
+            silence_reached = False
+            if state_manager.state == StreamState.STREAMING:
+                silence_reached = silence_tracker.observe(audio_bytes)
+
+                if not skip_current_chunk:
+                    stream_chunk = chunk_preparer.prepare(audio_bytes)
+                    if stream_chunk:
+                        await ws_client.send_audio_chunk(stream_chunk)
 
             if AUTO_STOP_ENABLED and state_manager.state == StreamState.STREAMING:
-                if silence_tracker.observe(audio_bytes):
+                if silence_reached:
                     if state_manager.retrigger_budget == 0:
                         if state_manager.awaiting_server_stop:
                             verbose_print(

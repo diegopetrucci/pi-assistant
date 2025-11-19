@@ -294,6 +294,9 @@ AUTO_STOP_SILENCE_THRESHOLD = _env_int(
 AUTO_STOP_MAX_SILENCE_SECONDS = _env_float(
     "AUTO_STOP_MAX_SILENCE_SECONDS", _AUTO_STOP["max_silence_seconds"]
 )
+SERVER_STOP_MIN_SILENCE_SECONDS = _env_float(
+    "SERVER_STOP_MIN_SILENCE_SECONDS", _AUTO_STOP.get("server_stop_min_silence_seconds", 0.75)
+)
 
 if not OPENAI_API_KEY:
     raise ValueError(
@@ -339,5 +342,6 @@ __all__ = [
     "AUTO_STOP_ENABLED",
     "AUTO_STOP_SILENCE_THRESHOLD",
     "AUTO_STOP_MAX_SILENCE_SECONDS",
+    "SERVER_STOP_MIN_SILENCE_SECONDS",
     "reset_first_launch_choices",
 ]

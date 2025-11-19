@@ -7,6 +7,13 @@ from pi_assistant.cli import controller
 from pi_assistant.wake_word import WakeWordDetection
 
 
+@pytest.fixture(autouse=True)
+def _disable_server_stop_guard(monkeypatch):
+    """Allow controller tests to finalize immediately after server stop events."""
+
+    monkeypatch.setattr(controller, "SERVER_STOP_MIN_SILENCE_SECONDS", 0.0)
+
+
 class FakeCapture:
     def __init__(self):
         self.queue = asyncio.Queue()

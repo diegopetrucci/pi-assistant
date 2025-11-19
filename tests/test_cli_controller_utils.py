@@ -107,6 +107,55 @@ def test_silence_tracker_clear_silence_keeps_speech_flag():
     assert tracker.observe(silence) is True
 
 
+def test_silence_tracker_exposes_silence_duration_and_flags():
+    tracker = controller.SilenceTracker(
+        silence_threshold=1000,
+        max_silence_seconds=0.05,
+        sample_rate=controller.SAMPLE_RATE,
+    )
+    short_silence = _chunk_with_duration(0.01, amplitude=0)
+    long_silence = _chunk_with_duration(0.05, amplitude=0)
+    speech = _chunk_with_duration(0.02, amplitude=2000)
+
+    assert tracker.heard_speech is False
+    assert tracker.silence_duration == 0.0
+    assert tracker.has_observed_silence(0.01) is False
+
+    tracker.observe(speech)
+    assert tracker.heard_speech is True
+
+    tracker.observe(short_silence)
+    assert tracker.has_observed_silence(0.02) is False
+
+    tracker.observe(long_silence)
+    assert tracker.has_observed_silence(0.02) is True
+
+
+def test_should_ignore_server_stop_event_logic():
+    manager = controller.StreamStateManager()
+    tracker = controller.SilenceTracker(
+        silence_threshold=1000,
+        max_silence_seconds=0.5,
+        sample_rate=controller.SAMPLE_RATE,
+    )
+
+    assert controller.should_ignore_server_stop_event(manager, tracker, 0.25) is None
+
+    manager.transition_to_streaming()
+    reason = controller.should_ignore_server_stop_event(manager, tracker, 0.25)
+    assert reason == "no local speech detected yet"
+
+    tracker.observe(_chunk_with_duration(0.02, amplitude=2000))
+    tracker.observe(_chunk_with_duration(0.1, amplitude=0))
+
+    reason = controller.should_ignore_server_stop_event(manager, tracker, 0.25)
+    assert reason is not None
+    assert "0.10s silence" in reason
+
+    tracker.observe(_chunk_with_duration(0.2, amplitude=0))
+    assert controller.should_ignore_server_stop_event(manager, tracker, 0.25) is None
+
+
 def test_stream_state_manager_tracks_deferred_finalize():
     manager = controller.StreamStateManager()
 

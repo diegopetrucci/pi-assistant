@@ -37,6 +37,27 @@ class SilenceTracker:
 
         self._silence_duration = 0.0
 
+    @property
+    def heard_speech(self) -> bool:
+        """Return True once any speech has been detected in the current window."""
+
+        return self._heard_speech
+
+    @property
+    def silence_duration(self) -> float:
+        """Expose the accumulated silence time since the most recent speech chunk."""
+
+        return self._silence_duration if self._heard_speech else 0.0
+
+    def has_observed_silence(self, minimum_seconds: float) -> bool:
+        """Return True when silence has persisted for at least ``minimum_seconds``."""
+
+        if minimum_seconds <= 0:
+            return True
+        if not self._heard_speech:
+            return False
+        return self._silence_duration >= minimum_seconds
+
     def observe(self, chunk: bytes) -> bool:
         """Return True when accumulated silence exceeds the threshold."""
 
