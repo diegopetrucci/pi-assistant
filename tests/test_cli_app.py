@@ -106,6 +106,12 @@ def test_parse_args_assistant_model_nano_flag(monkeypatch: pytest.MonkeyPatch) -
     assert args.assistant_model == "gpt-5-nano-2025-08-07"
 
 
+def test_parse_args_assistant_model_41_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _run_parse(monkeypatch, ["pi-assistant", "--model", "4.1"])
+
+    assert args.assistant_model == "gpt-4.1-2025-04-14"
+
+
 def test_parse_args_reset_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     args = _run_parse(monkeypatch, ["pi-assistant", "--reset"])
 
@@ -124,6 +130,20 @@ def test_parse_args_rejects_minimal_for_nano(
     stderr = capsys.readouterr().err
     assert "not supported" in stderr
     assert "low, medium, high" in stderr
+
+
+def test_parse_args_rejects_reasoning_for_models_without_support(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        _run_parse(
+            monkeypatch,
+            ["pi-assistant", "--model", "4.1", "--reasoning-effort", "low"],
+        )
+
+    stderr = capsys.readouterr().err.lower()
+    assert "reasoning effort" in stderr
+    assert "none (reasoning disabled)" in stderr
 
 
 class _ValidatorStub:
