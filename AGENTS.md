@@ -14,7 +14,8 @@
 * Execute the fast wake-word regression with `uv run python -m unittest tests/test_wake_word.py`, and prefer `uv run pytest -v` (optionally `--cov`) for the full suite.
 * When invoking the interpreter directly, call `python3` (not `python`) to avoid hitting the system stub.
 * After completing a change, always run `uv run pyright && uv run pytest && uv run ruff format .`.
-* Never add annotations to ignore pyright, ruff, or other checkers warnings. Existing ones are okay. 
+* Never add annotations to ignore pyright, ruff, or other checkers warnings. Existing ones are okay.
+* You can check test coverage with `uv run pytest -cov`
 
 ## Coding Style & Naming Conventions
 * Target Python 3.9+ and follow Ruff’s formatter—never hand-tune spacing after running it. Stick to 4-space indentation and type-annotated functions.
