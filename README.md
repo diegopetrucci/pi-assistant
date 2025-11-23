@@ -111,8 +111,9 @@ Say "Hey Rhaspy stop" (or "Rhaspy stop") while the assistant is talking to immed
 | `nano` (default) | `gpt-5-nano-2025-08-07` | Ultra-fast replies tuned for `low`, `medium`, or `high` reasoning. |
 | `mini` | `gpt-5-mini-2025-08-07` | Balanced latency with optional `minimal`, `low`, `medium`, or `high` reasoning. |
 | `5.1` | `gpt-5.1-2025-11-13` | Higher accuracy with `none`, `low`, `medium`, or `high` reasoning. |
+| `4.1` | `gpt-4.1-2025-04-14` | Compatibility tier with reasoning disabled; ideal when you must stick to GPT-4-class models. |
 
-- `ASSISTANT_REASONING_EFFORT` falls back to `low` when unset; `minimal` cannot be used while `ASSISTANT_WEB_SEARCH_ENABLED=1`.
+- `ASSISTANT_REASONING_EFFORT` falls back to `low` when unset. Models without reasoning (e.g., GPT-4.1) reject CLI overrides and skip persisted values with a warning instead. `minimal` cannot be used while `ASSISTANT_WEB_SEARCH_ENABLED=1`.
 - `ASSISTANT_SYSTEM_PROMPT`, `LOCATION_NAME`, `ASSISTANT_LANGUAGE`, and `TRANSCRIPTION_LANGUAGE` are sent as system messages so you can keep the assistant short, localized, and aware of the device's location.
 - Set `ASSISTANT_WEB_SEARCH_ENABLED=0` to disable tool calls entirely or leave it enabled to let GPT-5 issue web search requests when the Responses API determines they are useful.
 

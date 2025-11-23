@@ -129,7 +129,7 @@ def parse_args():
         type=_parse_assistant_model_arg,
         help=(
             "Override which assistant LLM to use for this run. "
-            "Accepts the preset key (mini, 5.1) or the full model id.\n"
+            "Accepts the preset key (nano, mini, 4.1, 5.1) or the full model id.\n"
             f"{_assistant_model_help()}\n"
             f"Default: {ASSISTANT_MODEL}"
         ),
@@ -155,13 +155,17 @@ def parse_args():
             f"{SIMULATED_QUERY_FALLBACK!r}. Defaults to the SIMULATED_QUERY_TEXT env var when set."
         ),
     )
+    supported_reasoning_label = (
+        ", ".join(ASSISTANT_REASONING_CHOICES) if ASSISTANT_REASONING_CHOICES else "none (disabled)"
+    )
     parser.add_argument(
         "--reasoning-effort",
         choices=REASONING_EFFORT_CHOICES,
         help=(
             "Override the GPT-5 reasoning level for this run. "
             "Defaults to your saved selection (low is recommended). "
-            f"Supported for the current model: {', '.join(ASSISTANT_REASONING_CHOICES)}. "
+            f"Supported for the current model: {supported_reasoning_label}. "
+            "Models without reasoning (e.g., GPT-4.1) do not accept this flag. "
             "Note: 'minimal' requires web search to be disabled."
         ),
     )
@@ -179,9 +183,10 @@ def parse_args():
         allowed = reasoning_effort_choices_for_model(selected_model)
         if args.reasoning_effort not in allowed:
             label = _assistant_model_label(selected_model)
+            allowed_label = ", ".join(allowed) if allowed else "none (reasoning disabled)"
             parser.error(
                 f"Reasoning effort '{args.reasoning_effort}' is not supported by {label}. "
-                f"Allowed values: {', '.join(allowed)}."
+                f"Allowed values: {allowed_label}."
             )
     return args
 

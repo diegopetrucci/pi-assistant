@@ -15,7 +15,6 @@ from pi_assistant.assistant import (
     LLMResponder,
     TurnTranscriptAggregator,
 )
-from pi_assistant.config import ASSISTANT_REASONING_EFFORT
 
 
 class TurnTranscriptAggregatorTest(unittest.IsolatedAsyncioTestCase):
@@ -216,7 +215,11 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
             ]
         }
         client = FakeOpenAIClient(payload)
-        responder = LLMResponder(client=client, enable_web_search=True)  # pyright: ignore[reportArgumentType]
+        responder = LLMResponder(
+            client=cast(AsyncOpenAI, client),
+            enable_web_search=True,
+            reasoning_effort="low",
+        )
 
         reply = await responder.generate_reply("Weather update")
 
@@ -226,7 +229,7 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
         sent = client.calls[0]
         self.assertEqual(sent["input"][0]["content"][0]["type"], "input_text")
         self.assertIn("tools", sent)
-        self.assertEqual(sent.get("reasoning"), {"effort": ASSISTANT_REASONING_EFFORT})
+        self.assertEqual(sent.get("reasoning"), {"effort": "low"})
 
     async def test_includes_reasoning_effort_when_configured(self):
         payload = {"output": []}

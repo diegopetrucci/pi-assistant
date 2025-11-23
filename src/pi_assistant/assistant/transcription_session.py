@@ -62,7 +62,9 @@ class TranscriptionConfigValidator:
         selected_reasoning = (reasoning_effort or ASSISTANT_REASONING_EFFORT or "").strip()
         selected_reasoning = selected_reasoning or None
         if selected_reasoning and selected_reasoning not in reasoning_choices:
-            allowed = ", ".join(reasoning_choices)
+            allowed = (
+                ", ".join(reasoning_choices) if reasoning_choices else "none (reasoning disabled)"
+            )
             raise ValueError(
                 f"Reasoning effort '{selected_reasoning}' is not supported by {model_override}. "
                 f"Allowed values: {allowed}"

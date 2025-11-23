@@ -189,6 +189,21 @@ def test_config_validator_rejects_minimal_when_web_search_enabled(
         )
 
 
+def test_config_validator_rejects_reasoning_when_model_disables_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ts, "reasoning_effort_choices_for_model", lambda *args, **kwargs: ())
+    validator = TranscriptionConfigValidator()
+
+    with pytest.raises(ValueError, match="reasoning disabled"):
+        validator.resolve(
+            assistant_audio_mode="responses",
+            simulate_query=None,
+            reasoning_effort="low",
+            assistant_model="gpt-4.1-2025-04-14",
+        )
+
+
 def test_component_builder_creates_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     created: dict[str, Any] = {}
 
