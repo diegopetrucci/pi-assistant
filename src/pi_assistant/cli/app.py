@@ -32,6 +32,7 @@ from pi_assistant.config import (
     reset_first_launch_choices,
 )
 from pi_assistant.diagnostics import test_audio_capture, test_websocket_client
+from pi_assistant.exceptions import AssistantRestartRequired
 
 REASONING_EFFORT_CHOICES = ("none", "minimal", "low", "medium", "high")
 SIMULATED_QUERY_FALLBACK = "Hey Rhasspy, is it going to rain tomorrow?"
@@ -95,6 +96,9 @@ async def run_transcription(
             await session.run()
     except KeyboardInterrupt:
         print("\n\nShutdown requested...")
+    except AssistantRestartRequired as e:
+        print(f"\n{ASSISTANT_LOG_LABEL} {e}", file=sys.stderr)
+        raise SystemExit(1) from None
     except Exception as e:
         print(f"\n{ERROR_LOG_LABEL} Transcription failed: {e}", file=sys.stderr)
         raise

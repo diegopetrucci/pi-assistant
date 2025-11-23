@@ -25,6 +25,7 @@ from pi_assistant.cli.app import (
     parse_args,
     run_transcription,
 )
+from pi_assistant.exceptions import AssistantRestartRequired
 
 
 def _run_parse(monkeypatch: pytest.MonkeyPatch, argv: list[str]):
@@ -266,6 +267,21 @@ async def test_run_transcription_propagates_errors(monkeypatch: pytest.MonkeyPat
         await run_transcription()
 
     assert session.run_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_run_transcription_requires_restart(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _, _, session = _setup_run_transcription(monkeypatch)
+    session.to_raise = AssistantRestartRequired("Restart me")
+
+    with pytest.raises(SystemExit) as excinfo:
+        await run_transcription()
+
+    assert excinfo.value.code == 1
+    captured = capsys.readouterr()
+    assert "Restart me" in captured.err
 
 
 def test_main_run_mode_invokes_transcription(monkeypatch: pytest.MonkeyPatch) -> None:
