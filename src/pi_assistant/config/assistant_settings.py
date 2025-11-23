@@ -158,7 +158,7 @@ def reasoning_effort_choices_for_model(model_name: str) -> tuple[str, ...]:
     for entry in _ASSISTANT_MODEL_CHOICES.values():
         if entry.get("value") == model_name:
             configured = entry.get("reasoning_efforts")
-            if isinstance(configured, (list, tuple)):
+            if isinstance(configured, (list, tuple)) and configured:
                 return tuple(str(level) for level in configured)
     lowered = model_name.lower()
     if "mini" in lowered:
@@ -182,7 +182,7 @@ def _resolve_reasoning_effort(default_choice: str, allowed_choices: tuple[str, .
             )
         return None
 
-    fallback = allowed_choices[0] if allowed_choices else "low"
+    fallback = allowed_choices[0]
     normalized_default = _normalize_reasoning_effort(default_choice, allowed_choices) or fallback
     env_value = os.getenv("ASSISTANT_REASONING_EFFORT")
     normalized_env = _normalize_reasoning_effort(env_value, allowed_choices)
