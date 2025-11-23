@@ -170,7 +170,7 @@ def reasoning_effort_choices_for_model(model_name: str) -> tuple[str, ...]:
     return ("low", "medium", "high")
 
 
-def _resolve_reasoning_effort(default_choice: str, allowed_choices: tuple[str, ...]) -> str:
+def _resolve_reasoning_effort(default_choice: str, allowed_choices: tuple[str, ...]) -> str | None:
     """Return the configured reasoning effort, prompting/persisting when needed."""
 
     if not allowed_choices:
@@ -180,7 +180,7 @@ def _resolve_reasoning_effort(default_choice: str, allowed_choices: tuple[str, .
                 "ASSISTANT_REASONING_EFFORT is ignored because the selected model "
                 "does not support reasoning tokens.\n"
             )
-        return ""
+        return None
 
     fallback = allowed_choices[0] if allowed_choices else "low"
     normalized_default = _normalize_reasoning_effort(default_choice, allowed_choices) or fallback

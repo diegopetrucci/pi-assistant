@@ -161,7 +161,7 @@ def parse_args():
             "Override the GPT-5 reasoning level for this run. "
             "Defaults to your saved selection (low is recommended). "
             f"Supported for the current model: {supported_reasoning_label}. "
-            "Models without reasoning (e.g., GPT-4.1) ignore this flag. "
+            "Models without reasoning (e.g., GPT-4.1) do not accept this flag. "
             "Note: 'minimal' requires web search to be disabled."
         ),
     )

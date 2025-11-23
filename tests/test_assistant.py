@@ -226,7 +226,10 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
         sent = client.calls[0]
         self.assertEqual(sent["input"][0]["content"][0]["type"], "input_text")
         self.assertIn("tools", sent)
-        self.assertEqual(sent.get("reasoning"), {"effort": ASSISTANT_REASONING_EFFORT})
+        if ASSISTANT_REASONING_EFFORT:
+            self.assertEqual(sent.get("reasoning"), {"effort": ASSISTANT_REASONING_EFFORT})
+        else:
+            self.assertNotIn("reasoning", sent)
 
     async def test_includes_reasoning_effort_when_configured(self):
         payload = {"output": []}
