@@ -48,7 +48,12 @@ def stub_wake_word_dependencies(monkeypatch):
 
 
 def test_preroll_buffer_trim_and_flush():
-    buffer = wake_word.PreRollBuffer(max_seconds=0.001, sample_rate=1000, sample_width=1)
+    buffer = wake_word.PreRollBuffer(
+        max_seconds=0.001,
+        sample_rate=1000,
+        sample_width=1,
+        channels=2,
+    )
     buffer.add(b"a")
     buffer.add(b"b" * 5)  # exceeds capacity, only most recent byte retained
 
@@ -59,7 +64,12 @@ def test_preroll_buffer_trim_and_flush():
 
 
 def test_preroll_buffer_clear_resets_state():
-    buffer = wake_word.PreRollBuffer(max_seconds=0.001, sample_rate=1000, sample_width=1)
+    buffer = wake_word.PreRollBuffer(
+        max_seconds=0.001,
+        sample_rate=1000,
+        sample_width=1,
+        channels=2,
+    )
     buffer.add(b"abc")
     buffer.clear()
     assert buffer.flush() == b""
@@ -70,6 +80,22 @@ def test_preroll_buffer_rejects_invalid_max_seconds():
         wake_word.PreRollBuffer(max_seconds=-0.1, sample_rate=1000)
     with pytest.raises(ValueError):
         wake_word.PreRollBuffer(max_seconds=0, sample_rate=1000)
+
+
+def test_preroll_buffer_uses_channel_multiplier():
+    buffer = wake_word.PreRollBuffer(
+        max_seconds=0.001,
+        sample_rate=1000,
+        sample_width=2,
+        channels=2,
+    )
+
+    assert buffer.max_bytes == int(0.001 * 1000 * 2 * 2)
+
+
+def test_preroll_buffer_rejects_invalid_channels():
+    with pytest.raises(ValueError):
+        wake_word.PreRollBuffer(max_seconds=0.1, sample_rate=1000, channels=0)
 
 
 def test_wake_word_engine_handles_zero_size_resampler_output(tmp_path, monkeypatch):
