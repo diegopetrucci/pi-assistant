@@ -63,14 +63,23 @@ class WakeWordDetection:
 class PreRollBuffer:
     """Stores a rolling window of raw PCM audio for pre-trigger playback."""
 
-    def __init__(self, max_seconds: float, sample_rate: int, sample_width: int = 2):
+    def __init__(
+        self,
+        max_seconds: float,
+        sample_rate: int,
+        sample_width: int = 2,
+        *,
+        channels: int = 1,
+    ):
         if max_seconds <= 0:
             raise ValueError("max_seconds must be positive")
         if sample_rate <= 0:
             raise ValueError("sample_rate must be positive")
         if sample_width <= 0:
             raise ValueError("sample_width must be positive")
-        self.max_bytes = int(max_seconds * sample_rate * sample_width)
+        if channels <= 0:
+            raise ValueError("channels must be positive")
+        self.max_bytes = int(max_seconds * sample_rate * sample_width * channels)
         self._buffer: deque[bytes] = deque()
         self._size = 0
 

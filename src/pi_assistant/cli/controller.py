@@ -252,7 +252,11 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
     except RuntimeError as exc:
         print(f"{ERROR_LOG_LABEL} {exc}", file=sys.stderr)
         raise
-    pre_roll = PreRollBuffer(PREROLL_DURATION_SECONDS, capture_sample_rate)
+    pre_roll = PreRollBuffer(
+        PREROLL_DURATION_SECONDS,
+        capture_sample_rate,
+        channels=CHANNELS,
+    )
     chunk_preparer = AudioChunkPreparer(
         capture_sample_rate,
         STREAM_SAMPLE_RATE,
