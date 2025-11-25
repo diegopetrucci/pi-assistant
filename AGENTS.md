@@ -15,7 +15,7 @@
 * When invoking the interpreter directly, call `python3` (not `python`) to avoid hitting the system stub.
 * After completing a change, always run `uv run pyright && uv run pytest && uv run ruff format .`.
 * Never add annotations to ignore pyright, ruff, or other checkers warnings. Existing ones are okay.
-* You can check test coverage with `uv run pytest -cov`
+* You can check test coverage with `uv run pytest --cov`
 
 ## Coding Style & Naming Conventions
 * Target Python 3.9+ and follow Ruff’s formatter—never hand-tune spacing after running it. Stick to 4-space indentation and type-annotated functions.
