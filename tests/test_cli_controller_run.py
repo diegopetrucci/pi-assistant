@@ -173,15 +173,21 @@ async def test_run_audio_controller_skips_misaligned_chunk(monkeypatch, capsys):
 
     class DummyWakeWordEngine:
         def __init__(self, *args, **kwargs):
-            pass
+            self.processed_a_chunk = False
 
         def process_chunk(self, chunk):
+            self.processed_a_chunk = True
             return WakeWordDetection(score=0.0, triggered=False)
 
         def reset_detection(self):
             return None
 
-    monkeypatch.setattr(controller, "WakeWordEngine", DummyWakeWordEngine)
+    dummy_wake_engine_instance = DummyWakeWordEngine()
+    monkeypatch.setattr(
+        controller,
+        "WakeWordEngine",
+        lambda *args, **kwargs: dummy_wake_engine_instance,
+    )
 
     task = asyncio.create_task(
         controller.run_audio_controller(
@@ -200,6 +206,7 @@ async def test_run_audio_controller_skips_misaligned_chunk(monkeypatch, capsys):
 
     captured = capsys.readouterr()
     assert "Dropping malformed audio chunk" in captured.err
+    assert dummy_wake_engine_instance.processed_a_chunk
 
 
 @pytest.mark.asyncio
