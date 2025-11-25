@@ -55,10 +55,11 @@ This document catalogs potential bugs and issues discovered through code analysi
 - **Fix Required:** Use proper exception logging with `logging.exception()` or at minimum log the full traceback.
 
 ### 8. No validation of audio chunk size before calculations
-- **Location:** `src/pi_assistant/cli/controller.py:381-382`
-- **Impact:** The code calculates `frames = len(audio_bytes) / (2 * CHANNELS)` assuming the chunk size is always correct. Malformed chunks or partial data could cause incorrect duration calculations.
-- **Root Cause:** No validation that `len(audio_bytes)` is a multiple of `2 * CHANNELS`.
-- **Fix Required:** Add validation: `if len(audio_bytes) % (2 * CHANNELS) != 0: handle_error()`.
+- **Status:** Fixed. `run_audio_controller()` now rejects misaligned PCM16 chunks before any frame math and reuses the validated length when computing buffered duration (`src/pi_assistant/cli/controller.py`).
+- **Location:** `src/pi_assistant/cli/controller.py:407-424`
+- **Impact:** Previously, malformed chunks or partial data produced incorrect duration calculations (and could desync streaming). Validation now prevents those bytes from entering the pipeline.
+- **Root Cause:** No verification that `len(audio_bytes)` was a multiple of `2 * CHANNELS`.
+- **Resolution:** Drop malformed chunks with a logged error and compute buffered duration using integer frame counts derived from the validated payload size.
 
 ### 9. Response task cancellation without awaiting completion
 - **Location:** `src/pi_assistant/cli/controller.py:237-245`

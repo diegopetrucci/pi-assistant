@@ -82,7 +82,6 @@ def _maybe_schedule_confirmation_cue(
     speech_player: SpeechPlayer,
 ) -> None:
     """Play a cached 'Got it' cue without blocking the main turn flow."""
-
     if not (assistant.tts_enabled and CONFIRMATION_CUE_ENABLED and CONFIRMATION_CUE_TEXT):
         return
 
@@ -116,7 +115,6 @@ async def _finalize_transcript(
     hooks: Optional[ResponseLifecycleHooks],
 ) -> Optional[str]:
     """Return the finalized transcript while honoring lifecycle hooks."""
-
     try:
         return await transcript_buffer.finalize_turn()
     finally:
@@ -235,6 +233,7 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
 
     verbose_print("[INFO] Starting audio controller...")
     capture_sample_rate = SAMPLE_RATE
+    bytes_per_frame = 2 * CHANNELS
 
     wake_engine: Optional[WakeWordEngine] = None
     try:
@@ -309,6 +308,14 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
         while True:
             audio_bytes = await audio_capture.get_audio_chunk()
             chunk_index = state_manager.increment_chunk_count()
+
+            if len(audio_bytes) % bytes_per_frame != 0:
+                print(
+                    f"{ERROR_LOG_LABEL} Dropping malformed audio chunk: "
+                    f"{len(audio_bytes)} bytes (expected multiple of {bytes_per_frame}).",
+                    file=sys.stderr,
+                )
+                continue
 
             was_streaming = state_manager.state == StreamState.STREAMING
             silence_reached = False
@@ -412,7 +419,8 @@ async def run_audio_controller(  # noqa: PLR0913, PLR0912, PLR0915
                     silence_tracker.reset()
                     payload = pre_roll.flush()
                     if payload:
-                        duration_ms = (len(payload) / (2 * CHANNELS)) / capture_sample_rate * 1000
+                        buffered_frames = len(payload) // bytes_per_frame
+                        duration_ms = buffered_frames / capture_sample_rate * 1000
                         verbose_print(
                             f"{WAKE_LOG_LABEL} Triggered -> streaming "
                             f"(sent {duration_ms:.0f} ms of buffered audio)"
