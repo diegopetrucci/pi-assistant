@@ -414,6 +414,22 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
             {"audio": {"voice": "robot", "format": "pcm", "sample_rate": 1234}},
         )
 
+    def test_build_audio_extra_body_omits_sample_rate_when_unset(self):
+        client = FakeOpenAIClient({"output": []})
+        responder = LLMResponder(
+            client=cast(AsyncOpenAI, client),
+            enable_tts=True,
+            use_responses_audio=True,
+            tts_sample_rate=0,
+            tts_voice="custom",
+            tts_format="wav",
+        )
+
+        self.assertEqual(
+            responder._build_audio_extra_body(),
+            {"audio": {"voice": "custom", "format": "wav"}},
+        )
+
     async def test_send_response_request_retries_without_audio_on_known_error(self):
         client = FakeOpenAIClient({"output": []})
         responder = LLMResponder(
@@ -464,6 +480,14 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
             responder._log_audio_fallback_warning(err)
 
         mock_print.assert_called_once()
+
+    def test_peek_phrase_audio_requires_cached_phrase(self):
+        client = FakeOpenAIClient({"output": []})
+        responder = LLMResponder(client=cast(AsyncOpenAI, client))
+        responder._phrase_audio_cache["Hello"] = (b"bytes", 16000)
+
+        self.assertIsNone(responder.peek_phrase_audio("   "))
+        self.assertEqual(responder.peek_phrase_audio("  Hello  "), (b"bytes", 16000))
 
     async def test_verify_responses_audio_support_success(self):
         client = FakeOpenAIClient({"output": []})
@@ -526,6 +550,18 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(responder.responses_audio_supported)
         self.assertEqual(len(client.calls), 0)
 
+    def test_set_responses_audio_supported_respects_requested_flag(self):
+        client = FakeOpenAIClient({"output": []})
+        responder = LLMResponder(
+            client=cast(AsyncOpenAI, client),
+            enable_tts=True,
+            use_responses_audio=False,
+        )
+
+        responder.set_responses_audio_supported(True)
+
+        self.assertFalse(responder.responses_audio_supported)
+
     async def test_synthesize_audio_handles_exceptions(self):
         client = FakeOpenAIClient({"output": []})
         responder = LLMResponder(client=cast(AsyncOpenAI, client), enable_tts=True)
@@ -557,6 +593,16 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(all(reply and reply.text == "Hello" for reply in replies))
         self.assertEqual(len(client.calls), 2)
+
+    def test_normalize_response_format_falls_back_to_mp3(self):
+        client = FakeOpenAIClient({"output": []})
+        responder = LLMResponder(
+            client=cast(AsyncOpenAI, client),
+            enable_tts=True,
+            tts_format="StrangeFmt",
+        )
+
+        self.assertEqual(responder._tts_format, "mp3")
 
     async def test_generate_reply_includes_system_and_location_prompts(self):
         payload = {
@@ -763,3 +809,53 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(audio_fmt)
         self.assertEqual(sample_rate, 16000)
         self.assertEqual(chunk_count, 1)
+
+    async def test_warm_phrase_audio_returns_none_when_disabled_or_blank(self):
+        client = FakeOpenAIClient({"output": []})
+        responder_disabled = LLMResponder(client=cast(AsyncOpenAI, client), enable_tts=False)
+
+        self.assertIsNone(await responder_disabled.warm_phrase_audio("Hello"))
+
+        responder_enabled = LLMResponder(client=cast(AsyncOpenAI, client), enable_tts=True)
+        self.assertIsNone(await responder_enabled.warm_phrase_audio("   "))
+
+    async def test_warm_phrase_audio_caches_results_and_is_idempotent(self):
+        client = FakeOpenAIClient({"output": []})
+        responder = LLMResponder(client=cast(AsyncOpenAI, client), enable_tts=True)
+
+        async def fake_synthesize(self, text):
+            fake_synthesize.call_count += 1  # pyright: ignore[reportFunctionMemberAccess]
+            return b"voice", 12345
+
+        fake_synthesize.call_count = 0  # pyright: ignore[reportFunctionMemberAccess]
+
+        with patch.object(LLMResponder, "_synthesize_audio", new=fake_synthesize):
+            first = await responder.warm_phrase_audio("Warm me up")
+            second = await responder.warm_phrase_audio("Warm me up")
+
+        self.assertEqual(fake_synthesize.call_count, 1)  # pyright: ignore[reportFunctionMemberAccess]
+        self.assertEqual(first, (b"voice", 12345))
+        self.assertIs(second, first)
+
+    async def test_warm_phrase_audio_only_synthesizes_once_for_concurrent_calls(self):
+        client = FakeOpenAIClient({"output": []})
+        responder = LLMResponder(client=cast(AsyncOpenAI, client), enable_tts=True)
+
+        async def fake_synthesize(self, text):
+            fake_synthesize.call_count += 1  # pyright: ignore[reportFunctionMemberAccess]
+            await asyncio.sleep(0.01)
+            return b"voice", None
+
+        fake_synthesize.call_count = 0  # pyright: ignore[reportFunctionMemberAccess]
+
+        with patch.object(LLMResponder, "_synthesize_audio", new=fake_synthesize):
+            result_one, result_two = await asyncio.gather(
+                responder.warm_phrase_audio("Parallel"),
+                responder.warm_phrase_audio("Parallel"),
+            )
+
+        self.assertEqual(fake_synthesize.call_count, 1)  # pyright: ignore[reportFunctionMemberAccess]
+        self.assertEqual(result_one, result_two)
+        self.assertIsNotNone(result_one)
+        result_one = cast(tuple[bytes, int], result_one)
+        self.assertEqual(result_one[1], responder._tts_sample_rate)
