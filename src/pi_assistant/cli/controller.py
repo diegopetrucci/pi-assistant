@@ -80,7 +80,12 @@ class _AudioControllerLoop:
         self.ws_client = ws_client
         self.context = context
         self.capture_sample_rate = SAMPLE_RATE
-        self.pre_roll = PreRollBuffer(PREROLL_DURATION_SECONDS, self.capture_sample_rate)
+        self.bytes_per_frame = 2 * CHANNELS
+        self.pre_roll = PreRollBuffer(
+            PREROLL_DURATION_SECONDS,
+            self.capture_sample_rate,
+            channels=CHANNELS,
+        )
         self.chunk_preparer = AudioChunkPreparer(
             self.capture_sample_rate,
             STREAM_SAMPLE_RATE,
@@ -157,6 +162,13 @@ class _AudioControllerLoop:
         log_state_transition(None, self.state_manager.state, "awaiting wake phrase")
 
     async def _process_chunk(self, audio_bytes: bytes) -> None:
+        if len(audio_bytes) % self.bytes_per_frame != 0:
+            print(
+                f"{ERROR_LOG_LABEL} Dropping malformed audio chunk: "
+                f"{len(audio_bytes)} bytes (expected multiple of {self.bytes_per_frame}).",
+                file=sys.stderr,
+            )
+            return
         chunk_index = self.state_manager.increment_chunk_count()
         silence_reached, observed_silence = self._observe_streaming_silence(audio_bytes)
 
@@ -295,7 +307,8 @@ class _AudioControllerLoop:
         return False, False
 
     async def _send_preroll_payload(self, payload: bytes) -> None:
-        duration_ms = (len(payload) / (2 * CHANNELS)) / self.capture_sample_rate * 1000
+        buffered_frames = len(payload) // self.bytes_per_frame
+        duration_ms = buffered_frames / self.capture_sample_rate * 1000
         verbose_print(
             f"{WAKE_LOG_LABEL} Triggered -> streaming (sent {duration_ms:.0f} ms of buffered audio)"
         )

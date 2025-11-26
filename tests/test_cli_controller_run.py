@@ -234,6 +234,56 @@ async def test_run_audio_controller_wake_engine_failure(monkeypatch, capsys):
 
 
 @pytest.mark.asyncio
+async def test_run_audio_controller_skips_misaligned_chunk(monkeypatch, capsys):
+    capture = FakeCapture()
+    capture.queue.put_nowait(b"\x00")
+    capture.queue.put_nowait(np.zeros(32, dtype=np.int16).tobytes())
+    ws_client = FakeWebSocket()
+    transcript_buffer = DummyTranscriptBuffer()
+    assistant = object()
+    speech_player = object()
+    stop_signal = asyncio.Event()
+    speech_stopped_signal = asyncio.Event()
+
+    class DummyWakeWordEngine:
+        def __init__(self, *args, **kwargs):
+            self.processed_a_chunk = False
+
+        def process_chunk(self, chunk):
+            self.processed_a_chunk = True
+            return WakeWordDetection(score=0.0, triggered=False)
+
+        def reset_detection(self):
+            return None
+
+    dummy_wake_engine_instance = DummyWakeWordEngine()
+    monkeypatch.setattr(
+        controller,
+        "WakeWordEngine",
+        lambda *args, **kwargs: dummy_wake_engine_instance,
+    )
+
+    task = asyncio.create_task(
+        controller.run_audio_controller(
+            capture,
+            ws_client,  # pyright: ignore[reportArgumentType]
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            stop_signal=stop_signal,
+            speech_stopped_signal=speech_stopped_signal,
+        )
+    )
+
+    await asyncio.sleep(0.05)
+    await _shutdown_task(task)
+
+    captured = capsys.readouterr()
+    assert "Dropping malformed audio chunk" in captured.err
+    assert dummy_wake_engine_instance.processed_a_chunk
+
+
+@pytest.mark.asyncio
 async def test_run_audio_controller_handles_manual_stop(monkeypatch):
     capture = FakeCapture()
     capture.queue.put_nowait(np.zeros(32, dtype=np.int16).tobytes())
