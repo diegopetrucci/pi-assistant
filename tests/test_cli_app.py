@@ -12,7 +12,8 @@ os.environ.setdefault("LOCATION_NAME", "Test City")
 if "audioop" not in sys.modules:
     audioop_stub = types.ModuleType("audioop")
 
-    def _ratecv(audio_bytes, width, channels, src_rate, dst_rate, state):  # noqa: PLR0913
+    def _ratecv(*ratecv_args):
+        audio_bytes, _, _, _, _, state = ratecv_args
         return audio_bytes, state
 
     cast(Any, audioop_stub).ratecv = _ratecv

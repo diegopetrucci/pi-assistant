@@ -18,3 +18,9 @@ repos:
         entry: scripts/check_file_length.py --max-lines 500
         language: system
         types: [python]
+      - id: pytest-cov-threshold
+        name: Ensure total coverage stays above 80%
+        entry: uv run pytest --cov=src/pi_assistant --cov-report=term --cov-fail-under=80
+        language: system
+        pass_filenames: false
+        types: [python]

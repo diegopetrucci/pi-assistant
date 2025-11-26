@@ -8,6 +8,8 @@ from typing import Optional
 
 from pi_assistant.cli.logging_utils import verbose_print
 
+TRANSCRIPT_SNIPPET_LIMIT = 80
+
 
 class TurnTranscriptAggregator:
     """Collects finalized transcripts for the active turn."""
@@ -90,11 +92,7 @@ class TurnTranscriptAggregator:
                 self._segments.clear()
                 self._seen_items.clear()
                 self._state = "idle"
-                snippet = (
-                    (transcript[:80] + "…")  # noqa: PLR2004
-                    if transcript and len(transcript) > 80  # noqa: PLR2004
-                    else transcript
-                )
+                snippet = _shorten_transcript(transcript)
                 reason = (
                     "timeout"
                     if (not transcript and total_wait >= self._max_finalize_wait)
@@ -137,6 +135,14 @@ class TurnTranscriptAggregator:
                 f"{self._trace_label} {self._timestamp()} clear turn "
                 f"segments_dropped={segment_count}{suffix}"
             )
+
+
+def _shorten_transcript(transcript: Optional[str]) -> Optional[str]:
+    if not transcript:
+        return None
+    if len(transcript) <= TRANSCRIPT_SNIPPET_LIMIT:
+        return transcript
+    return transcript[:TRANSCRIPT_SNIPPET_LIMIT] + "…"
 
 
 __all__ = ["TurnTranscriptAggregator"]

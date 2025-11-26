@@ -12,6 +12,8 @@ import pytest
 from pi_assistant.audio import AudioCapture
 from pi_assistant.config import CHANNELS, SAMPLE_RATE
 
+RECORD_DURATION_SECONDS = 5.0
+
 pytestmark = pytest.mark.skip(reason="Manual audio verification test; run explicitly when needed.")
 
 
@@ -28,16 +30,16 @@ async def test_and_save_audio():
     # Start audio stream
     capture.start_stream(loop)
 
-    print("Recording for 5 seconds...")
+    print(f"Recording for {RECORD_DURATION_SECONDS:.0f} seconds...")
     print('Speak into your microphone: "Testing, one, two, three"\n')
 
     audio_chunks = []
     chunk_count = 0
 
     try:
-        # Capture for 5 seconds
+        # Capture for the configured duration
         start_time = loop.time()
-        while loop.time() - start_time < 5.0:  # noqa: PLR2004
+        while loop.time() - start_time < RECORD_DURATION_SECONDS:
             try:
                 audio_data = await asyncio.wait_for(capture.get_audio_chunk(), timeout=1.0)
                 audio_chunks.append(audio_data)

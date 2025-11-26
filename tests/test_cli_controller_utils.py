@@ -6,8 +6,9 @@ from typing import cast
 import numpy as np
 import pytest
 
+from pi_assistant.assistant import LLMReply
 from pi_assistant.audio.metrics import calculate_rms
-from pi_assistant.cli import controller
+from pi_assistant.cli import controller, controller_helpers
 
 EXPECTED_RMS_MIN = 26000
 EXPECTED_RMS_MAX = 28000
@@ -317,10 +318,10 @@ async def test_maybe_schedule_confirmation_cue_warms_cache(monkeypatch):
     assistant.peek_result = None
     player = _DummySpeechPlayer()
 
-    monkeypatch.setattr(controller, "CONFIRMATION_CUE_ENABLED", True)
-    monkeypatch.setattr(controller, "CONFIRMATION_CUE_TEXT", "Got it")
+    monkeypatch.setattr(controller_helpers, "CONFIRMATION_CUE_ENABLED", True)
+    monkeypatch.setattr(controller_helpers, "CONFIRMATION_CUE_TEXT", "Got it")
 
-    controller._maybe_schedule_confirmation_cue(
+    controller_helpers._maybe_schedule_confirmation_cue(
         cast(controller.LLMResponder, assistant),
         cast(controller.SpeechPlayer, player),
     )
@@ -336,11 +337,11 @@ async def test_maybe_schedule_confirmation_cue_plays_cached_audio(monkeypatch):
     assistant.peek_result = (b"123", None)
     player = _DummySpeechPlayer()
 
-    monkeypatch.setattr(controller, "CONFIRMATION_CUE_ENABLED", True)
-    monkeypatch.setattr(controller, "CONFIRMATION_CUE_TEXT", "Got it")
-    monkeypatch.setattr(controller, "ASSISTANT_TTS_SAMPLE_RATE", 11025)
+    monkeypatch.setattr(controller_helpers, "CONFIRMATION_CUE_ENABLED", True)
+    monkeypatch.setattr(controller_helpers, "CONFIRMATION_CUE_TEXT", "Got it")
+    monkeypatch.setattr(controller_helpers, "ASSISTANT_TTS_SAMPLE_RATE", 11025)
 
-    controller._maybe_schedule_confirmation_cue(
+    controller_helpers._maybe_schedule_confirmation_cue(
         cast(controller.LLMResponder, assistant),
         cast(controller.SpeechPlayer, player),
     )
@@ -358,7 +359,7 @@ async def test_finalize_transcript_notifies_hooks():
         on_transcript_ready=lambda: calls.append("ready"),
     )
 
-    transcript = await controller._finalize_transcript(
+    transcript = await controller_helpers._finalize_transcript(
         cast(controller.TurnTranscriptAggregator, buffer),
         hooks,
     )
@@ -376,7 +377,7 @@ async def test_finalize_transcript_still_calls_hook_on_error():
     )
 
     with pytest.raises(RuntimeError, match="boom"):
-        await controller._finalize_transcript(
+        await controller_helpers._finalize_transcript(
             cast(controller.TurnTranscriptAggregator, buffer),
             hooks,
         )
@@ -386,7 +387,7 @@ async def test_finalize_transcript_still_calls_hook_on_error():
 
 @pytest.mark.asyncio
 async def test_request_assistant_reply_runs_hooks():
-    reply = controller.LLMReply(text="ok", audio_bytes=None, audio_sample_rate=None)
+    reply = LLMReply(text="ok", audio_bytes=None, audio_sample_rate=None)
     responder = _DummyResponder(reply=reply)
     calls: list[str] = []
     hooks = controller.ResponseLifecycleHooks(
@@ -394,7 +395,7 @@ async def test_request_assistant_reply_runs_hooks():
         on_reply_complete=lambda: calls.append("complete"),
     )
 
-    result = await controller._request_assistant_reply(
+    result = await controller_helpers._request_assistant_reply(
         "hi",
         cast(controller.LLMResponder, responder),
         hooks,
@@ -413,7 +414,7 @@ async def test_request_assistant_reply_handles_errors(capsys):
         on_reply_complete=lambda: calls.append("complete"),
     )
 
-    result = await controller._request_assistant_reply(
+    result = await controller_helpers._request_assistant_reply(
         "hi",
         cast(controller.LLMResponder, responder),
         hooks,
@@ -435,7 +436,7 @@ async def test_request_assistant_reply_propagates_cancellation():
     )
 
     with pytest.raises(asyncio.CancelledError):
-        await controller._request_assistant_reply(
+        await controller_helpers._request_assistant_reply(
             "hi",
             cast(controller.LLMResponder, responder),
             hooks,
@@ -446,11 +447,11 @@ async def test_request_assistant_reply_propagates_cancellation():
 
 @pytest.mark.asyncio
 async def test_play_assistant_audio_streams_bytes():
-    reply = controller.LLMReply(text="ok", audio_bytes=b"bytes", audio_sample_rate=8000)
+    reply = LLMReply(text="ok", audio_bytes=b"bytes", audio_sample_rate=8000)
     player = _DummySpeechPlayer()
 
-    await controller._play_assistant_audio(
-        cast(controller.LLMReply, reply),
+    await controller_helpers._play_assistant_audio(
+        cast(LLMReply, reply),
         cast(controller.SpeechPlayer, player),
     )
 
@@ -459,11 +460,11 @@ async def test_play_assistant_audio_streams_bytes():
 
 @pytest.mark.asyncio
 async def test_play_assistant_audio_ignores_missing_audio():
-    reply = controller.LLMReply(text=None, audio_bytes=None, audio_sample_rate=8000)
+    reply = LLMReply(text=None, audio_bytes=None, audio_sample_rate=8000)
     player = _DummySpeechPlayer()
 
-    await controller._play_assistant_audio(
-        cast(controller.LLMReply, reply),
+    await controller_helpers._play_assistant_audio(
+        cast(LLMReply, reply),
         cast(controller.SpeechPlayer, player),
     )
 
@@ -486,15 +487,15 @@ async def test_finalize_turn_and_respond_skips_empty_transcript(monkeypatch):
     async def fake_play(reply, player):
         called["play"] += 1
 
-    monkeypatch.setattr(controller, "_finalize_transcript", fake_finalize)
-    monkeypatch.setattr(controller, "_maybe_schedule_confirmation_cue", fake_cue)
-    monkeypatch.setattr(controller, "_request_assistant_reply", fake_request)
-    monkeypatch.setattr(controller, "_play_assistant_audio", fake_play)
+    monkeypatch.setattr(controller_helpers, "_finalize_transcript", fake_finalize)
+    monkeypatch.setattr(controller_helpers, "_maybe_schedule_confirmation_cue", fake_cue)
+    monkeypatch.setattr(controller_helpers, "_request_assistant_reply", fake_request)
+    monkeypatch.setattr(controller_helpers, "_play_assistant_audio", fake_play)
 
     assistant = _DummyAssistant()
     player = _DummySpeechPlayer()
 
-    await controller.finalize_turn_and_respond(
+    await controller_helpers.finalize_turn_and_respond(
         transcript_buffer=cast(controller.TurnTranscriptAggregator, _DummyTranscriptBuffer()),
         assistant=cast(controller.LLMResponder, assistant),
         speech_player=cast(controller.SpeechPlayer, player),
@@ -505,7 +506,7 @@ async def test_finalize_turn_and_respond_skips_empty_transcript(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_finalize_turn_and_respond_happy_path(monkeypatch):
-    reply = controller.LLMReply(text="hello", audio_bytes=b"x", audio_sample_rate=123)
+    reply = LLMReply(text="hello", audio_bytes=b"x", audio_sample_rate=123)
     calls: list[str] = []
 
     async def fake_finalize(tb, hooks):
@@ -523,15 +524,15 @@ async def test_finalize_turn_and_respond_happy_path(monkeypatch):
         assert reply_obj is reply
         calls.append("play")
 
-    monkeypatch.setattr(controller, "_finalize_transcript", fake_finalize)
-    monkeypatch.setattr(controller, "_maybe_schedule_confirmation_cue", fake_cue)
-    monkeypatch.setattr(controller, "_request_assistant_reply", fake_request)
-    monkeypatch.setattr(controller, "_play_assistant_audio", fake_play)
+    monkeypatch.setattr(controller_helpers, "_finalize_transcript", fake_finalize)
+    monkeypatch.setattr(controller_helpers, "_maybe_schedule_confirmation_cue", fake_cue)
+    monkeypatch.setattr(controller_helpers, "_request_assistant_reply", fake_request)
+    monkeypatch.setattr(controller_helpers, "_play_assistant_audio", fake_play)
 
     assistant = _DummyAssistant()
     player = _DummySpeechPlayer()
 
-    await controller.finalize_turn_and_respond(
+    await controller_helpers.finalize_turn_and_respond(
         transcript_buffer=cast(controller.TurnTranscriptAggregator, _DummyTranscriptBuffer()),
         assistant=cast(controller.LLMResponder, assistant),
         speech_player=cast(controller.SpeechPlayer, player),
@@ -547,10 +548,10 @@ async def test_schedule_turn_response_logs_cancellation(monkeypatch):
     async def pending(*args, **kwargs):
         await event.wait()
 
-    monkeypatch.setattr(controller, "finalize_turn_and_respond", pending)
+    monkeypatch.setattr(controller_helpers, "finalize_turn_and_respond", pending)
 
     logs: list[str] = []
-    monkeypatch.setattr(controller, "verbose_print", lambda message: logs.append(message))
+    monkeypatch.setattr(controller_helpers, "verbose_print", lambda message: logs.append(message))
 
     task = controller.schedule_turn_response(
         transcript_buffer=cast(controller.TurnTranscriptAggregator, _DummyTranscriptBuffer()),
@@ -570,7 +571,7 @@ async def test_schedule_turn_response_reports_errors(monkeypatch):
     async def failing(*args, **kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(controller, "finalize_turn_and_respond", failing)
+    monkeypatch.setattr(controller_helpers, "finalize_turn_and_respond", failing)
     buffer = io.StringIO()
     with contextlib.redirect_stderr(buffer):
         task = controller.schedule_turn_response(

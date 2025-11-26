@@ -1,16 +1,120 @@
-"""
-Configuration settings for the Pi transcription client.
-
-Defaults live in ``config/defaults.toml`` and can be overridden via environment
-variables or CLI flags.
-"""
+"""Public configuration exports consumed throughout the runtime."""
 
 from __future__ import annotations
 
-import sys as _sys
+from .assistant_settings import (
+    ASSISTANT_LANGUAGE,
+    ASSISTANT_MODEL,
+    ASSISTANT_MODEL_REGISTRY,
+    ASSISTANT_REASONING_CHOICES,
+    ASSISTANT_REASONING_EFFORT,
+    ASSISTANT_SYSTEM_PROMPT,
+    ASSISTANT_TTS_ENABLED,
+    ASSISTANT_TTS_FORMAT,
+    ASSISTANT_TTS_MODEL,
+    ASSISTANT_TTS_RESPONSES_ENABLED,
+    ASSISTANT_TTS_SAMPLE_RATE,
+    ASSISTANT_TTS_VOICE,
+    ASSISTANT_WEB_SEARCH_ENABLED,
+    SIMULATED_QUERY_TEXT,
+    normalize_assistant_model_choice,
+    reasoning_effort_choices_for_model,
+)
+from .base import (
+    AUDIO_INPUT_DEVICE,
+    AUDIO_QUEUE_MAX_SIZE,
+    AUTO_STOP_ENABLED,
+    AUTO_STOP_MAX_SILENCE_SECONDS,
+    AUTO_STOP_SILENCE_THRESHOLD,
+    BUFFER_SIZE,
+    CHANNELS,
+    CONFIRMATION_CUE_ENABLED,
+    CONFIRMATION_CUE_TEXT,
+    DEFAULTS_PATH,
+    DTYPE,
+    ENV_PATH,
+    LOCATION_NAME,
+    OPENAI_API_KEY,
+    OPENAI_MODEL,
+    OPENAI_REALTIME_ENDPOINT,
+    PREROLL_DURATION_SECONDS,
+    PROJECT_ROOT,
+    SAMPLE_RATE,
+    SERVER_STOP_MIN_SILENCE_SECONDS,
+    SESSION_CONFIG,
+    STREAM_SAMPLE_RATE,
+    TRANSCRIPTION_LANGUAGE,
+    VERBOSE_LOG_CAPTURE_ENABLED,
+    VERBOSE_LOG_DIRECTORY,
+    WEBSOCKET_HEADERS,
+    reset_first_launch_choices,
+)
+from .wake_word import (
+    WAKE_WORD_CONSECUTIVE_FRAMES,
+    WAKE_WORD_EMBEDDING_MODEL_PATH,
+    WAKE_WORD_MELSPEC_MODEL_PATH,
+    WAKE_WORD_MODEL_FALLBACK_PATH,
+    WAKE_WORD_MODEL_PATH,
+    WAKE_WORD_NAME,
+    WAKE_WORD_PHRASE,
+    WAKE_WORD_SCORE_THRESHOLD,
+    WAKE_WORD_TARGET_SAMPLE_RATE,
+)
 
-from .assistant_settings import *  # noqa: F401,F403
-from .base import *  # noqa: F401,F403
-from .wake_word import *  # noqa: F401,F403
-
-sys = _sys
+__all__ = [
+    # assistant_settings
+    "ASSISTANT_LANGUAGE",
+    "ASSISTANT_MODEL",
+    "ASSISTANT_MODEL_REGISTRY",
+    "ASSISTANT_REASONING_CHOICES",
+    "ASSISTANT_REASONING_EFFORT",
+    "ASSISTANT_SYSTEM_PROMPT",
+    "ASSISTANT_TTS_ENABLED",
+    "ASSISTANT_TTS_FORMAT",
+    "ASSISTANT_TTS_MODEL",
+    "ASSISTANT_TTS_RESPONSES_ENABLED",
+    "ASSISTANT_TTS_SAMPLE_RATE",
+    "ASSISTANT_TTS_VOICE",
+    "ASSISTANT_WEB_SEARCH_ENABLED",
+    "SIMULATED_QUERY_TEXT",
+    "normalize_assistant_model_choice",
+    "reasoning_effort_choices_for_model",
+    # base
+    "AUDIO_INPUT_DEVICE",
+    "AUDIO_QUEUE_MAX_SIZE",
+    "AUTO_STOP_ENABLED",
+    "AUTO_STOP_MAX_SILENCE_SECONDS",
+    "AUTO_STOP_SILENCE_THRESHOLD",
+    "BUFFER_SIZE",
+    "CHANNELS",
+    "CONFIRMATION_CUE_ENABLED",
+    "CONFIRMATION_CUE_TEXT",
+    "DEFAULTS_PATH",
+    "DTYPE",
+    "ENV_PATH",
+    "LOCATION_NAME",
+    "OPENAI_API_KEY",
+    "OPENAI_MODEL",
+    "OPENAI_REALTIME_ENDPOINT",
+    "PREROLL_DURATION_SECONDS",
+    "PROJECT_ROOT",
+    "SAMPLE_RATE",
+    "SERVER_STOP_MIN_SILENCE_SECONDS",
+    "SESSION_CONFIG",
+    "STREAM_SAMPLE_RATE",
+    "TRANSCRIPTION_LANGUAGE",
+    "VERBOSE_LOG_CAPTURE_ENABLED",
+    "VERBOSE_LOG_DIRECTORY",
+    "WEBSOCKET_HEADERS",
+    "reset_first_launch_choices",
+    # wake_word
+    "WAKE_WORD_CONSECUTIVE_FRAMES",
+    "WAKE_WORD_EMBEDDING_MODEL_PATH",
+    "WAKE_WORD_MELSPEC_MODEL_PATH",
+    "WAKE_WORD_MODEL_FALLBACK_PATH",
+    "WAKE_WORD_MODEL_PATH",
+    "WAKE_WORD_NAME",
+    "WAKE_WORD_PHRASE",
+    "WAKE_WORD_SCORE_THRESHOLD",
+    "WAKE_WORD_TARGET_SAMPLE_RATE",
+]

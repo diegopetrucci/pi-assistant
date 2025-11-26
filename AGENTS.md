@@ -1,5 +1,8 @@
 # Repository Guidelines
 
+## Release considerations
+* The project has not shipped yet. There is no need to preserve any kind of backward-compatibility.
+
 ## Project Structure & Module Organization
 * `src/pi_assistant/` houses the CLI, audio capture, wake-word logic, and websocket client; keep new runtime code under the matching subpackage instead of the root.
 * Assistant-specific glue (Responses API client, reasoning controls, transcript aggregation, and speech playback helpers) belongs under `src/pi_assistant/assistant/` rather than mixing it into the CLI.
@@ -14,7 +17,7 @@
 * Execute the fast wake-word regression with `uv run python -m unittest tests/test_wake_word.py`, and prefer `uv run pytest -v` (optionally `--cov`) for the full suite.
 * When invoking the interpreter directly, call `python3` (not `python`) to avoid hitting the system stub.
 * After completing a change, always run `uv run pyright && uv run pytest && uv run ruff format .`.
-* Never add annotations to ignore pyright, ruff, or other checkers warnings. Existing ones are okay. 
+* Never add annotations to ignore pyright, ruff, or other checkers warnings. Existing ones are okay.
 
 ## Coding Style & Naming Conventions
 * Target Python 3.9+ and follow Ruff’s formatter—never hand-tune spacing after running it. Stick to 4-space indentation and type-annotated functions.

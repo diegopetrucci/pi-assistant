@@ -7,10 +7,10 @@ from __future__ import annotations
 import importlib
 import logging
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional, Protocol, cast
+from typing import Any, Callable, Mapping, Optional, Protocol, TypedDict, Unpack, cast
 
 from pi_assistant.audio.resampler import LinearResampler
 
@@ -61,6 +61,30 @@ class WakeWordDetection:
     triggered: bool = False
 
 
+@dataclass(slots=True)
+class WakeWordEngineOptions:
+    fallback_model_path: Optional[Path | str] = None
+    melspec_model_path: Optional[Path] = None
+    embedding_model_path: Optional[Path] = None
+    source_sample_rate: int = 24000
+    target_sample_rate: int = 16000
+    threshold: float = 0.5
+    consecutive_required: int = 2
+
+
+WAKE_WORD_ENGINE_OPTION_FIELDS = frozenset(WakeWordEngineOptions.__dataclass_fields__.keys())
+
+
+class WakeWordEngineOverrides(TypedDict, total=False):
+    fallback_model_path: Optional[Path | str]
+    melspec_model_path: Optional[Path]
+    embedding_model_path: Optional[Path]
+    source_sample_rate: int
+    target_sample_rate: int
+    threshold: float
+    consecutive_required: int
+
+
 class PreRollBuffer:
     """Stores a rolling window of raw PCM audio for pre-trigger playback."""
 
@@ -105,28 +129,30 @@ class PreRollBuffer:
 class WakeWordEngine:
     """Thin wrapper around openWakeWord with additional gating logic."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         model_path: Path | str,
         *,
-        fallback_model_path: Optional[Path | str] = None,
-        melspec_model_path: Optional[Path] = None,
-        embedding_model_path: Optional[Path] = None,
-        source_sample_rate: int = 24000,
-        target_sample_rate: int = 16000,
-        threshold: float = 0.5,
-        consecutive_required: int = 2,
+        options: Optional[WakeWordEngineOptions] = None,
+        **config: Unpack[WakeWordEngineOverrides],
     ):
+        resolved_options = options or WakeWordEngineOptions()
+        if config:
+            _validate_wake_engine_overrides(config)
+            resolved_options = replace(resolved_options, **config)
         factory = _require_model_factory()
-        self.threshold = threshold
-        self.consecutive_required = max(1, consecutive_required)
+        self.threshold = resolved_options.threshold
+        self.consecutive_required = max(1, resolved_options.consecutive_required)
         self._consecutive_hits = 0
-        self._resampler = LinearResampler(source_sample_rate, target_sample_rate)
+        self._resampler = LinearResampler(
+            resolved_options.source_sample_rate,
+            resolved_options.target_sample_rate,
+        )
         self._model = self._load_model(
             model_path,
-            fallback_model_path,
-            melspec_model_path=melspec_model_path,
-            embedding_model_path=embedding_model_path,
+            resolved_options.fallback_model_path,
+            melspec_model_path=resolved_options.melspec_model_path,
+            embedding_model_path=resolved_options.embedding_model_path,
             factory=factory,
         )
         self._model_label = next(iter(self._model.models.keys()))
@@ -199,3 +225,12 @@ class WakeWordEngine:
         """Clear any accumulated state used for the confidence guard."""
 
         self._consecutive_hits = 0
+
+
+def _validate_wake_engine_overrides(overrides: Mapping[str, object]) -> None:
+    if not overrides:
+        return
+    invalid = set(overrides) - set(WAKE_WORD_ENGINE_OPTION_FIELDS)
+    if invalid:
+        joined = ", ".join(sorted(invalid))
+        raise TypeError(f"Invalid wake-word override(s): {joined}")

@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import numpy as np
 import pytest
@@ -45,7 +45,6 @@ class DummyTranscriptBuffer:
 
     async def append_transcript(self, *args, **kwargs):
         self.appended.append(args)
-        return None  # noqa: PLR1711
 
     async def finalize_turn(self):
         return None
@@ -127,6 +126,81 @@ async def _ensure_condition_stays_false(
         if predicate():
             pytest.fail(failure_message)
         await asyncio.sleep(poll_interval)
+
+
+@pytest.mark.asyncio
+async def test_run_audio_controller_uses_supplied_context(monkeypatch):
+    capture = object()
+    ws_client = cast(controller.WebSocketClient, object())
+    transcript_buffer = cast(controller.TurnTranscriptAggregator, object())
+    assistant = cast(controller.LLMResponder, object())
+    speech_player = cast(controller.SpeechPlayer, object())
+    context = controller.AudioControllerContext(
+        transcript_buffer=transcript_buffer,
+        assistant=assistant,
+        speech_player=speech_player,
+        stop_signal=asyncio.Event(),
+        speech_stopped_signal=asyncio.Event(),
+    )
+    recorded = {}
+
+    class DummyRunner:
+        def __init__(self, audio_capture, client, passed_context):
+            recorded["args"] = (audio_capture, client, passed_context)
+
+        async def run(self):
+            recorded["ran"] = True
+
+    monkeypatch.setattr(controller, "_AudioControllerLoop", DummyRunner)
+
+    await controller.run_audio_controller(capture, ws_client, context=context)
+
+    assert recorded["args"] == (capture, ws_client, context)
+    assert recorded.get("ran")
+
+
+@pytest.mark.asyncio
+async def test_run_audio_controller_rejects_context_and_kwargs():
+    transcript_buffer = cast(controller.TurnTranscriptAggregator, object())
+    assistant = cast(controller.LLMResponder, object())
+    speech_player = cast(controller.SpeechPlayer, object())
+    context = controller.AudioControllerContext(
+        transcript_buffer=transcript_buffer,
+        assistant=assistant,
+        speech_player=speech_player,
+        stop_signal=asyncio.Event(),
+        speech_stopped_signal=asyncio.Event(),
+    )
+
+    with pytest.raises(TypeError, match="either `context` or individual"):
+        await controller.run_audio_controller(
+            cast(controller.WebSocketClient, object()),
+            cast(controller.WebSocketClient, object()),
+            context=context,
+            transcript_buffer=transcript_buffer,
+            assistant=assistant,
+            speech_player=speech_player,
+            stop_signal=asyncio.Event(),
+            speech_stopped_signal=asyncio.Event(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_audio_controller_reports_invalid_config_keys():
+    transcript_buffer = cast(controller.TurnTranscriptAggregator, object())
+    assistant = cast(controller.LLMResponder, object())
+    speech_player = cast(controller.SpeechPlayer, object())
+    with pytest.raises(TypeError, match="Invalid audio controller configuration:"):
+        await controller.run_audio_controller(
+            object(),
+            cast(controller.WebSocketClient, object()),
+            transcript_buffer=transcript_buffer,
+            assistant=assistant,
+            speech_player=speech_player,
+            stop_signal=asyncio.Event(),
+            speech_stopped_signal=asyncio.Event(),
+            extra_toggle=True,
+        )
 
 
 @pytest.mark.asyncio
@@ -847,13 +921,15 @@ async def test_run_audio_controller_resets_wake_engine_on_stream_start(monkeypat
     speech_stopped_signal = asyncio.Event()
 
     class DummyWakeWordEngine:
+        TRIGGER_CALL_COUNT = 2
+
         def __init__(self):
             self.calls = 0
             self.reset_calls = 0
 
         def process_chunk(self, chunk):
             self.calls += 1
-            if self.calls == 2:  # noqa: PLR2004
+            if self.calls == self.TRIGGER_CALL_COUNT:
                 return WakeWordDetection(score=0.95, triggered=True)
             return WakeWordDetection(score=0.1, triggered=False)
 
@@ -1347,9 +1423,10 @@ async def test_wake_phrase_override_cancels_pending_responses(monkeypatch):
     capture.queue.put_nowait(loud_chunk)
 
     try:
+        required_turns = 2
 
         async def wait_for_cancellation() -> None:
-            while not (transcript_buffer.started >= 2 and scheduled[0].cancelled()):  # noqa: PLR2004
+            while not (transcript_buffer.started >= required_turns and scheduled[0].cancelled()):
                 await asyncio.sleep(0.01)
 
         await asyncio.wait_for(wait_for_cancellation(), timeout=1.0)

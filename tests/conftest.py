@@ -10,14 +10,8 @@ class _AudioOpStub(ModuleType):
         super().__init__("audioop")
 
     @staticmethod
-    def ratecv(  # noqa: PLR0913
-        audio_bytes: bytes,
-        width: int,
-        channels: int,
-        src_rate: int,
-        dst_rate: int,
-        state: Any,
-    ) -> Tuple[bytes, Any]:
+    def ratecv(*ratecv_args: Any) -> Tuple[bytes, Any]:
+        audio_bytes, *_, state = ratecv_args
         return audio_bytes, state
 
 

@@ -7,6 +7,8 @@ import pytest
 from pi_assistant.audio import playback as playback_module
 from pi_assistant.audio.playback import SpeechPlayer
 
+UNSUPPORTED_SAMPLE_RATE = 44100
+
 
 class DummySD:
     def __init__(self):
@@ -28,7 +30,7 @@ class DummySD:
 
     def check_output_settings(self, device, samplerate, channels):
         self.check_calls.append((device, samplerate, channels))
-        if samplerate == 44100:  # noqa: PLR2004
+        if samplerate == UNSUPPORTED_SAMPLE_RATE:
             raise RuntimeError("unsupported rate")
         return True
 
@@ -104,11 +106,11 @@ def test_select_playback_rate_logs_override_once(monkeypatch, capsys):
     dummy_sd.output_info = {"name": "Dummy output", "default_samplerate": 22050}
     monkeypatch.setattr(playback_module, "sd", dummy_sd)
 
-    player = SpeechPlayer(default_sample_rate=44100)
-    assert player._playback_sample_rate != 44100  # noqa: PLR2004
+    player = SpeechPlayer(default_sample_rate=UNSUPPORTED_SAMPLE_RATE)
+    assert player._playback_sample_rate != UNSUPPORTED_SAMPLE_RATE
 
     captured = capsys.readouterr()
-    assert "does not support 44100 Hz" in captured.out
+    assert f"does not support {UNSUPPORTED_SAMPLE_RATE} Hz" in captured.out
 
     player._log_playback_override(48000, 32000)
     captured = capsys.readouterr()
