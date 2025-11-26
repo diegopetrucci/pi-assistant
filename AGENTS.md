@@ -21,7 +21,7 @@
 * You can check test coverage with `uv run pytest --cov`
 
 ## Coding Style & Naming Conventions
-* Target Python 3.9+ and follow Ruff’s formatter—never hand-tune spacing after running it. Stick to 4-space indentation and type-annotated functions.
+* Target Python 3.11+ and follow Ruff’s formatter—never hand-tune spacing after running it. Stick to 4-space indentation and type-annotated functions.
 * Modules, packages, and files use `snake_case`; CLIs expose kebab-case flags (e.g., `--audio-mode`).
 * Keep public functions documented with concise docstrings that explain side effects or I/O expectations, and colocate constants next to the features they configure to avoid sprawling globals.
 

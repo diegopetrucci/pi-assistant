@@ -10,7 +10,9 @@ from collections import deque
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional, Protocol, TypedDict, Unpack, cast
+from typing import Any, Callable, Mapping, Optional, Protocol, TypedDict, cast
+
+from typing_extensions import Unpack
 
 from pi_assistant.audio.resampler import LinearResampler
 
@@ -62,6 +64,8 @@ class WakeWordDetection:
 
 @dataclass(slots=True)
 class WakeWordEngineOptions:
+    """Configuration defaults for the wake-word detection engine."""
+
     fallback_model_path: Optional[Path | str] = None
     melspec_model_path: Optional[Path] = None
     embedding_model_path: Optional[Path] = None

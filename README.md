@@ -23,7 +23,7 @@ Real-time speech-to-text transcription system for Raspberry Pi 5 that streams au
 - USB speaker
 
 ### Software
-- Python 3.9+
+- Python 3.11+
 - uv (https://docs.astral.sh/uv/)
 - OpenAI API key
 

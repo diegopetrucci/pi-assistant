@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 import base64
 from dataclasses import dataclass, replace
-from typing import Iterator, Literal, Mapping, Optional, Tuple, TypedDict, Unpack, cast
+from typing import Iterator, Literal, Mapping, Optional, Tuple, TypedDict, cast
 
 from openai import AsyncOpenAI, BadRequestError
+from typing_extensions import Unpack
 
 from pi_assistant.cli.logging_utils import console_print, verbose_print
 from pi_assistant.config import (
