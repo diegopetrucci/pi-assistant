@@ -17,6 +17,8 @@ from pi_assistant.config import (
     ASSISTANT_TTS_RESPONSES_ENABLED,
     ASSISTANT_TTS_SAMPLE_RATE,
     ASSISTANT_WEB_SEARCH_ENABLED,
+    AUDIO_DEBUG_DUMP_DIRECTORY,
+    AUDIO_DEBUG_DUMP_ENABLED,
     CONFIRMATION_CUE_ENABLED,
     CONFIRMATION_CUE_TEXT,
     SIMULATED_QUERY_TEXT,
@@ -116,7 +118,11 @@ class TranscriptionComponentBuilder:
             use_responses_audio=self._config.use_responses_audio,
             reasoning_effort=self._config.reasoning_effort,
         )
-        speech_player = SpeechPlayer(default_sample_rate=ASSISTANT_TTS_SAMPLE_RATE)
+        speech_player = SpeechPlayer(
+            default_sample_rate=ASSISTANT_TTS_SAMPLE_RATE,
+            debug_dump_enabled=AUDIO_DEBUG_DUMP_ENABLED,
+            debug_dump_directory=AUDIO_DEBUG_DUMP_DIRECTORY,
+        )
         return TranscriptionComponents(
             audio_capture=audio_capture,
             ws_client=ws_client,

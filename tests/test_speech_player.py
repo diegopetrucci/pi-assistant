@@ -1,4 +1,5 @@
 import asyncio
+import wave
 from types import SimpleNamespace
 
 import numpy as np
@@ -8,6 +9,7 @@ from pi_assistant.audio import playback as playback_module
 from pi_assistant.audio.playback import SpeechPlayer
 
 UNSUPPORTED_SAMPLE_RATE = 44100
+PCM16_SAMPLE_WIDTH = 2
 
 
 class DummySD:
@@ -141,3 +143,22 @@ def test_warn_if_resampling_only_once(monkeypatch, capsys):
 
     out = capsys.readouterr().out
     assert out.count("Resampling assistant audio 16000 Hz -> 24000 Hz") == 1
+
+
+def test_debug_dump_writes_wav_file(tmp_path, monkeypatch):
+    dummy_sd = DummySD()
+    monkeypatch.setattr(playback_module, "sd", dummy_sd)
+    dump_dir = tmp_path / "dumps"
+    player = SpeechPlayer(debug_dump_enabled=True, debug_dump_directory=dump_dir)
+
+    payload = np.array([100, -200, 300, -400], dtype=np.int16).tobytes()
+    player._prepare_samples(payload, source_rate=player._playback_sample_rate)
+
+    dumps = sorted(dump_dir.glob("assistant_*.wav"))
+    assert dumps, "expected at least one audio dump"
+    with wave.open(str(dumps[-1]), "rb") as wav_file:
+        assert wav_file.getnchannels() == 1
+        assert wav_file.getsampwidth() == PCM16_SAMPLE_WIDTH
+        assert wav_file.getframerate() == player._playback_sample_rate
+        frames = wav_file.readframes(wav_file.getnframes())
+        assert frames == payload

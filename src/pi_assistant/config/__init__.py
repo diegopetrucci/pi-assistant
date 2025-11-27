@@ -21,6 +21,8 @@ from .assistant_settings import (
     reasoning_effort_choices_for_model,
 )
 from .base import (
+    AUDIO_DEBUG_DUMP_DIRECTORY,
+    AUDIO_DEBUG_DUMP_ENABLED,
     AUDIO_INPUT_DEVICE,
     AUDIO_QUEUE_MAX_SIZE,
     AUTO_STOP_ENABLED,
@@ -81,6 +83,8 @@ __all__ = [
     "reasoning_effort_choices_for_model",
     # base
     "AUDIO_INPUT_DEVICE",
+    "AUDIO_DEBUG_DUMP_DIRECTORY",
+    "AUDIO_DEBUG_DUMP_ENABLED",
     "AUDIO_QUEUE_MAX_SIZE",
     "AUTO_STOP_ENABLED",
     "AUTO_STOP_MAX_SILENCE_SECONDS",

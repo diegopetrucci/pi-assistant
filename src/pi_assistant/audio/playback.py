@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import wave
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -15,7 +18,13 @@ from .utils import device_info_dict
 class SpeechPlayer:
     """Serializes playback so assistant audio doesn't overlap and allows stop commands."""
 
-    def __init__(self, default_sample_rate: int = 24000):
+    def __init__(
+        self,
+        default_sample_rate: int = 24000,
+        *,
+        debug_dump_enabled: bool = False,
+        debug_dump_directory: Optional[Path | str] = None,
+    ):
         self._default_sample_rate = default_sample_rate
         self._play_lock = asyncio.Lock()
         self._is_playing = asyncio.Event()
@@ -23,6 +32,8 @@ class SpeechPlayer:
         self._override_logged = False
         self._output_device = self._detect_output_device()
         self._playback_sample_rate = self._select_playback_sample_rate(default_sample_rate)
+        self._debug_dump_enabled = bool(debug_dump_enabled)
+        self._debug_dump_dir = self._prepare_dump_directory(debug_dump_directory)
 
     async def play(self, audio_bytes: bytes, sample_rate: Optional[int] = None) -> None:
         """Play PCM16 audio without blocking the event loop."""
@@ -73,6 +84,10 @@ class SpeechPlayer:
         if not aligned_bytes:
             return np.array([], dtype=np.int16)
 
+        if self._debug_dump_enabled:
+            self._debug_dump_audio(aligned_bytes, max(source_rate, 0))
+            self._log_debug_summary(aligned_bytes, source_rate)
+
         if source_rate == self._playback_sample_rate:
             return np.frombuffer(aligned_bytes, dtype=np.int16).copy()
 
@@ -104,6 +119,56 @@ class SpeechPlayer:
                 flush=True,
             )
         return aligned
+
+    def _prepare_dump_directory(self, directory: Optional[Path | str]) -> Optional[Path]:
+        if not self._debug_dump_enabled:
+            return None
+        target = Path(directory) if directory else Path("logs") / "audio_dumps"
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            print(
+                f"[AUDIO] Unable to create audio dump directory '{target}': {exc}",
+                flush=True,
+            )
+            return None
+        return target
+
+    def _debug_dump_audio(self, audio_bytes: bytes, source_rate: int) -> None:
+        dump_dir = self._debug_dump_dir
+        if not dump_dir:
+            return
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+        safe_rate = source_rate if source_rate > 0 else self._default_sample_rate
+        resolved_rate = safe_rate or self._playback_sample_rate or 24000
+        filepath = dump_dir / f"assistant_{timestamp}_{resolved_rate}Hz.wav"
+        try:
+            with wave.open(str(filepath), "wb") as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(resolved_rate)
+                wav_file.writeframes(audio_bytes)
+        except Exception as exc:
+            print(f"[AUDIO] Failed to dump assistant audio to {filepath}: {exc}", flush=True)
+        else:
+            print(f"[AUDIO] Saved assistant audio dump to {filepath}", flush=True)
+
+    def _log_debug_summary(self, audio_bytes: bytes, source_rate: int) -> None:
+        if not self._debug_dump_enabled:
+            return
+        frame_count = len(audio_bytes) // 2
+        resolved_rate = source_rate if source_rate > 0 else self._playback_sample_rate or 1
+        duration = frame_count / resolved_rate if resolved_rate > 0 else 0.0
+        buffer_view = np.frombuffer(audio_bytes, dtype=np.int16)
+        peak = int(np.max(np.abs(buffer_view))) if buffer_view.size else 0
+        print(
+            (
+                f"[AUDIO] Preparing {frame_count} PCM16 samples "
+                f"(~{duration:.2f}s) @ {source_rate or self._default_sample_rate} Hz; "
+                f"peak amplitude {peak}/32768; playback rate {self._playback_sample_rate} Hz."
+            ),
+            flush=True,
+        )
 
     def _detect_output_device(self) -> Optional[int]:
         device = sd.default.device

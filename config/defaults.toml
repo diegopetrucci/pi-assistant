@@ -6,6 +6,8 @@ channels = 1
 dtype = "int16"
 queue_max_size = 100
 preroll_duration_seconds = 1.0
+debug_dump_enabled = false
+debug_dump_directory = "logs/audio_dumps"
 
 [openai]
 realtime_endpoint = "wss://api.openai.com/v1/realtime?intent=transcription"

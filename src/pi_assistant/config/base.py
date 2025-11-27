@@ -216,6 +216,14 @@ AUDIO_QUEUE_MAX_SIZE = _env_int("AUDIO_QUEUE_MAX_SIZE", _AUDIO["queue_max_size"]
 PREROLL_DURATION_SECONDS = _env_float(
     "PREROLL_DURATION_SECONDS", _AUDIO["preroll_duration_seconds"]
 )
+AUDIO_DEBUG_DUMP_ENABLED = _env_bool(
+    "AUDIO_DEBUG_DUMP_ENABLED", _AUDIO.get("debug_dump_enabled", False)
+)
+_DEBUG_DUMP_DEFAULT = _AUDIO.get("debug_dump_directory", "logs/audio_dumps")
+AUDIO_DEBUG_DUMP_DIRECTORY = _env_path(
+    "AUDIO_DEBUG_DUMP_DIRECTORY",
+    _DEBUG_DUMP_DEFAULT,
+)
 
 
 # OpenAI API Configuration
@@ -352,6 +360,8 @@ __all__ = [
     "AUDIO_INPUT_DEVICE",
     "AUDIO_QUEUE_MAX_SIZE",
     "PREROLL_DURATION_SECONDS",
+    "AUDIO_DEBUG_DUMP_ENABLED",
+    "AUDIO_DEBUG_DUMP_DIRECTORY",
     "OPENAI_API_KEY",
     "OPENAI_MODEL",
     "OPENAI_REALTIME_ENDPOINT",

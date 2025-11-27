@@ -302,6 +302,10 @@ arecord -l
 - The client now probes the hardware and, when possible, saves the microphone's preferred rate (for example 44100/48000 Hz) to `.env`. Look for the `[INFO] … Saved SAMPLE_RATE to .env` log, then restart the assistant so the new value takes effect.
 - If the device does not report any supported rate, set `SAMPLE_RATE` manually (keep `STREAM_SAMPLE_RATE=24000` so capture audio is resampled before streaming) and re-run `uv run pi-assistant -v`.
 
+**Capture assistant audio for debugging:**
+- Set `AUDIO_DEBUG_DUMP_ENABLED=1` (and optionally `AUDIO_DEBUG_DUMP_DIRECTORY=/path/to/folder`) to dump every assistant reply as a WAV file under `logs/audio_dumps/`.
+- Reproduce the glitch and attach the newest dump so we can listen to the exact PCM the Pi attempted to play.
+
 **Licensing for bundled wake-word models:**
 - `models/alexa_v0.1.(onnx|tflite)`, `models/hey_jarvis_v0.1.(onnx|tflite)`, `models/hey_rhasspy_v0.1.(onnx|tflite)`, `models/melspectrogram.onnx`, and `models/embedding_model.onnx` are distributed under the Apache 2.0 license from the [openWakeWord](https://github.com/dscripka/openWakeWord) project.
 
