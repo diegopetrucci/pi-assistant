@@ -65,11 +65,6 @@ class WebSocketClient:
         def _default_summary(text: str) -> str:
             return f"{label} {text}"
 
-        def _redacted_length(value: Any) -> int:
-            if isinstance(value, str):
-                return len(value)
-            return 0
-
         def _summarize_keys(data: dict[str, Any]) -> str:
             keys = [key for key in data.keys() if key != "type"]
             if not keys:

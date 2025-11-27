@@ -276,46 +276,63 @@ class _AudioControllerLoop:
             verbose_print(score_log)
         return detection
 
+    async def _enter_streaming_state(self, *, trigger: str, reason: str) -> bool:
+        """Transition to STREAMING and start a new turn if the state actually changed."""
+
+        previous_state = self.state_manager.transition_to_streaming()
+        if not previous_state:
+            return False
+        self._start_new_turn(trigger)
+        await self.context.transcript_buffer.start_turn()
+        log_state_transition(previous_state, self.state_manager.state, reason)
+        return True
+
     async def _handle_wake_detection(
         self,
         detection: WakeWordDetection,
         audio_bytes: bytes,
     ) -> tuple[bool, bool]:
+        skip_chunk = False
+        skip_loop = False
+
         if not (self.wake_engine and detection.triggered):
-            return False, False
+            return skip_chunk, skip_loop
+
         if self.state_manager.awaiting_server_stop:
             verbose_print(
                 f"{WAKE_LOG_LABEL} Wake phrase ignored while awaiting server stop confirmation."
             )
-            return False, True
-        if self.state_manager.state != StreamState.LISTENING:
+            skip_loop = True
+        elif self.state_manager.state != StreamState.LISTENING:
             retrigger_count = self.state_manager.increment_retrigger_budget()
             print(
                 f"{WAKE_LOG_LABEL} Wake word retrigger detected during streaming "
                 f"(count={retrigger_count})"
             )
-            return False, False
-        if self.state_manager.finalizing_turn:
+        elif self.state_manager.finalizing_turn:
             verbose_print(f"{WAKE_LOG_LABEL} Wake phrase ignored while finalizing previous turn.")
-            return False, True
-        if self.state_manager.awaiting_assistant_reply:
-            verbose_print(f"{TURN_LOG_LABEL} Wake phrase overriding assistant reply.")
-            self.state_manager.clear_awaiting_assistant_reply()
-            self.response_tasks.cancel("wake phrase override")
-        previous_state = self.state_manager.transition_to_streaming()
-        if previous_state:
-            self._start_new_turn("wake_phrase")
-        await self.context.transcript_buffer.start_turn()
-        self.wake_engine.reset_detection()
-        if previous_state:
-            log_state_transition(previous_state, self.state_manager.state, "wake phrase detected")
-        self.silence_tracker.reset()
-        payload = self.pre_roll.flush()
-        if payload:
-            await self._send_preroll_payload(payload)
-            return True, False
-        verbose_print(f"{WAKE_LOG_LABEL} Triggered -> streaming (no buffered audio)")
-        return False, False
+            skip_loop = True
+        else:
+            if self.state_manager.awaiting_assistant_reply:
+                verbose_print(f"{TURN_LOG_LABEL} Wake phrase overriding assistant reply.")
+                self.state_manager.clear_awaiting_assistant_reply()
+                self.response_tasks.cancel("wake phrase override")
+            transitioned = await self._enter_streaming_state(
+                trigger="wake_phrase",
+                reason="wake phrase detected",
+            )
+            if not transitioned:
+                return skip_chunk, skip_loop
+            self.wake_engine.reset_detection()
+            self.silence_tracker.reset()
+            payload = self.pre_roll.flush()
+            if payload:
+                await self._send_preroll_payload(payload)
+                skip_chunk = True
+            else:
+                verbose_print(f"{WAKE_LOG_LABEL} Triggered -> streaming (no buffered audio)")
+
+        return skip_chunk, skip_loop
 
     async def _send_preroll_payload(self, payload: bytes) -> None:
         buffered_frames = len(payload) // self.bytes_per_frame
@@ -387,6 +404,12 @@ class _AudioControllerLoop:
     def _schedule_server_stop_timeout(self) -> None:
         if SERVER_STOP_TIMEOUT_SECONDS <= 0:
             return
+        if self._active_turn_id is None:
+            verbose_print(
+                f"{TURN_LOG_LABEL} Skipping server stop timeout; "
+                "no active turn is associated with the pending stop."
+            )
+            return
         self._clear_server_stop_timeout(cause="reschedule")
         loop = asyncio.get_running_loop()
         self._server_stop_timeout_handle = loop.call_later(
@@ -409,21 +432,30 @@ class _AudioControllerLoop:
         self._audit_log("server_stop_timeout_cleared", cause=cause)
 
     def _on_server_stop_timeout(self) -> None:
+        # The timeout task is scheduled via call_later, so it may still fire after the
+        # server acknowledges the stop. _handle_server_stop_timeout() rechecks controller
+        # state to keep the sequence idempotent.
         self._server_stop_timeout_handle = None
         loop = asyncio.get_running_loop()
         loop.create_task(self._handle_server_stop_timeout())
 
     async def _handle_server_stop_timeout(self) -> None:
-        if not self.state_manager.awaiting_server_stop:
-            return
-        self._audit_log(
-            "server_stop_timeout_fired",
-            timeout_seconds=round(SERVER_STOP_TIMEOUT_SECONDS, 3),
-        )
-        self.state_manager.suppress_next_server_stop_event()
-        reason = self.state_manager.complete_deferred_finalize("server speech stop timeout")
-        if reason:
-            self._finalize_turn(reason)
+        try:
+            if not self.state_manager.awaiting_server_stop:
+                return
+            self._audit_log(
+                "server_stop_timeout_fired",
+                timeout_seconds=round(SERVER_STOP_TIMEOUT_SECONDS, 3),
+            )
+            self.state_manager.suppress_next_server_stop_event()
+            reason = self.state_manager.complete_deferred_finalize("server speech stop timeout")
+            if reason:
+                self._finalize_turn(reason)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            print(
+                f"{ERROR_LOG_LABEL} Server stop timeout handler failed: {exc}",
+                file=sys.stderr,
+            )
 
     def _start_new_turn(self, trigger: str) -> None:
         self._turn_sequence += 1

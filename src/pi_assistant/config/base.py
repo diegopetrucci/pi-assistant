@@ -328,7 +328,9 @@ SERVER_STOP_TIMEOUT_SECONDS = _env_float(
     "SERVER_STOP_TIMEOUT_SECONDS", _AUTO_STOP.get("server_stop_timeout_seconds", 5.0)
 )
 if SERVER_STOP_TIMEOUT_SECONDS < 0:
-    raise ValueError("SERVER_STOP_TIMEOUT_SECONDS must be greater than or equal to 0.")
+    raise ValueError(
+        "SERVER_STOP_TIMEOUT_SECONDS must be >= 0 (set to 0 to disable the timeout entirely)."
+    )
 
 if not OPENAI_API_KEY:
     raise ValueError(

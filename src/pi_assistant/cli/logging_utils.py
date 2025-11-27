@@ -228,10 +228,6 @@ def verbose_print(*args, **kwargs) -> None:
 def console_print(*args, **kwargs) -> None:
     """Print CLI output with timestamps regardless of verbose mode."""
 
-    if _VERBOSE_LOGGING:
-        verbose_print(*args, **kwargs)
-        return
-
     timestamp = _format_timestamp()
     _emit_timestamped_print(timestamp, args, kwargs)
 

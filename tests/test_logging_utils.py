@@ -77,19 +77,15 @@ def test_console_print_includes_timestamp_when_not_verbose(capsys):
     assert out.endswith("plain output")
 
 
-def test_console_print_delegates_when_verbose(monkeypatch):
+def test_console_print_includes_timestamp_when_verbose(capsys):
     logging_utils.set_verbose_logging(True)
-    calls: list[tuple] = []
 
-    def _capture(*args, **kwargs):
-        calls.append(args)
+    logging_utils.console_print("verbose output")
 
-    monkeypatch.setattr(logging_utils, "verbose_print", _capture)
-
-    logging_utils.console_print("delegated")
-
+    out = capsys.readouterr().out.strip()
+    assert out.startswith("[")
+    assert out.endswith("verbose output")
     logging_utils.set_verbose_logging(False)
-    assert calls == [("delegated",)]
 
 
 def test_ws_log_label_directional_variants():
