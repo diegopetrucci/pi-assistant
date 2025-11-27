@@ -194,17 +194,6 @@ async def test_receive_events_yields_until_closed():
 
 
 @pytest.mark.asyncio
-async def test_send_audio_chunk_logs_summary(verbose_capture):
-    client = WebSocketClient()
-    client.websocket = DummyWebSocket()
-    client.connected = True
-
-    await client.send_audio_chunk(b"\x00\x01\x02\x03")
-
-    assert any("type=input_audio_buffer.append" in entry for entry in verbose_capture)
-
-
-@pytest.mark.asyncio
 async def test_receive_events_logs_payload(verbose_capture):
     messages = [
         json.dumps(
@@ -236,6 +225,17 @@ async def test_receive_events_logs_payload(verbose_capture):
         in entry
         for entry in verbose_capture
     )
+
+
+@pytest.mark.asyncio
+async def test_send_audio_chunk_does_not_log(verbose_capture):
+    client = WebSocketClient()
+    client.websocket = DummyWebSocket()
+    client.connected = True
+
+    await client.send_audio_chunk(b"\x00\x01\x02\x03")
+
+    assert not any("WS→" in entry for entry in verbose_capture)
 
 
 @pytest.mark.asyncio

@@ -199,10 +199,6 @@ class WebSocketClient:
 
         # Send to OpenAI
         await websocket.send(json.dumps(message))
-        self._log_ws_payload(
-            "→",
-            {"type": "input_audio_buffer.append", "audio": f"<{len(audio_bytes)} bytes pcm16>"},
-        )
 
     async def receive_events(self) -> AsyncIterator[dict[str, Any]]:
         """
