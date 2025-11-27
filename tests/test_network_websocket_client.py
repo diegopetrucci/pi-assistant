@@ -58,6 +58,23 @@ class DummyWebSocket:
         self.closed = True
 
 
+@pytest.fixture
+def verbose_capture(monkeypatch):
+    records: list[str] = []
+
+    def _capture(*args, **kwargs):
+        if args:
+            records.append(args[0])
+        else:
+            records.append("")
+
+    monkeypatch.setattr(
+        "pi_assistant.network.websocket_client.verbose_print",
+        _capture,
+    )
+    return records
+
+
 @pytest.mark.asyncio
 async def test_connect_waits_for_session(monkeypatch):
     handshake_events = [json.dumps({"type": "transcription_session.created"})]
@@ -174,6 +191,33 @@ async def test_receive_events_yields_until_closed():
         events.append(event)
 
     assert [e["type"] for e in events] == ["foo", "bar"]
+
+
+@pytest.mark.asyncio
+async def test_send_audio_chunk_logs_summary(verbose_capture):
+    client = WebSocketClient()
+    client.websocket = DummyWebSocket()
+    client.connected = True
+
+    await client.send_audio_chunk(b"\x00\x01\x02\x03")
+
+    assert any('{"type":"input_audio_buffer.append"' in entry for entry in verbose_capture)
+
+
+@pytest.mark.asyncio
+async def test_receive_events_logs_payload(verbose_capture):
+    messages = [
+        json.dumps({"type": "foo"}),
+        json.dumps({"type": "bar"}),
+    ]
+    client = WebSocketClient()
+    client.websocket = DummyWebSocket(messages)
+    client.connected = True
+
+    async for _ in client.receive_events():
+        pass
+
+    assert any('[WS←] {"type":"foo"}' in entry for entry in verbose_capture)
 
 
 @pytest.mark.asyncio

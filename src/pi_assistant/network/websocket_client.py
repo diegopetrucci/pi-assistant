@@ -37,6 +37,18 @@ class WebSocketClient:
         self.websocket: _WebSocketProtocol | None = None
         self.connected = False
 
+    def _log_ws_payload(self, direction: str, payload: Any) -> None:
+        """Verbose helper to display websocket payloads."""
+
+        if isinstance(payload, str):
+            serialized = payload
+        else:
+            try:
+                serialized = json.dumps(payload, separators=(",", ":"))
+            except (TypeError, ValueError):
+                serialized = str(payload)
+        verbose_print(f"[WS{direction}] {serialized}")
+
     async def connect(self) -> None:
         """
         Establish WebSocket connection to OpenAI Realtime API using API key
@@ -89,6 +101,7 @@ class WebSocketClient:
             async for message in websocket:
                 event = cast(dict[str, Any], json.loads(message))
                 event_type = event.get("type")
+                self._log_ws_payload("←", event)
 
                 # Debug: print what we received
                 verbose_print(f"[DEBUG] Received event type: {event_type}")
@@ -133,6 +146,7 @@ class WebSocketClient:
             session_update = {"type": "transcription_session.update", "session": SESSION_CONFIG}
             websocket = self._require_websocket()
             await websocket.send(json.dumps(session_update))
+            self._log_ws_payload("→", session_update)
             verbose_print("✓ Session configuration sent")
 
         except Exception as e:
@@ -156,6 +170,10 @@ class WebSocketClient:
 
         # Send to OpenAI
         await websocket.send(json.dumps(message))
+        self._log_ws_payload(
+            "→",
+            {"type": "input_audio_buffer.append", "audio": f"<{len(audio_bytes)} bytes pcm16>"},
+        )
 
     async def receive_events(self) -> AsyncIterator[dict[str, Any]]:
         """
@@ -170,6 +188,7 @@ class WebSocketClient:
             async for message in websocket:
                 # Parse JSON event
                 event = cast(dict[str, Any], json.loads(message))
+                self._log_ws_payload("←", event)
                 yield event
 
         except websockets.exceptions.ConnectionClosed:
