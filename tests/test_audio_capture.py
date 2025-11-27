@@ -1,5 +1,6 @@
 import asyncio
 import io
+import os
 from types import SimpleNamespace
 
 import numpy as np
@@ -13,6 +14,7 @@ OVERRIDE_DEVICE_INDEX = 5
 DEFAULT_DEVICE_INDEX = 3
 PARSED_OVERRIDE_VALUE = 3
 PARSED_OVERRIDE_RAW = "\n\t 3 "
+EXPECTED_SAMPLE_RATE = 48000
 
 
 def make_dummy_query(devices_by_index, device_lists=None):
@@ -218,6 +220,22 @@ def test_callback_logs_status(monkeypatch):
     assert "Audio callback status: OVERFLOW" in stderr.getvalue()
 
 
+def test_callback_returns_when_loop_missing(monkeypatch):
+    capture = AudioCapture()
+    capture.loop = None
+
+    called = False
+
+    def fail_enqueue(self, payload):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(AudioCapture, "_enqueue_audio_bytes", fail_enqueue)
+    capture.callback(np.zeros((2,), dtype=np.int16), frames=2, time_info=None, status=None)
+
+    assert called is False
+
+
 def test_parse_device_override_whitespace():
     assert AudioCapture._parse_device_override("   ") is None
     assert AudioCapture._parse_device_override(PARSED_OVERRIDE_RAW) == PARSED_OVERRIDE_VALUE
@@ -248,6 +266,56 @@ def test_ensure_sample_rate_requires_restart(monkeypatch):
 
     assert recorded["rate"] == fallback_rate
     assert "Launch pi-assistant again" in str(excinfo.value)
+
+
+def test_ensure_sample_rate_supported_raises_without_hint(monkeypatch):
+    capture = AudioCapture()
+    capture.sample_rate = 16000
+
+    def fail_check(**_):
+        raise ValueError("nope")
+
+    monkeypatch.setattr(capture_module.sd, "check_input_settings", fail_check)
+    monkeypatch.setattr(AudioCapture, "_device_default_sample_rate", lambda self, device: None)
+
+    persisted = False
+
+    def fail_persist(self, device, fallback_rate):
+        nonlocal persisted
+        persisted = True
+
+    monkeypatch.setattr(AudioCapture, "_persist_sample_rate_hint", fail_persist)
+
+    with pytest.raises(RuntimeError, match="does not support"):
+        capture._ensure_sample_rate_supported(device=7)
+
+    assert persisted is False
+
+
+def test_ensure_sample_rate_supported_does_not_restart_for_same_hint(monkeypatch):
+    capture = AudioCapture()
+    capture.sample_rate = 22050
+
+    def fail_check(**_):
+        raise ValueError("invalid samplerate")
+
+    monkeypatch.setattr(capture_module.sd, "check_input_settings", fail_check)
+    monkeypatch.setattr(
+        AudioCapture, "_device_default_sample_rate", lambda self, device: capture.sample_rate
+    )
+
+    persisted = False
+
+    def fail_persist(self, device, fallback_rate):
+        nonlocal persisted
+        persisted = True
+
+    monkeypatch.setattr(AudioCapture, "_persist_sample_rate_hint", fail_persist)
+
+    with pytest.raises(RuntimeError, match="does not support"):
+        capture._ensure_sample_rate_supported(device=3)
+
+    assert persisted is False
 
 
 def test_select_input_device_raises_when_no_options(monkeypatch):
@@ -298,6 +366,20 @@ def test_stop_stream_handles_none():
     capture.stop_stream()
 
 
+def test_device_is_valid_handles_failures(monkeypatch):
+    capture = AudioCapture()
+    monkeypatch.setattr(capture_module.sd, "query_devices", lambda device: {"index": device})
+
+    assert capture._device_is_valid(2) is True
+
+    def fail_query(device):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(capture_module.sd, "query_devices", fail_query)
+
+    assert capture._device_is_valid(2) is False
+
+
 class _DummyStream:
     def __init__(self):
         self.started = False
@@ -330,6 +412,24 @@ def test_start_stream_initialization_failure(monkeypatch):
             capture.start_stream(loop=loop)
     finally:
         loop.close()
+
+
+def test_stream_initialization_error_handles_sample_rate_messages(monkeypatch):
+    capture = AudioCapture()
+    sentinel = RuntimeError("unsupported")
+    monkeypatch.setattr(capture, "_unsupported_sample_rate_error", lambda device: sentinel)
+
+    error = capture._stream_initialization_error(ValueError("PaInvalidSampleRate"), device=0)
+
+    assert error is sentinel
+
+
+def test_stream_initialization_error_reports_generic_message():
+    capture = AudioCapture()
+
+    error = capture._stream_initialization_error(ValueError("other failure"), device=0)
+
+    assert "Unable to initialize audio input stream" in str(error)
 
 
 def test_start_and_stop_stream_success(monkeypatch):
@@ -387,7 +487,7 @@ def test_start_stream_auto_updates_env_when_hint_available(monkeypatch, capsys):
     finally:
         loop.close()
 
-    assert recorded == {"SAMPLE_RATE": "48000"}
+    assert recorded == {"SAMPLE_RATE": str(EXPECTED_SAMPLE_RATE)}
     out = capsys.readouterr().out
     assert "Saved SAMPLE_RATE" in out
 
@@ -420,3 +520,54 @@ def test_start_stream_reports_samplerate_hint_when_no_fallback(monkeypatch):
     message = str(excinfo.value)
     assert "SAMPLE_RATE" in message
     assert "Try setting" not in message
+
+
+def test_device_default_sample_rate_handles_query_errors(monkeypatch):
+    capture = AudioCapture()
+
+    def fail_query(device):
+        raise ValueError("no device")
+
+    monkeypatch.setattr(capture_module.sd, "query_devices", fail_query)
+
+    assert capture._device_default_sample_rate(9) is None
+
+
+def test_device_default_sample_rate_normalizes_numeric_strings(monkeypatch):
+    capture = AudioCapture()
+    monkeypatch.setattr(
+        capture_module.sd,
+        "query_devices",
+        lambda device: {"default_samplerate": f"{float(EXPECTED_SAMPLE_RATE):.1f}"},
+    )
+
+    assert capture._device_default_sample_rate(1) == EXPECTED_SAMPLE_RATE
+
+
+def test_device_default_sample_rate_ignores_invalid_strings(monkeypatch):
+    capture = AudioCapture()
+    monkeypatch.setattr(
+        capture_module.sd,
+        "query_devices",
+        lambda device: {"default_samplerate": "forty-eight"},
+    )
+
+    assert capture._device_default_sample_rate(1) is None
+
+
+def test_persist_sample_rate_hint_updates_env_and_logs(monkeypatch, capsys):
+    capture = AudioCapture()
+    monkeypatch.setenv("SAMPLE_RATE", "16000")
+    recorded: dict[str, str] = {}
+    monkeypatch.setattr(
+        capture_module, "_persist_env_value", lambda key, value: recorded.update({key: value})
+    )
+    monkeypatch.setattr(capture, "_describe_device", lambda device: "USB Mic (id 2)")
+
+    capture._persist_sample_rate_hint(device=2, fallback_rate=EXPECTED_SAMPLE_RATE)
+
+    assert recorded == {"SAMPLE_RATE": str(EXPECTED_SAMPLE_RATE)}
+    assert os.environ["SAMPLE_RATE"] == str(EXPECTED_SAMPLE_RATE)
+    out = capsys.readouterr().out
+    assert "USB Mic (id 2)" in out
+    assert "Saved SAMPLE_RATE" in out

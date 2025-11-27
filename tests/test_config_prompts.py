@@ -124,3 +124,32 @@ def test_prompt_for_location_name_keyboard_interrupt(monkeypatch: pytest.MonkeyP
     assert location is None
     assert not persisted
     assert os.environ["LOCATION_NAME"] == original
+
+
+def test_prompt_for_api_key_persists_value(monkeypatch: pytest.MonkeyPatch):
+    _patch_tty_streams(monkeypatch, base)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    captured: list[str] = []
+    monkeypatch.setattr(base, "_persist_api_key", lambda value: captured.append(value))
+    monkeypatch.setattr(base, "getpass", lambda _prompt="": "sk-test")
+
+    result = base._prompt_for_api_key()
+
+    assert result == "sk-test"
+    assert captured == ["sk-test"]
+    assert os.environ["OPENAI_API_KEY"] == "sk-test"
+
+
+def test_prompt_for_api_key_returns_none_when_not_tty(monkeypatch: pytest.MonkeyPatch):
+    class _NonTty(io.StringIO):
+        def isatty(self) -> bool:
+            return False
+
+    monkeypatch.setattr(base.sys, "stdin", _NonTty())
+    monkeypatch.setattr(base.sys, "stderr", io.StringIO())
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    result = base._prompt_for_api_key()
+
+    assert result is None
+    assert "OPENAI_API_KEY" not in os.environ

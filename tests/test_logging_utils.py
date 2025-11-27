@@ -60,3 +60,64 @@ def test_per_session_capture_generates_iso_filename(tmp_path):
     stem = path.stem
     assert "T" in stem
     assert stem[:4].isdigit()
+
+
+def test_verbose_print_emits_timestamp_when_enabled(capsys):
+    logging_utils.set_verbose_logging(True)
+
+    logging_utils.verbose_print("message")
+
+    out = capsys.readouterr().out
+    assert out.startswith("[")
+    assert "message" in out
+
+
+def test_console_print_passthrough_when_not_verbose(capsys):
+    logging_utils.set_verbose_logging(False)
+
+    logging_utils.console_print("plain output")
+
+    out = capsys.readouterr().out
+    assert out.strip() == "plain output"
+
+
+def test_log_state_transition_skips_when_state_unchanged(monkeypatch):
+    calls: list[tuple] = []
+    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURE_PENDING", False)
+    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURED", True)
+    monkeypatch.setattr(logging_utils, "verbose_print", lambda *args, **kwargs: calls.append(args))
+    logging_utils.set_verbose_logging(True)
+
+    logging_utils.log_state_transition(StreamState.LISTENING, StreamState.LISTENING, "noop")
+
+    assert calls == []
+
+
+def test_auto_configuration_enables_capture(tmp_path, monkeypatch):
+    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURE_PENDING", True)
+    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURED", False)
+    monkeypatch.setattr(logging_utils, "VERBOSE_LOG_DIRECTORY", tmp_path)
+
+    logging_utils._ensure_auto_configured()
+    path = logging_utils.current_verbose_log_path()
+
+    assert path is not None
+    logging_utils.configure_verbose_log_capture(None)
+
+
+def test_write_verbose_log_entry_reports_error_once(monkeypatch, capsys):
+    class BrokenLog:
+        def write(self, _value):
+            raise OSError("disk full")
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(logging_utils, "_VERBOSE_LOG_FILE", BrokenLog())
+    monkeypatch.setattr(logging_utils, "_VERBOSE_LOG_ERROR_REPORTED", False)
+
+    logging_utils._write_verbose_log_entry("00:00.000", ("msg",), " ", "\n")
+    logging_utils._write_verbose_log_entry("00:00.000", ("msg",), " ", "\n")
+
+    err = capsys.readouterr().err
+    assert err.count("Unable to write to verbose log file") == 1
