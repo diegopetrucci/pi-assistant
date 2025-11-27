@@ -19,6 +19,12 @@ from pi_assistant.config import (
     WEBSOCKET_HEADERS,
 )
 
+_TRANSCRIPTION_EVENT_TYPES = {
+    "conversation.item.input_audio_transcription.delta",
+    "conversation.item.input_audio_transcription.completed",
+}
+_MAX_SUMMARY_KEYS = 5
+
 
 class _WebSocketProtocol(Protocol):
     """Subset of the runtime WebSocket API used by the client."""
@@ -59,35 +65,42 @@ class WebSocketClient:
         def _default_summary(text: str) -> str:
             return f"{label} {text}"
 
+        def _redacted_length(value: Any) -> int:
+            if isinstance(value, str):
+                return len(value)
+            return 0
+
+        def _summarize_keys(data: dict[str, Any]) -> str:
+            keys = [key for key in data.keys() if key != "type"]
+            if not keys:
+                return "<none>"
+            keys.sort()
+            if len(keys) > _MAX_SUMMARY_KEYS:
+                displayed = ", ".join(keys[:_MAX_SUMMARY_KEYS])
+                return f"{displayed},…"
+            return ", ".join(keys)
+
         summary: str
         if isinstance(structured, dict):
             payload_type = structured.get("type")
-            if direction == "←" and payload_type in {
-                "conversation.item.input_audio_transcription.delta",
-                "conversation.item.input_audio_transcription.completed",
-            }:
+            if payload_type in _TRANSCRIPTION_EVENT_TYPES:
+                # Conversation transcriptions may include raw user speech; suppress both directions.
                 return None
-            if payload_type == "conversation.item.input_audio_transcription.delta":
-                delta = structured.get("delta", "")
-                summary = _default_summary(f"type={payload_type} delta={delta!r}")
-                return summary
-            elif payload_type == "conversation.item.input_audio_transcription.completed":
-                transcript = structured.get("transcript", "")
-                summary = _default_summary(f"type={payload_type} transcript={transcript!r}")
-                return summary
-            elif payload_type == "input_audio_buffer.append":
+            if payload_type == "input_audio_buffer.append":
                 audio = structured.get("audio")
                 length = len(audio) if isinstance(audio, str) else "?"
-                summary = _default_summary(f"type={payload_type} audio=<{length} chars base64>")
+                summary = _default_summary(f"type={payload_type} audio_chars={length}")
+                return summary
             elif payload_type:
-                summary = _default_summary(f"type={payload_type}")
+                keys = _summarize_keys(structured)
+                summary = _default_summary(f"type={payload_type} keys={keys}")
             else:
-                summary = _default_summary(json.dumps(structured, separators=(",", ":")))
+                keys = _summarize_keys(structured)
+                summary = _default_summary(f"keys={keys}")
+        elif isinstance(structured, list):
+            summary = _default_summary(f"list(len={len(structured)})")
         else:
-            try:
-                summary = _default_summary(json.dumps(structured, separators=(",", ":")))
-            except (TypeError, ValueError):
-                summary = _default_summary(str(structured))
+            summary = _default_summary(type(structured).__name__)
 
         return summary
 
@@ -141,7 +154,20 @@ class WebSocketClient:
 
         try:
             async for message in websocket:
-                event = cast(dict[str, Any], json.loads(message))
+                raw_message = (
+                    message.decode("utf-8", errors="replace")
+                    if isinstance(message, bytes)
+                    else message
+                )
+                try:
+                    event = cast(dict[str, Any], json.loads(raw_message))
+                except json.JSONDecodeError as exc:
+                    snippet = raw_message[:120]
+                    message = (
+                        f"{ERROR_LOG_LABEL} Malformed session payload at pos {exc.pos}: {snippet!r}"
+                    )
+                    print(message, file=sys.stderr)
+                    continue
                 event_type = event.get("type")
                 self._log_ws_payload("←", event)
 

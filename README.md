@@ -212,7 +212,8 @@ in `.env` (default `0.75`) so the controller ignores premature server VAD stop e
 stretch of local silence.
 If the controller logs `"[TURN] Awaiting server confirmation before finalizing turn."` indefinitely, lower
 `SERVER_STOP_TIMEOUT_SECONDS` (default `5`) to make it fall back sooner, or raise it if your network regularly
-delays the server's `speech_stopped` acknowledgment.
+delays the server's `speech_stopped` acknowledgment. Setting the value to `0` disables the timeout if you would
+rather wait indefinitely for the server.
 
 ## Project Structure
 

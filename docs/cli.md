@@ -114,7 +114,8 @@ Default values live in `config/defaults.toml` and can be overridden with environ
 - `AUDIO_QUEUE_MAX_SIZE`, `AUDIO_INPUT_DEVICE`
 - Auto-stop: `AUTO_STOP_ENABLED`, `AUTO_STOP_SILENCE_THRESHOLD`, `AUTO_STOP_MAX_SILENCE_SECONDS`,
   `SERVER_STOP_MIN_SILENCE_SECONDS` (local silence required before honoring server VAD stop events),
-  `SERVER_STOP_TIMEOUT_SECONDS` (max time to wait for the server's `speech_stopped` ack before finalizing locally)
+  `SERVER_STOP_TIMEOUT_SECONDS` (max time to wait for the server's `speech_stopped` ack before finalizing locally;
+  set to `0` to disable the timeout)
 
 When hardware only exposes 44.1/48 kHz, the client now probes PortAudio, saves the detected sample rate to `.env`, and asks you to restart (look for `[INFO] … Saved SAMPLE_RATE to .env`). Leave `STREAM_SAMPLE_RATE=24000` so capture audio continues to be resampled for OpenAI. Manual overrides are still supported if you want to pin a specific sample rate.
 ### Assistant Delivery & Language

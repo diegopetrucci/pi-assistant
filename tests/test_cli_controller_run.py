@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Callable, cast
+from typing import Any, Callable, Optional, cast
 
 import numpy as np
 import pytest
@@ -29,6 +29,20 @@ class FakeWebSocket:
 
     async def send_audio_chunk(self, chunk):
         self.sent_chunks.append(chunk)
+
+
+class DummyEvent:
+    def __init__(self):
+        self._flag = False
+
+    def is_set(self):
+        return self._flag
+
+    def set(self):
+        self._flag = True
+
+    def clear(self):
+        self._flag = False
 
 
 class DummyTranscriptBuffer:
@@ -126,6 +140,34 @@ async def _ensure_condition_stays_false(
         if predicate():
             pytest.fail(failure_message)
         await asyncio.sleep(poll_interval)
+
+
+def _make_controller_with_stubbed_wake_engine(monkeypatch):
+    class StubWakeWordEngine:
+        def __init__(self, *args, **kwargs):
+            self.reset_calls = 0
+
+        def process_chunk(self, chunk):
+            return WakeWordDetection(score=0.0, triggered=False)
+
+        def reset_detection(self):
+            self.reset_calls += 1
+
+    monkeypatch.setattr(controller, "WakeWordEngine", StubWakeWordEngine)
+    transcript_buffer = cast(controller.TurnTranscriptAggregator, DummyTranscriptBuffer())
+    assistant = cast(controller.LLMResponder, object())
+    speech_player = cast(controller.SpeechPlayer, object())
+    stop_signal = cast(asyncio.Event, DummyEvent())
+    speech_stopped_signal = cast(asyncio.Event, DummyEvent())
+    context = controller.AudioControllerContext(
+        transcript_buffer=transcript_buffer,
+        assistant=assistant,
+        speech_player=speech_player,
+        stop_signal=stop_signal,
+        speech_stopped_signal=speech_stopped_signal,
+    )
+    ws_client = cast(controller.WebSocketClient, FakeWebSocket())
+    return controller._AudioControllerLoop(object(), ws_client, context)
 
 
 @pytest.mark.asyncio
@@ -1775,3 +1817,117 @@ async def test_run_audio_controller_stop_signal_during_preroll_flush(monkeypatch
     assert wake_engine.reset_called >= 1
     assert "manual stop command" in transcript_buffer.cleared
     assert ws_client.sent_chunks  # pre-roll payload sent before stop
+
+
+def test_audio_controller_audit_logging_tracks_turns(monkeypatch):
+    logs = []
+    monkeypatch.setattr(controller, "console_print", lambda message: logs.append(message))
+    loop = _make_controller_with_stubbed_wake_engine(monkeypatch)
+
+    class StubStateManager:
+        def __init__(self):
+            self.state = controller.StreamState.LISTENING
+            self.finalizing_turn_calls = 0
+
+        def mark_finalizing_turn(self):
+            self.finalizing_turn_calls += 1
+
+    class StubTaskManager:
+        def __init__(self):
+            self.reasons = []
+
+        def schedule(self, reason):
+            self.reasons.append(reason)
+
+    state_manager = StubStateManager()
+    loop.state_manager = cast(controller.StreamStateManager, state_manager)
+    task_manager = StubTaskManager()
+    loop.response_tasks = cast(controller.ResponseTaskManager, task_manager)
+
+    loop._start_new_turn("wake_phrase")
+    assert loop._active_turn_id == "turn-0001"
+    assert any("action=turn_started" in entry for entry in logs)
+
+    logs.clear()
+    loop._finalize_turn("unit_test")
+    assert loop._active_turn_id is None
+    assert task_manager.reasons == ["unit_test"]
+    assert state_manager.finalizing_turn_calls == 1
+    assert any("action=turn_finalize" in entry and "reason='unit_test'" in entry for entry in logs)
+
+
+@pytest.mark.asyncio
+async def test_server_stop_timeout_audit_logging(monkeypatch):
+    logs = []
+    monkeypatch.setattr(controller, "console_print", lambda message: logs.append(message))
+    loop = _make_controller_with_stubbed_wake_engine(monkeypatch)
+
+    class TimeoutStateManager:
+        def __init__(self):
+            self.state = controller.StreamState.STREAMING
+            self.awaiting_server_stop = True
+            self.pending_finalize_reason: Optional[str] = None
+            self.suppressed = 0
+            self.finalizing_turn_calls = 0
+            self.finalize_reason: Optional[str] = None
+
+        def mark_finalizing_turn(self):
+            self.finalizing_turn_calls += 1
+
+        def suppress_next_server_stop_event(self):
+            self.suppressed += 1
+
+        def complete_deferred_finalize(self, fallback_reason):
+            reason = self.pending_finalize_reason or fallback_reason
+            self.pending_finalize_reason = None
+            self.awaiting_server_stop = False
+            self.finalize_reason = reason
+            return reason
+
+    class StubTaskManager:
+        def __init__(self):
+            self.reasons = []
+
+        def schedule(self, reason):
+            self.reasons.append(reason)
+
+    state_manager = TimeoutStateManager()
+    loop.state_manager = cast(controller.StreamStateManager, state_manager)
+    task_manager = StubTaskManager()
+    loop.response_tasks = cast(controller.ResponseTaskManager, task_manager)
+
+    loop._start_new_turn("wake_phrase")
+    monkeypatch.setattr(controller, "SERVER_STOP_TIMEOUT_SECONDS", 0.01)
+
+    state_manager.awaiting_server_stop = True
+    state_manager.pending_finalize_reason = None
+    loop._schedule_server_stop_timeout()
+    assert any(
+        "server_stop_timeout_scheduled" in entry and "pending_reason='pending_server_stop'" in entry
+        for entry in logs
+    )
+
+    loop._clear_server_stop_timeout(cause="unit_test")
+    assert any(
+        "action=server_stop_timeout_cleared" in entry and "cause='unit_test'" in entry
+        for entry in logs
+    )
+    assert loop._server_stop_timeout_handle is None
+
+    state_manager.awaiting_server_stop = True
+    state_manager.pending_finalize_reason = "silence detected"
+    loop._schedule_server_stop_timeout()
+    assert any(
+        "server_stop_timeout_scheduled" in entry and "pending_reason='silence detected'" in entry
+        for entry in logs
+    )
+
+    await asyncio.sleep(0.05)
+
+    assert loop._server_stop_timeout_handle is None
+    assert state_manager.suppressed == 1
+    assert state_manager.finalizing_turn_calls == 1
+    assert state_manager.finalize_reason == "silence detected"
+    assert task_manager.reasons == ["silence detected"]
+    assert loop._active_turn_id is None
+    assert any("action=server_stop_timeout_fired" in entry for entry in logs)

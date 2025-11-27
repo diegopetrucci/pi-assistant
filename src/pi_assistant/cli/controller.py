@@ -7,7 +7,8 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
-from typing import Optional
+from typing import Any, Optional
+from uuid import uuid4
 
 from pi_assistant.assistant import LLMResponder, TurnTranscriptAggregator
 from pi_assistant.audio import SpeechPlayer
@@ -23,6 +24,7 @@ from pi_assistant.cli.logging_utils import (
     ERROR_LOG_LABEL,
     TURN_LOG_LABEL,
     WAKE_LOG_LABEL,
+    console_print,
     log_state_transition,
     verbose_print,
 )
@@ -106,6 +108,9 @@ class _AudioControllerLoop:
         self.response_tasks = ResponseTaskManager(task_factory=self._build_task_factory())
         self.wake_engine = self._create_wake_engine()
         self._server_stop_timeout_handle: asyncio.TimerHandle | None = None
+        self._session_id = uuid4().hex
+        self._turn_sequence = 0
+        self._active_turn_id: str | None = None
 
     def _build_task_factory(self) -> Callable[[], asyncio.Task]:
         return partial(
@@ -150,7 +155,7 @@ class _AudioControllerLoop:
             print(f"{ERROR_LOG_LABEL} Audio controller error: {exc}", file=sys.stderr)
             raise
         finally:
-            self._clear_server_stop_timeout()
+            self._clear_server_stop_timeout(cause="shutdown")
             await self.response_tasks.drain()
 
     def _log_startup(self) -> None:
@@ -223,7 +228,7 @@ class _AudioControllerLoop:
             verbose_print(f"{TURN_LOG_LABEL} Server speech stop ignored: {ignore_reason}")
             return True
         signal.clear()
-        self._clear_server_stop_timeout()
+        self._clear_server_stop_timeout(cause="server_ack")
         if self.state_manager.awaiting_server_stop:
             reason = self.state_manager.complete_deferred_finalize("server speech stop event")
             if reason:
@@ -298,6 +303,8 @@ class _AudioControllerLoop:
             self.state_manager.clear_awaiting_assistant_reply()
             self.response_tasks.cancel("wake phrase override")
         previous_state = self.state_manager.transition_to_streaming()
+        if previous_state:
+            self._start_new_turn("wake_phrase")
         await self.context.transcript_buffer.start_turn()
         self.wake_engine.reset_detection()
         if previous_state:
@@ -372,39 +379,67 @@ class _AudioControllerLoop:
             self.wake_engine.reset_detection()
 
     def _finalize_turn(self, reason: str) -> None:
-        verbose_print(f"{TURN_LOG_LABEL} Speech ended (reason={reason}) – finalizing turn.")
+        self._audit_log("turn_finalize", reason=reason)
         self.state_manager.mark_finalizing_turn()
         self.response_tasks.schedule(reason)
+        self._active_turn_id = None
 
     def _schedule_server_stop_timeout(self) -> None:
         if SERVER_STOP_TIMEOUT_SECONDS <= 0:
             return
-        self._clear_server_stop_timeout()
+        self._clear_server_stop_timeout(cause="reschedule")
         loop = asyncio.get_running_loop()
         self._server_stop_timeout_handle = loop.call_later(
             SERVER_STOP_TIMEOUT_SECONDS,
             self._on_server_stop_timeout,
         )
+        pending_reason = self.state_manager.pending_finalize_reason
+        self._audit_log(
+            "server_stop_timeout_scheduled",
+            timeout_seconds=round(SERVER_STOP_TIMEOUT_SECONDS, 3),
+            pending_reason=pending_reason or "pending_server_stop",
+        )
 
-    def _clear_server_stop_timeout(self) -> None:
+    def _clear_server_stop_timeout(self, *, cause: str = "cleanup") -> None:
         handle = self._server_stop_timeout_handle
         if not handle:
             return
         handle.cancel()
         self._server_stop_timeout_handle = None
+        self._audit_log("server_stop_timeout_cleared", cause=cause)
 
     def _on_server_stop_timeout(self) -> None:
         self._server_stop_timeout_handle = None
+        loop = asyncio.get_running_loop()
+        loop.create_task(self._handle_server_stop_timeout())
+
+    async def _handle_server_stop_timeout(self) -> None:
         if not self.state_manager.awaiting_server_stop:
             return
-        verbose_print(
-            f"{TURN_LOG_LABEL} Server speech stop timeout after "
-            f"{SERVER_STOP_TIMEOUT_SECONDS:.2f}s; finalizing turn."
+        self._audit_log(
+            "server_stop_timeout_fired",
+            timeout_seconds=round(SERVER_STOP_TIMEOUT_SECONDS, 3),
         )
         self.state_manager.suppress_next_server_stop_event()
         reason = self.state_manager.complete_deferred_finalize("server speech stop timeout")
         if reason:
             self._finalize_turn(reason)
+
+    def _start_new_turn(self, trigger: str) -> None:
+        self._turn_sequence += 1
+        self._active_turn_id = f"turn-{self._turn_sequence:04d}"
+        self._audit_log("turn_started", trigger=trigger)
+
+    def _audit_log(self, action: str, **fields: Any) -> None:
+        context: dict[str, Any] = {
+            "session": self._session_id,
+            "state": self.state_manager.state.value,
+        }
+        if self._active_turn_id:
+            context["turn"] = self._active_turn_id
+        context.update(fields)
+        kv_pairs = " ".join(f"{key}={value!r}" for key, value in context.items())
+        console_print(f"{TURN_LOG_LABEL} action={action} {kv_pairs}")
 
 
 async def run_audio_controller(

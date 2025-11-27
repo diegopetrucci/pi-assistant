@@ -243,9 +243,7 @@ async def test_receive_events_logs_other_payloads(verbose_capture):
         pass
 
     label = cli_logging_utils.ws_log_label("←")
-    assert any(
-        entry.startswith(label) and "audio=<8 chars base64>" in entry for entry in verbose_capture
-    )
+    assert any(entry.startswith(label) and "audio_chars=8" in entry for entry in verbose_capture)
 
 
 @pytest.mark.asyncio
@@ -264,11 +262,11 @@ async def test_wait_for_session_created_malformed_json(capsys):
     client = WebSocketClient()
     client.websocket = DummyWebSocket(["{invalid json"])
 
-    with pytest.raises(json.JSONDecodeError):
+    with pytest.raises(RuntimeError, match="transcription_session.created"):
         await client.wait_for_session_created()
 
     err = capsys.readouterr().err
-    assert "Error waiting for session" in err
+    assert "Malformed session payload" in err
 
 
 @pytest.mark.asyncio
