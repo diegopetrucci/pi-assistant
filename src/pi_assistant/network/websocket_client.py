@@ -40,14 +40,43 @@ class WebSocketClient:
     def _log_ws_payload(self, direction: str, payload: Any) -> None:
         """Verbose helper to display websocket payloads."""
 
+        summary = self._summarize_payload(payload)
+        verbose_print(f"[WS{direction}] {summary}")
+
+    def _summarize_payload(self, payload: Any) -> str:
+        """Return a concise description for websocket payload logging."""
+
+        structured = payload
         if isinstance(payload, str):
-            serialized = payload
+            try:
+                structured = json.loads(payload)
+            except ValueError:
+                return payload
+
+        summary: str
+        if isinstance(structured, dict):
+            payload_type = structured.get("type")
+            if payload_type == "conversation.item.input_audio_transcription.delta":
+                delta = structured.get("delta", "")
+                summary = f"type={payload_type} delta={delta!r}"
+            elif payload_type == "conversation.item.input_audio_transcription.completed":
+                transcript = structured.get("transcript", "")
+                summary = f"type={payload_type} transcript={transcript!r}"
+            elif payload_type == "input_audio_buffer.append":
+                audio = structured.get("audio")
+                length = len(audio) if isinstance(audio, str) else "?"
+                summary = f"type={payload_type} audio=<{length} chars base64>"
+            elif payload_type:
+                summary = f"type={payload_type}"
+            else:
+                summary = json.dumps(structured, separators=(",", ":"))
         else:
             try:
-                serialized = json.dumps(payload, separators=(",", ":"))
+                summary = json.dumps(structured, separators=(",", ":"))
             except (TypeError, ValueError):
-                serialized = str(payload)
-        verbose_print(f"[WS{direction}] {serialized}")
+                summary = str(structured)
+
+        return summary
 
     async def connect(self) -> None:
         """

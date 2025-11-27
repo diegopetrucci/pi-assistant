@@ -201,14 +201,24 @@ async def test_send_audio_chunk_logs_summary(verbose_capture):
 
     await client.send_audio_chunk(b"\x00\x01\x02\x03")
 
-    assert any('{"type":"input_audio_buffer.append"' in entry for entry in verbose_capture)
+    assert any("type=input_audio_buffer.append" in entry for entry in verbose_capture)
 
 
 @pytest.mark.asyncio
 async def test_receive_events_logs_payload(verbose_capture):
     messages = [
-        json.dumps({"type": "foo"}),
-        json.dumps({"type": "bar"}),
+        json.dumps(
+            {
+                "type": "conversation.item.input_audio_transcription.delta",
+                "delta": "hello",
+            }
+        ),
+        json.dumps(
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "transcript": "hey raspy?",
+            }
+        ),
     ]
     client = WebSocketClient()
     client.websocket = DummyWebSocket(messages)
@@ -217,7 +227,15 @@ async def test_receive_events_logs_payload(verbose_capture):
     async for _ in client.receive_events():
         pass
 
-    assert any('[WS←] {"type":"foo"}' in entry for entry in verbose_capture)
+    assert any(
+        "type=conversation.item.input_audio_transcription.delta delta='hello'" in entry
+        for entry in verbose_capture
+    )
+    assert any(
+        "type=conversation.item.input_audio_transcription.completed transcript='hey raspy?'"
+        in entry
+        for entry in verbose_capture
+    )
 
 
 @pytest.mark.asyncio
