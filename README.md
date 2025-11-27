@@ -12,7 +12,7 @@ Real-time speech-to-text transcription system for Raspberry Pi 5 that streams au
 - Assistant replies can stream directly from the Responses API or fall back to local Audio API TTS with automatic sample-rate selection.
 - Optional web-search tool calls, fixed system prompt, and location/language hints so the assistant stays on-topic.
 - Voice stop commands (e.g., "Hey Jarvis stop") interrupt playback and clear the pending turn.
-- Verbose logging captures wake-word scores, state transitions, and all console output in timestamped files under `logs/`.
+- Verbose logging captures wake-word scores, state transitions, and all console output in timestamped files under `~/.cache/pi-assistant/logs/`.
 - Optimized for Raspberry Pi 5, 24 kHz mono PCM audio throughout the capture pipeline.
 
 ## Requirements
@@ -135,11 +135,11 @@ Two delivery paths are supported:
 
 Verbose logs are captured by default. Each `uv run pi-assistant` session:
 
-- Writes a log file named with an ISO-8601 timestamp (e.g., `logs/2024-11-30T14-03-12.123.log`) under the `logs/` directory.
+- Writes a log file named with an ISO-8601 timestamp (e.g., `~/.cache/pi-assistant/logs/2024-11-30T14-03-12.123.log`).
 - Mirrors console output timestamps in the log.
 - Strips ANSI colors for readability.
 
-You can override the log folder with `VERBOSE_LOG_DIRECTORY=/path/to/dir`, or disable capture entirely via `VERBOSE_LOG_CAPTURE_ENABLED=0` to conserve space on constrained devices.
+Files live under `~/.cache/pi-assistant/logs/` unless you override the folder with `VERBOSE_LOG_DIRECTORY=/path/to/dir`. Disable capture entirely via `VERBOSE_LOG_CAPTURE_ENABLED=0` to conserve space on constrained devices.
 ## Code Quality
 
 Ruff is configured via `ruff.toml` to handle both formatting and linting.

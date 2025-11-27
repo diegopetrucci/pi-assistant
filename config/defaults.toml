@@ -93,4 +93,4 @@ location_name = ""
 
 [logging]
 verbose_capture_enabled = true
-verbose_log_directory = "logs"
+verbose_log_directory = "~/.cache/pi-assistant/logs"
