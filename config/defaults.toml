@@ -17,6 +17,7 @@ enabled = true
 silence_threshold = 500
 max_silence_seconds = 2.0
 server_stop_min_silence_seconds = 0.75
+server_stop_timeout_seconds = 5.0
 
 [wake_word]
 default_model_name = "hey_rhasspy"

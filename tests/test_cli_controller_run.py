@@ -455,6 +455,76 @@ async def test_run_audio_controller_streams_after_wake_word_and_auto_stop(monkey
 
 
 @pytest.mark.asyncio
+async def test_auto_stop_timeout_finalizes_without_server_ack(monkeypatch):
+    capture = FakeCapture()
+    loud_chunk = _chunk_with_duration(0.05, amplitude=20000)
+    silence_chunk = _chunk_with_duration(0.05, amplitude=0)
+    capture.queue.put_nowait(loud_chunk)
+    capture.queue.put_nowait(silence_chunk)
+
+    ws_client = FakeWebSocket()
+    transcript_buffer = DummyTranscriptBuffer()
+    assistant = object()
+    speech_player = object()
+    stop_signal = asyncio.Event()
+    speech_stopped_signal = asyncio.Event()
+
+    class DummyWakeWordEngine:
+        def __init__(self, *args, **kwargs):
+            self.triggered = False
+
+        def process_chunk(self, chunk):
+            if not self.triggered:
+                self.triggered = True
+                return WakeWordDetection(score=0.9, triggered=True)
+            return WakeWordDetection(score=0.1, triggered=False)
+
+        def reset_detection(self):
+            return None
+
+    monkeypatch.setattr(controller, "WakeWordEngine", DummyWakeWordEngine)
+    monkeypatch.setattr(controller, "AUTO_STOP_ENABLED", True)
+    monkeypatch.setattr(controller, "AUTO_STOP_SILENCE_THRESHOLD", 5000)
+    monkeypatch.setattr(controller, "AUTO_STOP_MAX_SILENCE_SECONDS", 0.01)
+    monkeypatch.setattr(controller, "SERVER_STOP_TIMEOUT_SECONDS", 0.05)
+
+    scheduled = []
+    monkeypatch.setattr(
+        controller,
+        "schedule_turn_response",
+        _make_response_scheduler(scheduled, auto_complete=True),
+    )
+
+    task = asyncio.create_task(
+        controller.run_audio_controller(
+            capture,
+            ws_client,  # pyright: ignore[reportArgumentType]
+            transcript_buffer=transcript_buffer,  # pyright: ignore[reportArgumentType]
+            assistant=assistant,  # pyright: ignore[reportArgumentType]
+            speech_player=speech_player,  # pyright: ignore[reportArgumentType]
+            stop_signal=stop_signal,
+            speech_stopped_signal=speech_stopped_signal,
+        )
+    )
+
+    await _wait_for_condition(
+        lambda: transcript_buffer.started >= 1,
+        timeout=1.0,
+        timeout_message="wake phrase never started a turn",
+    )
+
+    await _wait_for_condition(
+        lambda: bool(scheduled),
+        timeout=1.0,
+        timeout_message="auto-stop timeout never finalized turn",
+    )
+
+    assert not speech_stopped_signal.is_set()
+
+    await _shutdown_task(task)
+
+
+@pytest.mark.asyncio
 async def test_server_stop_event_respects_min_silence(monkeypatch):
     monkeypatch.setattr(controller, "SERVER_STOP_MIN_SILENCE_SECONDS", 0.3)
 

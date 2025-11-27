@@ -34,6 +34,7 @@ from pi_assistant.config import (
     PREROLL_DURATION_SECONDS,
     SAMPLE_RATE,
     SERVER_STOP_MIN_SILENCE_SECONDS,
+    SERVER_STOP_TIMEOUT_SECONDS,
     STREAM_SAMPLE_RATE,
     WAKE_WORD_CONSECUTIVE_FRAMES,
     WAKE_WORD_EMBEDDING_MODEL_PATH,
@@ -104,6 +105,7 @@ class _AudioControllerLoop:
         )
         self.response_tasks = ResponseTaskManager(task_factory=self._build_task_factory())
         self.wake_engine = self._create_wake_engine()
+        self._server_stop_timeout_handle: asyncio.TimerHandle | None = None
 
     def _build_task_factory(self) -> Callable[[], asyncio.Task]:
         return partial(
@@ -148,6 +150,7 @@ class _AudioControllerLoop:
             print(f"{ERROR_LOG_LABEL} Audio controller error: {exc}", file=sys.stderr)
             raise
         finally:
+            self._clear_server_stop_timeout()
             await self.response_tasks.drain()
 
     def _log_startup(self) -> None:
@@ -220,6 +223,7 @@ class _AudioControllerLoop:
             verbose_print(f"{TURN_LOG_LABEL} Server speech stop ignored: {ignore_reason}")
             return True
         signal.clear()
+        self._clear_server_stop_timeout()
         if self.state_manager.awaiting_server_stop:
             reason = self.state_manager.complete_deferred_finalize("server speech stop event")
             if reason:
@@ -341,6 +345,7 @@ class _AudioControllerLoop:
                 verbose_print(
                     f"{TURN_LOG_LABEL} Awaiting server confirmation before finalizing turn."
                 )
+                self._schedule_server_stop_timeout()
             return
         retrigger_count = self.state_manager.retrigger_budget
         retrigger_log = (
@@ -370,6 +375,36 @@ class _AudioControllerLoop:
         verbose_print(f"{TURN_LOG_LABEL} Speech ended (reason={reason}) – finalizing turn.")
         self.state_manager.mark_finalizing_turn()
         self.response_tasks.schedule(reason)
+
+    def _schedule_server_stop_timeout(self) -> None:
+        if SERVER_STOP_TIMEOUT_SECONDS <= 0:
+            return
+        self._clear_server_stop_timeout()
+        loop = asyncio.get_running_loop()
+        self._server_stop_timeout_handle = loop.call_later(
+            SERVER_STOP_TIMEOUT_SECONDS,
+            self._on_server_stop_timeout,
+        )
+
+    def _clear_server_stop_timeout(self) -> None:
+        handle = self._server_stop_timeout_handle
+        if not handle:
+            return
+        handle.cancel()
+        self._server_stop_timeout_handle = None
+
+    def _on_server_stop_timeout(self) -> None:
+        self._server_stop_timeout_handle = None
+        if not self.state_manager.awaiting_server_stop:
+            return
+        verbose_print(
+            f"{TURN_LOG_LABEL} Server speech stop timeout after "
+            f"{SERVER_STOP_TIMEOUT_SECONDS:.2f}s; finalizing turn."
+        )
+        self.state_manager.suppress_next_server_stop_event()
+        reason = self.state_manager.complete_deferred_finalize("server speech stop timeout")
+        if reason:
+            self._finalize_turn(reason)
 
 
 async def run_audio_controller(

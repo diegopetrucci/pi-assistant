@@ -210,6 +210,9 @@ Defaults live in `config/defaults.toml` and are surfaced via `pi_assistant.confi
 If the assistant acknowledges a wake word before you're done speaking, increase `SERVER_STOP_MIN_SILENCE_SECONDS`
 in `.env` (default `0.75`) so the controller ignores premature server VAD stop events until it hears a longer
 stretch of local silence.
+If the controller logs `"[TURN] Awaiting server confirmation before finalizing turn."` indefinitely, lower
+`SERVER_STOP_TIMEOUT_SECONDS` (default `5`) to make it fall back sooner, or raise it if your network regularly
+delays the server's `speech_stopped` acknowledgment.
 
 ## Project Structure
 
