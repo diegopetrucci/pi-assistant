@@ -20,6 +20,11 @@ if "pi_assistant.cli.logging_utils" not in sys.modules:
         def verbose_print(*args, **kwargs) -> None:
             return None
 
+        @staticmethod
+        def ws_log_label(direction=None) -> str:
+            arrow = direction if direction in ("←", "→") else ""
+            return f"[WS{arrow}]"
+
     class CliModule(ModuleType):
         logging_utils: LoggingUtilsModule
 
@@ -32,6 +37,7 @@ if "pi_assistant.cli.logging_utils" not in sys.modules:
     sys.modules["pi_assistant.cli"] = cli_pkg
     sys.modules["pi_assistant.cli.logging_utils"] = logging_utils
 
+from pi_assistant.cli import logging_utils as cli_logging_utils
 from pi_assistant.network.websocket_client import WebSocketClient
 
 
@@ -194,7 +200,7 @@ async def test_receive_events_yields_until_closed():
 
 
 @pytest.mark.asyncio
-async def test_receive_events_logs_payload(verbose_capture):
+async def test_receive_events_skips_transcription_logs(verbose_capture):
     messages = [
         json.dumps(
             {
@@ -216,14 +222,29 @@ async def test_receive_events_logs_payload(verbose_capture):
     async for _ in client.receive_events():
         pass
 
+    assert verbose_capture == []
+
+
+@pytest.mark.asyncio
+async def test_receive_events_logs_other_payloads(verbose_capture):
+    messages = [
+        json.dumps(
+            {
+                "type": "input_audio_buffer.append",
+                "audio": "aGVsbG8=",
+            }
+        ),
+    ]
+    client = WebSocketClient()
+    client.websocket = DummyWebSocket(messages)
+    client.connected = True
+
+    async for _ in client.receive_events():
+        pass
+
+    label = cli_logging_utils.ws_log_label("←")
     assert any(
-        "type=conversation.item.input_audio_transcription.delta delta='hello'" in entry
-        for entry in verbose_capture
-    )
-    assert any(
-        "type=conversation.item.input_audio_transcription.completed transcript='hey raspy?'"
-        in entry
-        for entry in verbose_capture
+        entry.startswith(label) and "audio=<8 chars base64>" in entry for entry in verbose_capture
     )
 
 

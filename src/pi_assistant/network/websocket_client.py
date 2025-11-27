@@ -12,7 +12,7 @@ from typing import Any, Protocol, cast
 
 import websockets
 
-from pi_assistant.cli.logging_utils import ERROR_LOG_LABEL, verbose_print
+from pi_assistant.cli.logging_utils import ERROR_LOG_LABEL, verbose_print, ws_log_label
 from pi_assistant.config import (
     OPENAI_REALTIME_ENDPOINT,
     SESSION_CONFIG,
@@ -40,41 +40,54 @@ class WebSocketClient:
     def _log_ws_payload(self, direction: str, payload: Any) -> None:
         """Verbose helper to display websocket payloads."""
 
-        summary = self._summarize_payload(payload)
-        verbose_print(f"[WS{direction}] {summary}")
+        summary = self._summarize_payload(payload, direction)
+        if summary is not None:
+            verbose_print(summary)
 
-    def _summarize_payload(self, payload: Any) -> str:
-        """Return a concise description for websocket payload logging."""
+    def _summarize_payload(self, payload: Any, direction: str) -> str | None:
+        """Return a concise description for websocket payload logging, or None to silence."""
 
         structured = payload
         if isinstance(payload, str):
             try:
                 structured = json.loads(payload)
             except ValueError:
-                return payload
+                return f"{ws_log_label(direction)} {payload}"
+
+        label = ws_log_label(direction)
+
+        def _default_summary(text: str) -> str:
+            return f"{label} {text}"
 
         summary: str
         if isinstance(structured, dict):
             payload_type = structured.get("type")
+            if direction == "←" and payload_type in {
+                "conversation.item.input_audio_transcription.delta",
+                "conversation.item.input_audio_transcription.completed",
+            }:
+                return None
             if payload_type == "conversation.item.input_audio_transcription.delta":
                 delta = structured.get("delta", "")
-                summary = f"type={payload_type} delta={delta!r}"
+                summary = _default_summary(f"type={payload_type} delta={delta!r}")
+                return summary
             elif payload_type == "conversation.item.input_audio_transcription.completed":
                 transcript = structured.get("transcript", "")
-                summary = f"type={payload_type} transcript={transcript!r}"
+                summary = _default_summary(f"type={payload_type} transcript={transcript!r}")
+                return summary
             elif payload_type == "input_audio_buffer.append":
                 audio = structured.get("audio")
                 length = len(audio) if isinstance(audio, str) else "?"
-                summary = f"type={payload_type} audio=<{length} chars base64>"
+                summary = _default_summary(f"type={payload_type} audio=<{length} chars base64>")
             elif payload_type:
-                summary = f"type={payload_type}"
+                summary = _default_summary(f"type={payload_type}")
             else:
-                summary = json.dumps(structured, separators=(",", ":"))
+                summary = _default_summary(json.dumps(structured, separators=(",", ":")))
         else:
             try:
-                summary = json.dumps(structured, separators=(",", ":"))
+                summary = _default_summary(json.dumps(structured, separators=(",", ":")))
             except (TypeError, ValueError):
-                summary = str(structured)
+                summary = _default_summary(str(structured))
 
         return summary
 
