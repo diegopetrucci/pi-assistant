@@ -34,7 +34,9 @@ with DEFAULTS_PATH.open("rb") as defaults_file:
 def _coerce_path(value: str | Path) -> Path:
     path = Path(value).expanduser()
     if not path.is_absolute():
-        path = (PROJECT_ROOT / path).resolve()
+        path = (PROJECT_ROOT / path).resolve(strict=False)
+    else:
+        path = path.resolve(strict=False)
     return path
 
 
@@ -298,12 +300,13 @@ VERBOSE_LOG_CAPTURE_ENABLED = _env_bool(
     "VERBOSE_LOG_CAPTURE_ENABLED", _LOGGING.get("verbose_capture_enabled", False)
 )
 if VERBOSE_LOG_CAPTURE_ENABLED:
-    _DEFAULT_VERBOSE_DIR = _LOGGING.get("verbose_log_directory")
-    default_verbose_dir = (
-        _DEFAULT_VERBOSE_DIR.strip()
-        if isinstance(_DEFAULT_VERBOSE_DIR, str) and _DEFAULT_VERBOSE_DIR.strip()
-        else str(Path.home() / ".cache/pi-assistant/logs")
-    )
+    _DEFAULT_VERBOSE_DIR = _LOGGING.get("verbose_log_directory", "")
+    if not isinstance(_DEFAULT_VERBOSE_DIR, str) or not _DEFAULT_VERBOSE_DIR.strip():
+        raise ValueError(
+            "logging.verbose_log_directory is missing from config/defaults.toml; "
+            "set it there so runtime code has a canonical default."
+        )
+    default_verbose_dir = _DEFAULT_VERBOSE_DIR.strip()
 
     VERBOSE_LOG_DIRECTORY = _env_path("VERBOSE_LOG_DIRECTORY", default_verbose_dir)
 else:
