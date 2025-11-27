@@ -7,7 +7,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, TextIO
+from typing import Any, Optional, TextIO
 
 from pi_assistant.config import VERBOSE_LOG_CAPTURE_ENABLED, VERBOSE_LOG_DIRECTORY
 from pi_assistant.wake_word import StreamState
@@ -201,7 +201,9 @@ def ws_log_label(direction: str | None = None) -> str:
     return _WS_LABELS[arrow]
 
 
-def _emit_timestamped_print(timestamp: str, args: tuple[object, ...], kwargs) -> None:
+def _emit_timestamped_print(
+    timestamp: str, args: tuple[object, ...], kwargs: dict[str, Any]
+) -> None:
     if args:
         first, *rest = args
         print(f"[{timestamp}] {first}", *rest, **kwargs)

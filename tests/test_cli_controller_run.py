@@ -31,20 +31,6 @@ class FakeWebSocket:
         self.sent_chunks.append(chunk)
 
 
-class DummyEvent:
-    def __init__(self):
-        self._flag = False
-
-    def is_set(self):
-        return self._flag
-
-    def set(self):
-        self._flag = True
-
-    def clear(self):
-        self._flag = False
-
-
 class DummyTranscriptBuffer:
     def __init__(self):
         self.started = 0
@@ -157,8 +143,8 @@ def _make_controller_with_stubbed_wake_engine(monkeypatch):
     transcript_buffer = cast(controller.TurnTranscriptAggregator, DummyTranscriptBuffer())
     assistant = cast(controller.LLMResponder, object())
     speech_player = cast(controller.SpeechPlayer, object())
-    stop_signal = cast(asyncio.Event, DummyEvent())
-    speech_stopped_signal = cast(asyncio.Event, DummyEvent())
+    stop_signal = asyncio.Event()
+    speech_stopped_signal = asyncio.Event()
     context = controller.AudioControllerContext(
         transcript_buffer=transcript_buffer,
         assistant=assistant,
@@ -168,6 +154,54 @@ def _make_controller_with_stubbed_wake_engine(monkeypatch):
     )
     ws_client = cast(controller.WebSocketClient, FakeWebSocket())
     return controller._AudioControllerLoop(object(), ws_client, context)
+
+
+@pytest.mark.asyncio
+async def test_enter_streaming_state_starts_turn_once(monkeypatch):
+    loop = _make_controller_with_stubbed_wake_engine(monkeypatch)
+    transitions: list[tuple[Any, Any, str]] = []
+    monkeypatch.setattr(
+        controller,
+        "log_state_transition",
+        lambda previous, new, reason: transitions.append((previous, new, reason)),
+    )
+    transcript_buffer = cast(DummyTranscriptBuffer, loop.context.transcript_buffer)
+
+    transitioned = await loop._enter_streaming_state(
+        trigger="wake_phrase",
+        reason="wake phrase detected",
+    )
+
+    assert transitioned is True
+    assert loop._active_turn_id == "turn-0001"
+    assert transcript_buffer.started == 1
+    assert transitions and transitions[-1][2] == "wake phrase detected"
+
+    transitioned_again = await loop._enter_streaming_state(
+        trigger="wake_phrase",
+        reason="wake phrase detected",
+    )
+
+    assert transitioned_again is False
+    assert transcript_buffer.started == 1
+    assert loop._turn_sequence == 1
+
+
+def test_schedule_server_stop_timeout_skips_without_turn(monkeypatch):
+    loop = _make_controller_with_stubbed_wake_engine(monkeypatch)
+    monkeypatch.setattr(controller, "SERVER_STOP_TIMEOUT_SECONDS", 0.5)
+    messages: list[str] = []
+    monkeypatch.setattr(
+        controller,
+        "verbose_print",
+        lambda *args, **kwargs: messages.append(args[0] if args else ""),
+    )
+
+    loop._active_turn_id = None
+    loop._schedule_server_stop_timeout()
+
+    assert loop._server_stop_timeout_handle is None
+    assert any("Skipping server stop timeout" in entry for entry in messages)
 
 
 @pytest.mark.asyncio

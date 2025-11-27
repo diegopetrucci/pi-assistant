@@ -24,6 +24,7 @@ _TRANSCRIPTION_EVENT_TYPES = {
     "conversation.item.input_audio_transcription.completed",
 }
 _MAX_SUMMARY_KEYS = 5
+_MAX_CONSECUTIVE_SESSION_ERRORS = 10
 
 
 class _WebSocketProtocol(Protocol):
@@ -146,6 +147,7 @@ class WebSocketClient:
         """
         verbose_print("Waiting for transcription_session.created event...")
         websocket = self._require_websocket()
+        consecutive_decode_errors = 0
 
         try:
             async for message in websocket:
@@ -157,12 +159,18 @@ class WebSocketClient:
                 try:
                     event = cast(dict[str, Any], json.loads(raw_message))
                 except json.JSONDecodeError as exc:
+                    consecutive_decode_errors += 1
                     snippet = raw_message[:120]
                     message = (
                         f"{ERROR_LOG_LABEL} Malformed session payload at pos {exc.pos}: {snippet!r}"
                     )
                     print(message, file=sys.stderr)
+                    if consecutive_decode_errors >= _MAX_CONSECUTIVE_SESSION_ERRORS:
+                        raise RuntimeError(
+                            "Too many malformed session payloads received from server"
+                        ) from exc
                     continue
+                consecutive_decode_errors = 0
                 event_type = event.get("type")
                 self._log_ws_payload("←", event)
 

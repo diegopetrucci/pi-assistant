@@ -6,8 +6,9 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-# Stub out the CLI package to avoid circular imports when loading WebSocketClient.
-if "pi_assistant.cli.logging_utils" not in sys.modules:
+try:
+    from pi_assistant.cli import logging_utils as cli_logging_utils
+except ImportError:
 
     class LoggingUtilsModule(ModuleType):
         ERROR_LOG_LABEL: str
@@ -36,8 +37,8 @@ if "pi_assistant.cli.logging_utils" not in sys.modules:
     cli_pkg = CliModule(logging_utils)
     sys.modules["pi_assistant.cli"] = cli_pkg
     sys.modules["pi_assistant.cli.logging_utils"] = logging_utils
+    cli_logging_utils = logging_utils
 
-from pi_assistant.cli import logging_utils as cli_logging_utils
 from pi_assistant.network.websocket_client import WebSocketClient
 
 
