@@ -6,7 +6,7 @@
 `src/pi_assistant/assistant/llm.py:47-92`
 
 ## Problem Summary
-The `LLMResponder.__init__` method has 13 parameters, which violates the parameter count guidelines and has a lint suppression (`noqa: PLR0913`). This makes the class difficult to construct, maintain, and extend. Many parameters have default values derived from configuration, suggesting a configuration object pattern would be more appropriate.
+The `LLMResponder.__init__` method has 13 parameters, which violates the parameter count guidelines. This makes the class difficult to construct, maintain, and extend. Many parameters have default values derived from configuration, suggesting a configuration object pattern would be more appropriate.
 
 ## Specific Issues
 
@@ -28,7 +28,7 @@ def __init__(
     tts_model: str,
     playback: AudioPlayback | None,
     verbose: bool,
-) -> None:  # noqa: PLR0913
+) -> None:
 ```
 
 13 parameters with mixed concerns:

@@ -9,6 +9,11 @@ from pi_assistant.audio import capture as capture_module
 from pi_assistant.audio.capture import AudioCapture
 from pi_assistant.exceptions import AssistantRestartRequired
 
+OVERRIDE_DEVICE_INDEX = 5
+DEFAULT_DEVICE_INDEX = 3
+PARSED_OVERRIDE_VALUE = 3
+PARSED_OVERRIDE_RAW = "\n\t 3 "
+
 
 def make_dummy_query(devices_by_index, device_lists=None):
     """Return a fake sd.query_devices implementation."""
@@ -30,31 +35,49 @@ def make_dummy_query(devices_by_index, device_lists=None):
 
 
 def test_select_input_device_prefers_override(monkeypatch):
-    monkeypatch.setattr(capture_module, "AUDIO_INPUT_DEVICE", "5")
+    monkeypatch.setattr(capture_module, "AUDIO_INPUT_DEVICE", str(OVERRIDE_DEVICE_INDEX))
     monkeypatch.setattr(
         capture_module.sd,
         "query_devices",
-        make_dummy_query({5: {"name": "Mic", "index": 5, "max_input_channels": 1}}),
+        make_dummy_query(
+            {
+                OVERRIDE_DEVICE_INDEX: {
+                    "name": "Mic",
+                    "index": OVERRIDE_DEVICE_INDEX,
+                    "max_input_channels": 1,
+                }
+            }
+        ),
     )
 
     capture = AudioCapture()
     selected = capture._select_input_device()
 
-    assert selected == 5  # noqa: PLR2004
+    assert selected == OVERRIDE_DEVICE_INDEX
 
 
 def test_select_input_device_uses_default_when_valid(monkeypatch):
     monkeypatch.setattr(capture_module, "AUDIO_INPUT_DEVICE", "")
-    monkeypatch.setattr(capture_module.sd, "default", SimpleNamespace(device=(3, 0)))
+    monkeypatch.setattr(
+        capture_module.sd, "default", SimpleNamespace(device=(DEFAULT_DEVICE_INDEX, 0))
+    )
     monkeypatch.setattr(
         capture_module.sd,
         "query_devices",
-        make_dummy_query({3: {"name": "DefaultMic", "index": 3, "max_input_channels": 1}}),
+        make_dummy_query(
+            {
+                DEFAULT_DEVICE_INDEX: {
+                    "name": "DefaultMic",
+                    "index": DEFAULT_DEVICE_INDEX,
+                    "max_input_channels": 1,
+                }
+            }
+        ),
     )
 
     capture = AudioCapture()
 
-    assert capture._select_input_device() == 3  # noqa: PLR2004
+    assert capture._select_input_device() == DEFAULT_DEVICE_INDEX
 
 
 def test_select_input_device_scans_available_when_needed(monkeypatch):
@@ -197,7 +220,7 @@ def test_callback_logs_status(monkeypatch):
 
 def test_parse_device_override_whitespace():
     assert AudioCapture._parse_device_override("   ") is None
-    assert AudioCapture._parse_device_override("\n\t 3 ") == 3  # noqa: PLR2004
+    assert AudioCapture._parse_device_override(PARSED_OVERRIDE_RAW) == PARSED_OVERRIDE_VALUE
 
 
 def test_ensure_sample_rate_requires_restart(monkeypatch):

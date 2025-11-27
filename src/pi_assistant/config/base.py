@@ -13,11 +13,7 @@ import sys
 from getpass import getpass
 from pathlib import Path
 
-try:  # Python 3.11+
-    import tomllib  # type: ignore[attr-defined]
-except ModuleNotFoundError:  # pragma: no cover - fallback for 3.10 environments
-    import tomli as tomllib  # type: ignore[import]
-
+import tomllib
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]

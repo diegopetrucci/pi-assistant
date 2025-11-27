@@ -153,34 +153,9 @@ class TranscriptionTaskCoordinator:
                 )
             )
 
-        if hasattr(asyncio, "TaskGroup"):
-            async with asyncio.TaskGroup() as task_group:
-                for coroutine in coroutines:
-                    task_group.create_task(coroutine)
-            return
-
-        # Python 3.9–3.10 fallback: emulate TaskGroup cancellation semantics.
-        tasks = [asyncio.create_task(coro) for coro in coroutines]
-        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
-
-        first_exception: Optional[BaseException] = None
-        for task in done:
-            try:
-                task.result()
-            except Exception as exc:  # pragma: no cover - re-raise original failure
-                first_exception = exc
-                break
-
-        if first_exception is None:
-            if pending:
-                await asyncio.gather(*pending)
-            return
-
-        for task in pending:
-            task.cancel()
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
-        raise first_exception
+        async with asyncio.TaskGroup() as task_group:
+            for coroutine in coroutines:
+                task_group.create_task(coroutine)
 
     async def _run_audio_controller(self) -> None:
         from pi_assistant.cli.controller import run_audio_controller

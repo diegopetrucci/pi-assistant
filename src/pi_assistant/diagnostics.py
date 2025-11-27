@@ -10,6 +10,9 @@ from pi_assistant.audio import AudioCapture
 from pi_assistant.config import BUFFER_SIZE, CHANNELS, SAMPLE_RATE
 from pi_assistant.network import WebSocketClient
 
+AUDIO_TEST_DURATION_SECONDS = 5.0
+WEBSOCKET_EVENT_LIMIT = 10
+
 
 async def test_audio_capture():
     """Capture audio for a short window to verify microphone + PyAudio setup."""
@@ -28,7 +31,7 @@ async def test_audio_capture():
     try:
         start_time = loop.time()
         print(f"Start time: {start_time}")
-        while loop.time() - start_time < 5.0:  # noqa: PLR2004
+        while loop.time() - start_time < AUDIO_TEST_DURATION_SECONDS:
             try:
                 audio_data = await asyncio.wait_for(capture.get_audio_chunk(), timeout=1.0)
                 chunk_count += 1
@@ -64,7 +67,7 @@ async def test_websocket_client(event_handler=None):
 
         print("\n✓ Connection successful")
         print("✓ Session configuration sent")
-        print("\nListening for events (up to 10 messages)...\n")
+        print(f"\nListening for events (up to {WEBSOCKET_EVENT_LIMIT} messages)...\n")
 
         event_count = 0
         try:
@@ -75,7 +78,7 @@ async def test_websocket_client(event_handler=None):
                 else:
                     print(event)
 
-                if event_count >= 10:  # noqa: PLR2004
+                if event_count >= WEBSOCKET_EVENT_LIMIT:
                     break
 
         except asyncio.TimeoutError:

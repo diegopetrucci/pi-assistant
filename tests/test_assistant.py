@@ -2,7 +2,7 @@ import asyncio
 import base64
 import unittest
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
@@ -13,6 +13,7 @@ from pi_assistant.assistant import (
 )
 from pi_assistant.assistant import (
     LLMResponder,
+    LLMResponderConfig,
     TurnTranscriptAggregator,
 )
 
@@ -204,6 +205,46 @@ class DummyBadRequest(OpenAIBadRequestError):
 
 
 class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
+    async def test_init_uses_provided_config_without_overrides(self):
+        payload = {"output": []}
+        client = FakeOpenAIClient(payload)
+        config = LLMResponderConfig(enable_web_search=False, system_prompt=" hi ")
+
+        responder = LLMResponder(config=config, client=cast(AsyncOpenAI, client))
+
+        self.assertIs(responder._config, config)
+        self.assertFalse(responder._enable_web_search)
+        self.assertEqual(responder._system_prompt, "hi")
+
+    async def test_init_applies_overrides_without_mutating_original_config(self):
+        payload = {"output": []}
+        client = FakeOpenAIClient(payload)
+        config = LLMResponderConfig(enable_tts=False, tts_voice="base")
+
+        responder = LLMResponder(
+            config=config,
+            client=cast(AsyncOpenAI, client),
+            enable_tts=True,
+            tts_voice="alt",
+        )
+
+        self.assertIsNot(responder._config, config)
+        self.assertFalse(config.enable_tts)
+        self.assertEqual(config.tts_voice, "base")
+        self.assertTrue(responder._enable_tts)
+        self.assertEqual(responder._tts_voice, "alt")
+
+    async def test_init_raises_for_invalid_override_keys(self):
+        payload = {"output": []}
+        client = FakeOpenAIClient(payload)
+
+        bad_overrides = cast(Any, {"invalid_toggle": True})
+        with pytest.raises(TypeError, match="Invalid responder config override"):
+            LLMResponder(
+                client=cast(AsyncOpenAI, client),
+                **bad_overrides,
+            )
+
     async def test_generates_reply_and_respects_tools_flag(self):
         payload = {
             "output": [

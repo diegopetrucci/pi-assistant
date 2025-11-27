@@ -1,5 +1,8 @@
 # Repository Guidelines
 
+## Release considerations
+* The project has not shipped yet. There is no need to preserve any kind of backward-compatibility.
+
 ## Project Structure & Module Organization
 * `src/pi_assistant/` houses the CLI, audio capture, wake-word logic, and websocket client; keep new runtime code under the matching subpackage instead of the root.
 * Assistant-specific glue (Responses API client, reasoning controls, transcript aggregation, and speech playback helpers) belongs under `src/pi_assistant/assistant/` rather than mixing it into the CLI.
@@ -18,7 +21,7 @@
 * You can check test coverage with `uv run pytest --cov`
 
 ## Coding Style & Naming Conventions
-* Target Python 3.9+ and follow Ruff’s formatter—never hand-tune spacing after running it. Stick to 4-space indentation and type-annotated functions.
+* Target Python 3.11+ and follow Ruff’s formatter—never hand-tune spacing after running it. Stick to 4-space indentation and type-annotated functions.
 * Modules, packages, and files use `snake_case`; CLIs expose kebab-case flags (e.g., `--audio-mode`).
 * Keep public functions documented with concise docstrings that explain side effects or I/O expectations, and colocate constants next to the features they configure to avoid sprawling globals.
 

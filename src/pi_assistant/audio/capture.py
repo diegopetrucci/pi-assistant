@@ -23,6 +23,8 @@ from pi_assistant.exceptions import AssistantRestartRequired
 from ._sounddevice import sounddevice as sd
 from .utils import device_info_dict
 
+CALLBACK_DEBUG_LIMIT = 3
+
 
 class _AudioQueue(Protocol):
     async def get(self) -> bytes: ...
@@ -57,7 +59,7 @@ class AudioCapture:
         self.callback_count += 1
 
         # Debug: Print first few callbacks
-        if self.callback_count <= 3:  # noqa: PLR2004
+        if self.callback_count <= CALLBACK_DEBUG_LIMIT:
             verbose_print(
                 f"[DEBUG] Callback #{self.callback_count}: {len(indata)} frames", flush=True
             )

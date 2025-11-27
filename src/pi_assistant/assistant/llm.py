@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from dataclasses import dataclass
-from typing import Literal, Optional, Tuple, cast
+from dataclasses import dataclass, replace
+from typing import Iterator, Literal, Mapping, Optional, Tuple, TypedDict, cast
 
 from openai import AsyncOpenAI, BadRequestError
+from typing_extensions import Unpack
 
 from pi_assistant.cli.logging_utils import console_print, verbose_print
 from pi_assistant.config import (
@@ -31,6 +32,40 @@ VALID_REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high"}
 MINIMAL_INCOMPATIBLE_TOOLS = {"web_search"}
 
 
+@dataclass(slots=True)
+class LLMResponderConfig:
+    model: str = ASSISTANT_MODEL
+    system_prompt: str = ASSISTANT_SYSTEM_PROMPT
+    location_name: str = LOCATION_NAME
+    enable_web_search: bool = ASSISTANT_WEB_SEARCH_ENABLED
+    enable_tts: bool = ASSISTANT_TTS_ENABLED
+    use_responses_audio: bool = ASSISTANT_TTS_RESPONSES_ENABLED
+    tts_model: str = ASSISTANT_TTS_MODEL
+    tts_voice: str = ASSISTANT_TTS_VOICE
+    tts_format: str = ASSISTANT_TTS_FORMAT
+    tts_sample_rate: int = ASSISTANT_TTS_SAMPLE_RATE
+    language: str = ASSISTANT_LANGUAGE
+    reasoning_effort: Optional[str] = ASSISTANT_REASONING_EFFORT
+
+
+LLM_RESPONDER_CONFIG_FIELDS = frozenset(LLMResponderConfig.__dataclass_fields__.keys())
+
+
+class LLMResponderOverrides(TypedDict, total=False):
+    model: str
+    system_prompt: str
+    location_name: str
+    enable_web_search: bool
+    enable_tts: bool
+    use_responses_audio: bool
+    tts_model: str
+    tts_voice: str
+    tts_format: str
+    tts_sample_rate: int
+    language: str
+    reasoning_effort: Optional[str]
+
+
 @dataclass
 class LLMReply:
     """Structured assistant response with optional audio payload."""
@@ -41,43 +76,51 @@ class LLMReply:
     audio_sample_rate: Optional[int] = None
 
 
+def _validate_llm_overrides(overrides: Mapping[str, object]) -> None:
+    if not overrides:
+        return
+    invalid = set(overrides) - set(LLM_RESPONDER_CONFIG_FIELDS)
+    if invalid:
+        joined = ", ".join(sorted(invalid))
+        raise TypeError(f"Invalid responder config override(s): {joined}")
+
+
 class LLMResponder:
     """Thin wrapper around the OpenAI Responses API."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         *,
-        model: str = ASSISTANT_MODEL,
-        system_prompt: str = ASSISTANT_SYSTEM_PROMPT,
-        location_name: str = LOCATION_NAME,
-        enable_web_search: bool = ASSISTANT_WEB_SEARCH_ENABLED,
-        enable_tts: bool = ASSISTANT_TTS_ENABLED,
-        use_responses_audio: bool = ASSISTANT_TTS_RESPONSES_ENABLED,
-        tts_model: str = ASSISTANT_TTS_MODEL,
-        tts_voice: str = ASSISTANT_TTS_VOICE,
-        tts_format: str = ASSISTANT_TTS_FORMAT,
-        tts_sample_rate: int = ASSISTANT_TTS_SAMPLE_RATE,
-        language: str = ASSISTANT_LANGUAGE,
-        reasoning_effort: Optional[str] = ASSISTANT_REASONING_EFFORT,
+        config: Optional[LLMResponderConfig] = None,
         client: Optional[AsyncOpenAI] = None,
+        **overrides: Unpack[LLMResponderOverrides],
     ):
+        config_obj = config or LLMResponderConfig()
+        if overrides:
+            _validate_llm_overrides(overrides)
+            config_obj = replace(config_obj, **overrides)
+        self._config = config_obj
         self._client = client or AsyncOpenAI(api_key=OPENAI_API_KEY)
-        self._model = model
-        self._system_prompt = system_prompt.strip()
-        self._location_name = location_name.strip()
-        self._enable_web_search = enable_web_search
-        self._enable_tts = enable_tts
-        self._tts_model = tts_model
-        self._tts_voice = tts_voice
-        self._tts_format: AudioResponseFormat = self._normalize_response_format(tts_format)
-        self._tts_sample_rate = tts_sample_rate
-        self._language = language.strip() if language else ""
-        self._responses_audio_requested = enable_tts and use_responses_audio
+        self._model = self._config.model
+        self._system_prompt = self._config.system_prompt.strip()
+        self._location_name = self._config.location_name.strip()
+        self._enable_web_search = self._config.enable_web_search
+        self._enable_tts = self._config.enable_tts
+        self._tts_model = self._config.tts_model
+        self._tts_voice = self._config.tts_voice
+        self._tts_format: AudioResponseFormat = self._normalize_response_format(
+            self._config.tts_format
+        )
+        self._tts_sample_rate = self._config.tts_sample_rate
+        self._language = self._config.language.strip() if self._config.language else ""
+        self._responses_audio_requested = (
+            self._config.enable_tts and self._config.use_responses_audio
+        )
         self._responses_audio_supported = self._responses_audio_requested
         self._audio_fallback_logged = False
         self._phrase_audio_cache: dict[str, tuple[bytes, int]] = {}
         self._phrase_locks: dict[str, asyncio.Lock] = {}
-        normalized_reasoning = (reasoning_effort or "").strip().lower()
+        normalized_reasoning = (self._config.reasoning_effort or "").strip().lower()
         self._reasoning_effort = (
             normalized_reasoning if normalized_reasoning in VALID_REASONING_EFFORTS else None
         )
@@ -351,62 +394,96 @@ class LLMResponder:
         return audio_bytes, self._tts_sample_rate or None
 
     @staticmethod
-    def _extract_modalities(  # noqa: PLR0912
+    def _extract_modalities(
         response, default_sample_rate: Optional[int] = None
     ) -> tuple[Optional[str], Optional[bytes], Optional[str], Optional[int], int]:
         """Pull text and audio payloads out of a Responses API payload."""
 
-        if hasattr(response, "model_dump"):
-            data = response.model_dump()
-        else:  # pragma: no cover - fallback for unexpected response shape
-            data = response
+        payload = LLMResponder._normalize_response_payload(response)
+        blocks = LLMResponder._coerce_output_blocks(payload)
+        fragments, audio_chunks, audio_fmt, audio_rate = LLMResponder._collect_modalities(
+            blocks,
+            default_sample_rate=default_sample_rate,
+        )
+        combined_text = "\n".join(fragments).strip()
+        text_output = combined_text or None
+        audio_output = b"".join(audio_chunks) if audio_chunks else None
+        return text_output, audio_output, audio_fmt, audio_rate, len(audio_chunks)
 
-        output: list = []
-        if isinstance(data, dict):
-            raw_output = data.get("output")
+    @staticmethod
+    def _normalize_response_payload(response) -> object:
+        if hasattr(response, "model_dump"):
+            return response.model_dump()
+        return response  # pragma: no cover - fallback for unexpected response shape
+
+    @staticmethod
+    def _coerce_output_blocks(payload: object) -> list:
+        if isinstance(payload, dict):
+            raw_output = payload.get("output")
             if isinstance(raw_output, list):
-                output = raw_output
+                return raw_output
+        return []
+
+    @staticmethod
+    def _collect_modalities(
+        blocks: list,
+        *,
+        default_sample_rate: Optional[int],
+    ) -> tuple[list[str], list[bytes], Optional[str], Optional[int]]:
         fragments: list[str] = []
         audio_chunks: list[bytes] = []
         audio_format: Optional[str] = None
         audio_sample_rate: Optional[int] = default_sample_rate
-        audio_chunk_count = 0
+        for content in LLMResponder._iter_output_contents(blocks):
+            content_type = content.get("type")
+            if content_type == "output_text":
+                text = content.get("text", "").strip()
+                if text:
+                    fragments.append(text)
+                continue
+            if content_type == "output_audio":
+                (
+                    chunk,
+                    audio_format,
+                    audio_sample_rate,
+                ) = LLMResponder._decode_audio_chunk(content, audio_format, audio_sample_rate)
+                if chunk:
+                    audio_chunks.append(chunk)
+        return fragments, audio_chunks, audio_format, audio_sample_rate
 
-        for block in output:
+    @staticmethod
+    def _iter_output_contents(blocks: list) -> Iterator[dict]:
+        for block in blocks:
             if not isinstance(block, dict):
                 continue
             contents = block.get("content")
             if not isinstance(contents, list):
                 continue
             for content in contents:
-                if not isinstance(content, dict):
-                    continue
-                content_type = content.get("type")
-                if content_type == "output_text":
-                    text = content.get("text", "").strip()
-                    if text:
-                        fragments.append(text)
-                elif content_type == "output_audio":
-                    audio_blob = content.get("audio") or {}
-                    if not isinstance(audio_blob, dict):
-                        continue
-                    b64_data = audio_blob.get("data")
-                    if not b64_data:
-                        continue
-                    try:
-                        decoded = base64.b64decode(b64_data)
-                    except (ValueError, TypeError):  # pragma: no cover - invalid payload
-                        continue
-                    if decoded:
-                        audio_chunks.append(decoded)
-                        audio_format = audio_blob.get("format", audio_format)
-                        audio_sample_rate = audio_blob.get("sample_rate") or audio_sample_rate
-                        audio_chunk_count += 1
+                if isinstance(content, dict):
+                    yield content
 
-        combined = "\n".join(fragments).strip()
-        text_output = combined or None
-        audio_output = b"".join(audio_chunks) if audio_chunks else None
-        return text_output, audio_output, audio_format, audio_sample_rate, audio_chunk_count
+    @staticmethod
+    def _decode_audio_chunk(
+        content: dict,
+        existing_format: Optional[str],
+        existing_sample_rate: Optional[int],
+    ) -> tuple[Optional[bytes], Optional[str], Optional[int]]:
+        audio_blob = content.get("audio") or {}
+        if not isinstance(audio_blob, dict):
+            return None, existing_format, existing_sample_rate
+        b64_data = audio_blob.get("data")
+        if not b64_data:
+            return None, existing_format, existing_sample_rate
+        try:
+            decoded = base64.b64decode(b64_data)
+        except (ValueError, TypeError):  # pragma: no cover - invalid payload
+            return None, existing_format, existing_sample_rate
+        if not decoded:
+            return None, existing_format, existing_sample_rate
+        audio_format = audio_blob.get("format", existing_format)
+        sample_rate = audio_blob.get("sample_rate") or existing_sample_rate
+        return decoded, audio_format, sample_rate
 
 
-__all__ = ["LLMReply", "LLMResponder"]
+__all__ = ["LLMReply", "LLMResponder", "LLMResponderConfig"]
