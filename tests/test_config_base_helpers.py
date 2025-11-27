@@ -143,3 +143,16 @@ def test_env_parsing_helpers_fall_back_on_invalid_input(
     err = capsys.readouterr().err
     assert "Invalid value for SOME_INT='not-a-number';" in err
     assert "Invalid value for SOME_FLOAT='invalid';" in err
+
+
+def test_verbose_log_directory_defaults_to_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify VERBOSE_LOG_DIRECTORY resolves to the configured default path."""
+
+    monkeypatch.delenv("VERBOSE_LOG_DIRECTORY", raising=False)
+    monkeypatch.delenv("VERBOSE_LOG_CAPTURE_ENABLED", raising=False)
+
+    global base
+    base = importlib.reload(importlib.import_module("pi_assistant.config.base"))
+
+    expected = Path.home() / ".cache/pi-assistant/logs"
+    assert base.VERBOSE_LOG_DIRECTORY == expected
