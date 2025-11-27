@@ -54,6 +54,7 @@ def _env_int(name: str, default: int) -> int:
     try:
         return int(value)
     except (TypeError, ValueError):
+        _warn_invalid_env_value(name, value, default)
         return default
 
 
@@ -64,6 +65,7 @@ def _env_float(name: str, default: float) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
+        _warn_invalid_env_value(name, value, default)
         return default
 
 
@@ -88,7 +90,11 @@ def _persist_env_value(key: str, value: str) -> bool:
     replaced = False
 
     if ENV_PATH.exists():
-        existing_lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+        try:
+            existing_lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            sys.stderr.write(f"Unable to read {ENV_PATH}: {exc}\n")
+            return False
 
     new_lines: list[str] = []
     for line in existing_lines:
@@ -101,7 +107,12 @@ def _persist_env_value(key: str, value: str) -> bool:
     if not replaced:
         new_lines.append(f"{key}={value}")
 
-    ENV_PATH.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8")
+    contents = "\n".join(new_lines).rstrip()
+    try:
+        ENV_PATH.write_text((contents + "\n") if contents else "\n", encoding="utf-8")
+    except OSError as exc:
+        sys.stderr.write(f"Unable to write {ENV_PATH}: {exc}\n")
+        return False
     return True
 
 
@@ -135,6 +146,12 @@ def _remove_env_keys(keys: tuple[str, ...]) -> set[str]:
         os.environ.pop(key, None)
 
     return removed
+
+
+def _warn_invalid_env_value(name: str, value: str | None, default: object) -> None:
+    """Emit a warning when env overrides cannot be parsed."""
+
+    sys.stderr.write(f"Invalid value for {name}={value!r}; falling back to {default!r}.\n")
 
 
 _FIRST_LAUNCH_ENV_KEYS: tuple[str, ...] = (

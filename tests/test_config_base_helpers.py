@@ -4,9 +4,6 @@ from pathlib import Path
 
 import pytest
 
-os.environ.setdefault("OPENAI_API_KEY", "test-key")
-os.environ.setdefault("LOCATION_NAME", "Test City")
-
 EXPECTED_INT_VALUE = 42
 EXPECTED_FLOAT_VALUE = 0.5
 
@@ -19,12 +16,60 @@ def test_persist_env_value_updates_existing_entries(
     env_path = tmp_path / ".env"
     monkeypatch.setattr(base, "ENV_PATH", env_path)
 
-    base._persist_env_value("FOO", "1")
-    base._persist_env_value("BAR", "2")
-    base._persist_env_value("FOO", "updated")
+    assert base._persist_env_value("FOO", "1") is True
+    assert base._persist_env_value("BAR", "2") is True
+    assert base._persist_env_value("FOO", "updated") is True
 
     contents = env_path.read_text(encoding="utf-8")
     assert contents == "FOO=updated\nBAR=2\n"
+
+
+def test_persist_env_value_returns_false_on_write_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    env_path = tmp_path / ".env"
+    monkeypatch.setattr(base, "ENV_PATH", env_path)
+
+    original_write_text = Path.write_text
+
+    def fail_write_text(self, *args, **kwargs):
+        if self == env_path:
+            raise OSError("disk full")
+        return original_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_write_text)
+
+    success = base._persist_env_value("FOO", "1")
+
+    assert success is False
+    err = capsys.readouterr().err
+    assert "Unable to write" in err
+    assert "disk full" in err
+    assert not env_path.exists()
+
+
+def test_persist_env_value_returns_false_on_read_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text("EXISTING=1\n", encoding="utf-8")
+    monkeypatch.setattr(base, "ENV_PATH", env_path)
+
+    original_read_text = Path.read_text
+
+    def fail_read_text(self, *args, **kwargs):
+        if self == env_path:
+            raise OSError("permission denied")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fail_read_text)
+
+    success = base._persist_env_value("FOO", "2")
+
+    assert success is False
+    err = capsys.readouterr().err
+    assert "Unable to read" in err
+    assert "permission denied" in err
 
 
 def test_remove_env_keys_strips_requested_pairs(
@@ -83,3 +128,18 @@ def test_env_parsing_helpers_handle_types(monkeypatch: pytest.MonkeyPatch) -> No
     assert base._env_bool("FLAG", False) is True
     assert base._env_int("SOME_INT", 0) == EXPECTED_INT_VALUE
     assert base._env_float("SOME_FLOAT", 1.0) == EXPECTED_FLOAT_VALUE
+
+
+def test_env_parsing_helpers_fall_back_on_invalid_input(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("FLAG", "maybe")
+    monkeypatch.setenv("SOME_INT", "not-a-number")
+    monkeypatch.setenv("SOME_FLOAT", "invalid")
+
+    assert base._env_bool("FLAG", True) is False
+    assert base._env_int("SOME_INT", EXPECTED_INT_VALUE) == EXPECTED_INT_VALUE
+    assert base._env_float("SOME_FLOAT", EXPECTED_FLOAT_VALUE) == EXPECTED_FLOAT_VALUE
+    err = capsys.readouterr().err
+    assert "Invalid value for SOME_INT='not-a-number';" in err
+    assert "Invalid value for SOME_FLOAT='invalid';" in err

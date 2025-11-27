@@ -8,11 +8,6 @@ import pytest
 
 def _load_config_modules():
     # Ensure interactive prompts remain dormant during module import in tests.
-    os.environ.setdefault("OPENAI_API_KEY", "test-key")
-    os.environ.setdefault("LOCATION_NAME", "Test City")
-    os.environ.setdefault("ASSISTANT_MODEL", "gpt-5-nano-2025-08-07")
-    os.environ.setdefault("ASSISTANT_REASONING_EFFORT", "low")
-
     assistant_module = importlib.import_module("pi_assistant.config.assistant_settings")
     base_module = importlib.import_module("pi_assistant.config.base")
     return importlib.reload(assistant_module), importlib.reload(base_module)

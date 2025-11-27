@@ -226,11 +226,11 @@ def test_callback_returns_when_loop_missing(monkeypatch):
 
     called = False
 
-    def fail_enqueue(self, payload):
+    def record_enqueue_call(self, payload):
         nonlocal called
         called = True
 
-    monkeypatch.setattr(AudioCapture, "_enqueue_audio_bytes", fail_enqueue)
+    monkeypatch.setattr(AudioCapture, "_enqueue_audio_bytes", record_enqueue_call)
     capture.callback(np.zeros((2,), dtype=np.int16), frames=2, time_info=None, status=None)
 
     assert called is False

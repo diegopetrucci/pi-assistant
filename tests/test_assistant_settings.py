@@ -76,7 +76,7 @@ def test_coerce_assistant_model_key_supports_aliases() -> None:
 
 
 def test_normalize_assistant_model_choice_accepts_raw_model_id() -> None:
-    mini_model = str(assistant_settings_module._ASSISTANT_MODEL_CHOICES["mini"]["value"])
+    mini_model = str(assistant_settings_module.ASSISTANT_MODEL_REGISTRY["mini"]["id"])
     assert assistant_settings_module.normalize_assistant_model_choice(mini_model) == mini_model
 
 

@@ -1,9 +1,4 @@
-import os
-
 import pytest
-
-os.environ.setdefault("OPENAI_API_KEY", "test-key")
-os.environ.setdefault("VERBOSE_LOG_CAPTURE_ENABLED", "0")
 
 from pi_assistant.cli import logging_utils
 from pi_assistant.wake_word import StreamState
