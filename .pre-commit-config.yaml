@@ -20,7 +20,7 @@ repos:
         types: [python]
       - id: pytest-cov-threshold
         name: Ensure total coverage stays above 80%
-        entry: uv run pytest --cov=src/pi_assistant --cov-report=term --cov-fail-under=80
+        entry: uv run pytest --cov=src/pi_assistant --cov-report=term --cov-fail-under=90
         language: system
         pass_filenames: false
         types: [python]

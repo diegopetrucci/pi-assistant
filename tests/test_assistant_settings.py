@@ -1,5 +1,7 @@
 """Tests for assistant reasoning configuration helpers."""
 
+import io
+
 import pytest
 
 from pi_assistant.config import assistant_settings as assistant_settings_module
@@ -51,3 +53,75 @@ def test_resolve_reasoning_effort_returns_valid_choice_when_allowed(
     )
 
     assert result == "medium"
+
+
+def test_prompt_for_reasoning_effort_returns_none_without_tty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeStdin(io.StringIO):
+        def isatty(self) -> bool:
+            return False
+
+    monkeypatch.setattr(assistant_settings_module.sys, "stdin", _FakeStdin())
+
+    result = assistant_settings_module._prompt_for_reasoning_effort("low", ("low", "high"))
+
+    assert result is None
+
+
+def test_coerce_assistant_model_key_supports_aliases() -> None:
+    assert assistant_settings_module._coerce_assistant_model_key("  FAST ") == "mini"
+    assert assistant_settings_module._coerce_assistant_model_key("5") == "5.1"
+    assert assistant_settings_module._coerce_assistant_model_key("") is None
+
+
+def test_normalize_assistant_model_choice_accepts_raw_model_id() -> None:
+    mini_model = str(assistant_settings_module.ASSISTANT_MODEL_REGISTRY["mini"]["id"])
+    assert assistant_settings_module.normalize_assistant_model_choice(mini_model) == mini_model
+
+
+def test_resolve_assistant_model_prefers_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ASSISTANT_MODEL", "custom-model")
+
+    result = assistant_settings_module._resolve_assistant_model("default-model")
+
+    assert result == "custom-model"
+
+
+def test_resolve_assistant_model_persists_prompted_choice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ASSISTANT_MODEL", raising=False)
+    monkeypatch.setattr(assistant_settings_module.sys, "stderr", io.StringIO())
+    monkeypatch.setattr(
+        assistant_settings_module, "_prompt_for_assistant_model", lambda default: "prompted-model"
+    )
+    persisted: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        assistant_settings_module,
+        "_persist_env_value",
+        lambda key, value: persisted.append((key, value)),
+    )
+
+    result = assistant_settings_module._resolve_assistant_model("fallback-model")
+
+    assert result == "prompted-model"
+    assert persisted == [("ASSISTANT_MODEL", "prompted-model")]
+    assert assistant_settings_module.os.environ["ASSISTANT_MODEL"] == "prompted-model"
+
+
+def test_resolve_reasoning_effort_warns_on_invalid_env(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("ASSISTANT_REASONING_EFFORT", "turbo")
+    monkeypatch.setattr(
+        assistant_settings_module, "_prompt_for_reasoning_effort", lambda *_, **__: None
+    )
+
+    result = assistant_settings_module._resolve_reasoning_effort("low", ("low", "medium"))
+
+    assert result == "low"
+    err = capsys.readouterr().err
+    assert "Invalid ASSISTANT_REASONING_EFFORT" in err

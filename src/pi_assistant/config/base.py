@@ -49,12 +49,24 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 def _env_int(name: str, default: int) -> int:
     value = os.getenv(name)
-    return int(value) if value is not None else default
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        _warn_invalid_env_value(name, value, default)
+        return default
 
 
 def _env_float(name: str, default: float) -> float:
     value = os.getenv(name)
-    return float(value) if value is not None else default
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        _warn_invalid_env_value(name, value, default)
+        return default
 
 
 def _env_path(name: str, default: str) -> Path:
@@ -71,14 +83,18 @@ def _normalize_language(value: str | None, fallback: str = "en") -> str:
     return trimmed or fallback
 
 
-def _persist_env_value(key: str, value: str) -> None:
-    """Write or update a key=value entry in the repo's .env file."""
+def _persist_env_value(key: str, value: str) -> bool:
+    """Write or update a key=value entry in the repo's .env file, returning True on success."""
 
     existing_lines: list[str] = []
     replaced = False
 
     if ENV_PATH.exists():
-        existing_lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+        try:
+            existing_lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            sys.stderr.write(f"Unable to read {ENV_PATH}: {exc}\n")
+            return False
 
     new_lines: list[str] = []
     for line in existing_lines:
@@ -91,7 +107,13 @@ def _persist_env_value(key: str, value: str) -> None:
     if not replaced:
         new_lines.append(f"{key}={value}")
 
-    ENV_PATH.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8")
+    contents = "\n".join(new_lines).rstrip()
+    try:
+        ENV_PATH.write_text((contents + "\n") if contents else "\n", encoding="utf-8")
+    except OSError as exc:
+        sys.stderr.write(f"Unable to write {ENV_PATH}: {exc}\n")
+        return False
+    return True
 
 
 def _remove_env_keys(keys: tuple[str, ...]) -> set[str]:
@@ -124,6 +146,12 @@ def _remove_env_keys(keys: tuple[str, ...]) -> set[str]:
         os.environ.pop(key, None)
 
     return removed
+
+
+def _warn_invalid_env_value(name: str, value: str | None, default: object) -> None:
+    """Emit a warning when env overrides cannot be parsed."""
+
+    sys.stderr.write(f"Invalid value for {name}={value!r}; falling back to {default!r}.\n")
 
 
 _FIRST_LAUNCH_ENV_KEYS: tuple[str, ...] = (

@@ -1,13 +1,9 @@
 import asyncio
-import os
 import sys
 import types
 from typing import Any, Optional, cast
 
 import pytest
-
-os.environ.setdefault("OPENAI_API_KEY", "test-key")
-os.environ.setdefault("LOCATION_NAME", "Test City")
 
 if "audioop" not in sys.modules:
     audioop_stub = types.ModuleType("audioop")
