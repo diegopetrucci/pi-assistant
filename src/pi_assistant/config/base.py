@@ -302,7 +302,7 @@ if VERBOSE_LOG_CAPTURE_ENABLED:
     default_verbose_dir = (
         _DEFAULT_VERBOSE_DIR.strip()
         if isinstance(_DEFAULT_VERBOSE_DIR, str) and _DEFAULT_VERBOSE_DIR.strip()
-        else "logs"
+        else str(Path.home() / ".cache/pi-assistant/logs")
     )
 
     VERBOSE_LOG_DIRECTORY = _env_path("VERBOSE_LOG_DIRECTORY", default_verbose_dir)

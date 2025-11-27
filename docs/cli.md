@@ -89,7 +89,7 @@ Two delivery paths exist:
 
 ## Logging
 
-Verbose logs write to `logs/<iso-timestamp>.log` for every invocation. Configure with:
+Verbose logs write to `~/.cache/pi-assistant/logs/<iso-timestamp>.log` for every invocation. Configure with:
 
 - `VERBOSE_LOG_CAPTURE_ENABLED=0` to disable file logging.
 - `VERBOSE_LOG_DIRECTORY=/path/to/logs` to redirect the folder.
