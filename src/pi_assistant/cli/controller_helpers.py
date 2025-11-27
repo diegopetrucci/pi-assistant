@@ -119,6 +119,8 @@ def _maybe_schedule_confirmation_cue(
     def _log_task_error(fut: asyncio.Task):
         try:
             fut.result()
+        except asyncio.CancelledError:
+            verbose_print(f"{CONTROL_LOG_LABEL} Confirmation cue cancelled.")
         except Exception as exc:  # pragma: no cover - host audio failure
             verbose_print(f"{CONTROL_LOG_LABEL} Confirmation cue failed: {exc}")
 

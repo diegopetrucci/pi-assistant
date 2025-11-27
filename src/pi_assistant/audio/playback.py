@@ -69,13 +69,41 @@ class SpeechPlayer:
             raise
 
     def _prepare_samples(self, audio_bytes: bytes, source_rate: int) -> np.ndarray:
+        aligned_bytes = self._ensure_pcm_alignment(audio_bytes)
+        if not aligned_bytes:
+            return np.array([], dtype=np.int16)
+
         if source_rate == self._playback_sample_rate:
-            return np.frombuffer(audio_bytes, dtype=np.int16).copy()
+            return np.frombuffer(aligned_bytes, dtype=np.int16).copy()
 
         resampler = LinearResampler(source_rate, self._playback_sample_rate)
-        samples = resampler.process(audio_bytes)
+        samples = resampler.process(aligned_bytes)
         self._warn_if_resampling(source_rate, self._playback_sample_rate)
         return samples
+
+    def _ensure_pcm_alignment(self, audio_bytes: bytes) -> bytes:
+        if not audio_bytes:
+            return b""
+        remainder = len(audio_bytes) % 2
+        if remainder == 0:
+            return audio_bytes
+        aligned = audio_bytes[: len(audio_bytes) - remainder]
+        dropped = len(audio_bytes) - len(aligned)
+        if aligned:
+            print(
+                (
+                    "[AUDIO] Discarding "
+                    f"{dropped} trailing byte(s) from assistant audio "
+                    "to align PCM16 frames."
+                ),
+                flush=True,
+            )
+        else:
+            print(
+                "[AUDIO] Dropping assistant audio payload with incomplete PCM16 frame alignment.",
+                flush=True,
+            )
+        return aligned
 
     def _detect_output_device(self) -> Optional[int]:
         device = sd.default.device

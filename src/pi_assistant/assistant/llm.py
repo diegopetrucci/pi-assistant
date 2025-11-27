@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 from dataclasses import dataclass, replace
-from typing import Iterator, Literal, Mapping, Optional, Tuple, TypedDict, cast
+from typing import Literal, Mapping, Optional, Tuple, TypedDict, cast
 
 from openai import AsyncOpenAI, BadRequestError
 from typing_extensions import Unpack
 
+from pi_assistant.assistant.llm_payloads import extract_modalities
 from pi_assistant.cli.logging_utils import console_print, verbose_print
 from pi_assistant.config import (
     ASSISTANT_LANGUAGE,
@@ -140,6 +140,24 @@ class LLMResponder:
         if not prompt:
             return None
 
+        messages = self._build_messages(prompt)
+
+        request_kwargs = {
+            "model": self._model,
+            "input": messages,
+        }
+        if self._enable_web_search:
+            request_kwargs["tools"] = [{"type": "web_search"}]
+        if self._reasoning_effort:
+            request_kwargs["reasoning"] = {"effort": self._reasoning_effort}
+
+        extra_body = self._build_audio_extra_body()
+        console_print("[ASSISTANT] Awaiting OpenAI response...")
+        response = await self._send_response_request(request_kwargs, extra_body)
+
+        return await self._reply_from_response(response)
+
+    def _build_messages(self, prompt: str) -> list[dict]:
         messages: list[dict] = []
         if self._system_prompt:
             messages.append(
@@ -160,12 +178,8 @@ class LLMResponder:
                     ],
                 }
             )
-        if self._language:
-            language_instruction = (
-                f"Always interpret the conversation in {self._language}. "
-                f"Respond strictly in {self._language}, even if the user speaks another language "
-                "or the transcript seems to switch languages."
-            )
+        language_instruction = self._language_instruction()
+        if language_instruction:
             messages.append(
                 {
                     "role": "system",
@@ -178,43 +192,32 @@ class LLMResponder:
                 "content": [{"type": "input_text", "text": prompt}],
             }
         )
+        return messages
 
-        request_kwargs = {
-            "model": self._model,
-            "input": messages,
-        }
-        if self._enable_web_search:
-            request_kwargs["tools"] = [{"type": "web_search"}]
-        if self._reasoning_effort:
-            request_kwargs["reasoning"] = {"effort": self._reasoning_effort}
-
-        extra_body = self._build_audio_extra_body()
-        console_print("[ASSISTANT] Awaiting OpenAI response...")
-        response = await self._send_response_request(request_kwargs, extra_body)
-
-        text, audio_bytes, audio_format, sample_rate, chunk_count = self._extract_modalities(
-            response, default_sample_rate=self._tts_sample_rate
+    def _language_instruction(self) -> Optional[str]:
+        if not self._language:
+            return None
+        return (
+            f"Always interpret the conversation in {self._language}. "
+            f"Respond strictly in {self._language}, even if the user speaks another language "
+            "or the transcript seems to switch languages."
         )
-        console_print(
-            "[ASSISTANT] Response received "
-            f"(text={'yes' if text else 'no'}, audio_chunks={chunk_count})"
-        )
-        if self._enable_tts:
-            if audio_bytes:
-                verbose_print(
-                    f"[ASSISTANT] Received {chunk_count} audio chunk(s) "
-                    f"({len(audio_bytes)} bytes @ {sample_rate or 'unknown'} Hz, "
-                    f"format={audio_format or 'unknown'})"
-                )
-            else:
-                console_print("[ASSISTANT] No audio chunks returned; using text-only reply.")
-        if self._enable_tts and audio_bytes is None and text:
-            fallback_audio, fallback_rate = await self._synthesize_audio(text)
-            if fallback_audio:
-                audio_bytes = fallback_audio
-                audio_format = self._tts_format
-                sample_rate = fallback_rate or sample_rate
 
+    async def _reply_from_response(self, response) -> Optional[LLMReply]:
+        (
+            text,
+            audio_bytes,
+            audio_format,
+            sample_rate,
+            chunk_count,
+        ) = extract_modalities(response, default_sample_rate=self._tts_sample_rate)
+        self._log_modalities_summary(text, audio_bytes, audio_format, sample_rate, chunk_count)
+        audio_bytes, audio_format, sample_rate = await self._ensure_audio_payload(
+            text,
+            audio_bytes,
+            audio_format,
+            sample_rate,
+        )
         if text is None and audio_bytes is None:
             return None
         return LLMReply(
@@ -223,6 +226,54 @@ class LLMResponder:
             audio_format=audio_format,
             audio_sample_rate=sample_rate,
         )
+
+    def _log_modalities_summary(
+        self,
+        text: Optional[str],
+        audio_bytes: Optional[bytes],
+        audio_format: Optional[str],
+        sample_rate: Optional[int],
+        chunk_count: int,
+    ) -> None:
+        console_print(
+            "[ASSISTANT] Response received "
+            f"(text={'yes' if text else 'no'}, audio_chunks={chunk_count})"
+        )
+        if not self._enable_tts:
+            return
+        if audio_bytes:
+            verbose_print(
+                f"[ASSISTANT] Received {chunk_count} audio chunk(s) "
+                f"({len(audio_bytes)} bytes @ {sample_rate or 'unknown'} Hz, "
+                f"format={audio_format or 'unknown'})"
+            )
+            return
+        console_print(
+            "[ASSISTANT] Assistant audio unavailable "
+            f"({self._describe_audio_unavailability(chunk_count)}); "
+            "falling back to synthesized speech."
+        )
+
+    async def _ensure_audio_payload(
+        self,
+        text: Optional[str],
+        audio_bytes: Optional[bytes],
+        audio_format: Optional[str],
+        sample_rate: Optional[int],
+    ) -> tuple[Optional[bytes], Optional[str], Optional[int]]:
+        if not self._enable_tts or audio_bytes is not None or text is None:
+            return audio_bytes, audio_format, sample_rate
+        console_print("[ASSISTANT] Synthesizing fallback audio via the Audio API...")
+        fallback_audio, fallback_rate = await self._synthesize_audio(text)
+        if fallback_audio:
+            new_sample_rate = fallback_rate or sample_rate or self._tts_sample_rate
+            console_print(
+                "[ASSISTANT] Fallback audio ready "
+                f"({len(fallback_audio)} bytes @ {new_sample_rate or 'unknown'} Hz)."
+            )
+            return fallback_audio, self._tts_format, new_sample_rate
+        console_print("[ASSISTANT] Fallback synthesis failed; assistant reply will be text-only.")
+        return None, audio_format, sample_rate
 
     def peek_phrase_audio(self, text: str) -> Optional[Tuple[bytes, int]]:
         """Return cached audio for a fixed phrase if it exists."""
@@ -290,6 +341,15 @@ class LLMResponder:
 
     def set_responses_audio_supported(self, supported: bool) -> None:
         self._responses_audio_supported = bool(supported) and self._responses_audio_requested
+
+    def _describe_audio_unavailability(self, chunk_count: int) -> str:
+        if not self._responses_audio_requested:
+            return "Responses audio disabled"
+        if not self._responses_audio_supported:
+            return "Responses audio probe failed"
+        if chunk_count == 0:
+            return "response returned zero audio chunks"
+        return "response audio payload was empty"
 
     @property
     def responses_audio_supported(self) -> bool:
@@ -389,101 +449,21 @@ class LLMResponder:
                 response_format=self._tts_format,
             )
             audio_bytes = await response.aread()
-        except Exception:
+        except Exception as exc:
+            verbose_print(f"[ASSISTANT] Audio API synthesis failed: {exc}")
             return None, None
+        verbose_print(
+            "[ASSISTANT] Audio API returned fallback audio "
+            f"({len(audio_bytes)} bytes @ {self._tts_sample_rate or 'unknown'} Hz)."
+        )
         return audio_bytes, self._tts_sample_rate or None
 
     @staticmethod
     def _extract_modalities(
-        response, default_sample_rate: Optional[int] = None
+        response,
+        default_sample_rate: Optional[int] = None,
     ) -> tuple[Optional[str], Optional[bytes], Optional[str], Optional[int], int]:
-        """Pull text and audio payloads out of a Responses API payload."""
-
-        payload = LLMResponder._normalize_response_payload(response)
-        blocks = LLMResponder._coerce_output_blocks(payload)
-        fragments, audio_chunks, audio_fmt, audio_rate = LLMResponder._collect_modalities(
-            blocks,
-            default_sample_rate=default_sample_rate,
-        )
-        combined_text = "\n".join(fragments).strip()
-        text_output = combined_text or None
-        audio_output = b"".join(audio_chunks) if audio_chunks else None
-        return text_output, audio_output, audio_fmt, audio_rate, len(audio_chunks)
-
-    @staticmethod
-    def _normalize_response_payload(response) -> object:
-        if hasattr(response, "model_dump"):
-            return response.model_dump()
-        return response  # pragma: no cover - fallback for unexpected response shape
-
-    @staticmethod
-    def _coerce_output_blocks(payload: object) -> list:
-        if isinstance(payload, dict):
-            raw_output = payload.get("output")
-            if isinstance(raw_output, list):
-                return raw_output
-        return []
-
-    @staticmethod
-    def _collect_modalities(
-        blocks: list,
-        *,
-        default_sample_rate: Optional[int],
-    ) -> tuple[list[str], list[bytes], Optional[str], Optional[int]]:
-        fragments: list[str] = []
-        audio_chunks: list[bytes] = []
-        audio_format: Optional[str] = None
-        audio_sample_rate: Optional[int] = default_sample_rate
-        for content in LLMResponder._iter_output_contents(blocks):
-            content_type = content.get("type")
-            if content_type == "output_text":
-                text = content.get("text", "").strip()
-                if text:
-                    fragments.append(text)
-                continue
-            if content_type == "output_audio":
-                (
-                    chunk,
-                    audio_format,
-                    audio_sample_rate,
-                ) = LLMResponder._decode_audio_chunk(content, audio_format, audio_sample_rate)
-                if chunk:
-                    audio_chunks.append(chunk)
-        return fragments, audio_chunks, audio_format, audio_sample_rate
-
-    @staticmethod
-    def _iter_output_contents(blocks: list) -> Iterator[dict]:
-        for block in blocks:
-            if not isinstance(block, dict):
-                continue
-            contents = block.get("content")
-            if not isinstance(contents, list):
-                continue
-            for content in contents:
-                if isinstance(content, dict):
-                    yield content
-
-    @staticmethod
-    def _decode_audio_chunk(
-        content: dict,
-        existing_format: Optional[str],
-        existing_sample_rate: Optional[int],
-    ) -> tuple[Optional[bytes], Optional[str], Optional[int]]:
-        audio_blob = content.get("audio") or {}
-        if not isinstance(audio_blob, dict):
-            return None, existing_format, existing_sample_rate
-        b64_data = audio_blob.get("data")
-        if not b64_data:
-            return None, existing_format, existing_sample_rate
-        try:
-            decoded = base64.b64decode(b64_data)
-        except (ValueError, TypeError):  # pragma: no cover - invalid payload
-            return None, existing_format, existing_sample_rate
-        if not decoded:
-            return None, existing_format, existing_sample_rate
-        audio_format = audio_blob.get("format", existing_format)
-        sample_rate = audio_blob.get("sample_rate") or existing_sample_rate
-        return decoded, audio_format, sample_rate
+        return extract_modalities(response, default_sample_rate=default_sample_rate)
 
 
 __all__ = ["LLMReply", "LLMResponder", "LLMResponderConfig"]

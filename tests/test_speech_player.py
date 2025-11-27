@@ -101,6 +101,20 @@ def test_prepare_samples_resamples_when_needed(monkeypatch):
     assert resampled.size > 0
 
 
+def test_prepare_samples_trims_partial_frame(monkeypatch, capsys):
+    dummy_sd = DummySD()
+    monkeypatch.setattr(playback_module, "sd", dummy_sd)
+    player = SpeechPlayer()
+
+    odd_length_payload = b"\x00\x10\xff"
+    samples = player._prepare_samples(odd_length_payload, source_rate=player._playback_sample_rate)
+
+    assert samples.dtype == np.int16
+    assert samples.size == 1
+    out = capsys.readouterr().out
+    assert "Discarding 1 trailing byte" in out
+
+
 def test_select_playback_rate_logs_override_once(monkeypatch, capsys):
     dummy_sd = DummySD()
     dummy_sd.output_info = {"name": "Dummy output", "default_samplerate": 22050}
