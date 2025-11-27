@@ -94,7 +94,9 @@ def _prompt_for_wake_word_choice(default_name: str) -> str | None:
 
 
 def _persist_wake_word_choice(name: str) -> None:
-    _persist_env_value("WAKE_WORD_NAME", name)
+    if not _persist_env_value("WAKE_WORD_NAME", name):
+        sys.stderr.write(f"Failed to persist WAKE_WORD_NAME={name} to .env\n")
+        return
     os.environ["WAKE_WORD_NAME"] = name
     sys.stderr.write(f"Saved WAKE_WORD_NAME={name} to .env\n\n")
 

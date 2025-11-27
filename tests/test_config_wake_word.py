@@ -141,15 +141,34 @@ def test_persist_wake_word_choice_sets_env_and_logs(monkeypatch: pytest.MonkeyPa
     recorded: dict[str, str] = {}
     stderr = io.StringIO()
     monkeypatch.setattr(wake_word.sys, "stderr", stderr, raising=False)
-    monkeypatch.setattr(
-        wake_word,
-        "_persist_env_value",
-        lambda key, value: recorded.update({key: value}),
-        raising=False,
-    )
+
+    def record_env(key: str, value: str) -> bool:
+        recorded[key] = value
+        return True
+
+    monkeypatch.setattr(wake_word, "_persist_env_value", record_env, raising=False)
 
     wake_word._persist_wake_word_choice("hey_pi")
 
     assert os.environ["WAKE_WORD_NAME"] == "hey_pi"
     assert recorded == {"WAKE_WORD_NAME": "hey_pi"}
     assert "Saved WAKE_WORD_NAME=hey_pi" in stderr.getvalue()
+
+
+def test_persist_wake_word_choice_logs_when_persist_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("WAKE_WORD_NAME", raising=False)
+    stderr = io.StringIO()
+    monkeypatch.setattr(wake_word.sys, "stderr", stderr, raising=False)
+    monkeypatch.setattr(
+        wake_word,
+        "_persist_env_value",
+        lambda key, value: False,
+        raising=False,
+    )
+
+    wake_word._persist_wake_word_choice("hey_pi")
+
+    assert "WAKE_WORD_NAME" not in os.environ
+    assert "Failed to persist WAKE_WORD_NAME=hey_pi" in stderr.getvalue()

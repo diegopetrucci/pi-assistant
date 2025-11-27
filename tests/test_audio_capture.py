@@ -116,7 +116,7 @@ def test_first_available_input_device_raises_when_none(monkeypatch):
 
     capture = AudioCapture()
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="No audio input devices"):
         capture._first_available_input_device()
 
 
@@ -329,7 +329,7 @@ def test_select_input_device_raises_when_no_options(monkeypatch):
 
     capture = AudioCapture()
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="Unable to query audio devices"):
         capture._select_input_device()
 
 
@@ -355,7 +355,7 @@ def test_first_available_input_device_query_failure(monkeypatch):
 
     capture = AudioCapture()
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="Unable to query audio devices"):
         capture._first_available_input_device()
 
 
@@ -482,7 +482,7 @@ def test_start_stream_auto_updates_env_when_hint_available(monkeypatch, capsys):
 
     loop = asyncio.new_event_loop()
     try:
-        with pytest.raises(RuntimeError):
+        with pytest.raises(RuntimeError, match="Launch pi-assistant again"):
             capture.start_stream(loop=loop)
     finally:
         loop.close()
@@ -512,7 +512,7 @@ def test_start_stream_reports_samplerate_hint_when_no_fallback(monkeypatch):
 
     loop = asyncio.new_event_loop()
     try:
-        with pytest.raises(RuntimeError) as excinfo:
+        with pytest.raises(RuntimeError, match="SAMPLE_RATE") as excinfo:
             capture.start_stream(loop=loop)
     finally:
         loop.close()

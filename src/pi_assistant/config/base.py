@@ -49,12 +49,22 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 def _env_int(name: str, default: int) -> int:
     value = os.getenv(name)
-    return int(value) if value is not None else default
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _env_float(name: str, default: float) -> float:
     value = os.getenv(name)
-    return float(value) if value is not None else default
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _env_path(name: str, default: str) -> Path:
@@ -71,8 +81,8 @@ def _normalize_language(value: str | None, fallback: str = "en") -> str:
     return trimmed or fallback
 
 
-def _persist_env_value(key: str, value: str) -> None:
-    """Write or update a key=value entry in the repo's .env file."""
+def _persist_env_value(key: str, value: str) -> bool:
+    """Write or update a key=value entry in the repo's .env file, returning True on success."""
 
     existing_lines: list[str] = []
     replaced = False
@@ -92,6 +102,7 @@ def _persist_env_value(key: str, value: str) -> None:
         new_lines.append(f"{key}={value}")
 
     ENV_PATH.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8")
+    return True
 
 
 def _remove_env_keys(keys: tuple[str, ...]) -> set[str]:
