@@ -2,6 +2,7 @@
 
 Required:
 - [ ] update the readme, agents, etc
+- [ ] fail start if no mic or speakers are detected
 - [ ] make the CLI flags shorter, no need to prefix them with `assistant`
 - [ ] make the assistant reply even more succint
 - [ ] set default model to nano

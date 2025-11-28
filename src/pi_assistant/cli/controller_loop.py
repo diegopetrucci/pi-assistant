@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import sys
 from collections.abc import Callable
 from typing import Any, Optional
@@ -42,7 +43,25 @@ from pi_assistant.wake_word import (
     WakeWordEngine,
 )
 
-from .controller_helpers import ResponseLifecycleHooks, should_ignore_server_stop_event
+from .controller_actors import (
+    AssistantResponderActor,
+    SilenceActor,
+    SpeechGateActor,
+    SpeechGateActorConfig,
+    SpeechGateActorDependencies,
+    StreamUploaderActor,
+    WakeWordActor,
+    WakeWordActorDependencies,
+)
+from .controller_events import (
+    AudioChunkEvent,
+    ControllerEventBus,
+    ManualStopEvent,
+    ServerStopEvent,
+    StateTransitionEvent,
+    StateTransitionNotification,
+)
+from .controller_helpers import ResponseLifecycleHooks
 from .controller_loop_bindings import (
     ControllerLoopBindings,
     build_controller_loop_bindings,
@@ -97,6 +116,9 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
         self._session_id = uuid4().hex
         self._turn_sequence = 0
         self._active_turn_id: str | None = None
+        self._event_bus: ControllerEventBus | None = None
+        self._shutdown_event: asyncio.Event | None = None
+        self._actors: list[Any] = []
 
     def _build_task_factory(self) -> Callable[[], asyncio.Task]:
         def _factory() -> asyncio.Task:
@@ -132,10 +154,20 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
 
     async def run(self) -> None:
         self._log_startup()
+        self._shutdown_event = asyncio.Event()
+        self._event_bus = ControllerEventBus()
+        self._install_actors()
+        tasks = [
+            asyncio.create_task(self._event_bus.run(), name="controller-event-bus"),
+            asyncio.create_task(self._run_audio_producer(), name="controller-audio-producer"),
+            asyncio.create_task(self._watch_stop_signal(), name="controller-stop-signal"),
+            asyncio.create_task(
+                self._watch_server_stop_signal(),
+                name="controller-server-stop",
+            ),
+        ]
         try:
-            while True:
-                audio_bytes = await self.audio_capture.get_audio_chunk()
-                await self._process_chunk(audio_bytes)
+            await asyncio.gather(*tasks)
         except asyncio.CancelledError:
             processed_chunks = self.state_manager.chunk_count
             self._verbose_print(
@@ -146,9 +178,145 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
             print(f"{ERROR_LOG_LABEL} Audio controller error: {exc}", file=sys.stderr)
             raise
         finally:
+            if self._shutdown_event:
+                self._shutdown_event.set()
             self._clear_server_stop_timeout(cause="shutdown")
+            if self._event_bus:
+                await self._event_bus.shutdown()
+            for task in tasks:
+                task.cancel()
+            gather_results = await asyncio.gather(*tasks, return_exceptions=True)
+            for result in gather_results:
+                if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
+                    print(
+                        f"{ERROR_LOG_LABEL} Exception during task cancellation: {result}",
+                        file=sys.stderr,
+                    )
             await self._await_server_stop_timeout_task()
             await self.response_tasks.drain()
+
+    def _install_actors(self) -> None:
+        if not self._event_bus:
+            return
+
+        async def _notify_transition(
+            previous: StreamState | None,
+            current: StreamState,
+            notification: StateTransitionNotification,
+        ) -> None:
+            await self._notify_state_transition(
+                previous,
+                current,
+                notification=notification,
+            )
+
+        def _clear_server_stop_timeout(cause: str) -> None:
+            self._clear_server_stop_timeout(cause=cause)
+
+        self._actors = [
+            WakeWordActor(
+                bus=self._event_bus,
+                deps=WakeWordActorDependencies(
+                    state_manager=self.state_manager,
+                    silence_tracker=self.silence_tracker,
+                    pre_roll=self.pre_roll,
+                    run_wake_word_detection=self._run_wake_word_detection,
+                    verbose_print=self._verbose_print,
+                    wake_engine=self.wake_engine,
+                ),
+            ),
+            SilenceActor(
+                bus=self._event_bus,
+                auto_stop_enabled=self._auto_stop_enabled,
+                observe_streaming_silence=self._observe_streaming_silence,
+                silence_tracker=self.silence_tracker,
+            ),
+            StreamUploaderActor(
+                bus=self._event_bus,
+                send_preroll_payload=self._send_preroll_payload,
+                forward_audio=self._forward_audio,
+            ),
+            AssistantResponderActor(
+                bus=self._event_bus,
+                finalize_turn=self._finalize_turn,
+            ),
+            SpeechGateActor(
+                bus=self._event_bus,
+                deps=SpeechGateActorDependencies(
+                    state_manager=self.state_manager,
+                    response_tasks=self.response_tasks,
+                    transcript_buffer=self.context.transcript_buffer,
+                    silence_tracker=self.silence_tracker,
+                    enter_streaming_state=self._enter_streaming_state,
+                    notify_state_transition=_notify_transition,
+                    log_state_transition=self._log_state_transition,
+                    reset_stream_resources=self._reset_stream_resources,
+                    clear_server_stop_timeout=_clear_server_stop_timeout,
+                    schedule_server_stop_timeout=self._schedule_server_stop_timeout,
+                    verbose_print=self._verbose_print,
+                ),
+                config=SpeechGateActorConfig(
+                    auto_stop_enabled=self._auto_stop_enabled,
+                    server_stop_min_silence_seconds=self._server_stop_min_silence_seconds,
+                ),
+            ),
+        ]
+
+    async def _run_audio_producer(self) -> None:
+        chunk_task: Optional[asyncio.Task[bytes]] = None
+        try:
+            while not (self._shutdown_event and self._shutdown_event.is_set()):
+                if chunk_task is None:
+                    chunk_task = asyncio.create_task(self.audio_capture.get_audio_chunk())
+                done, _ = await asyncio.wait({chunk_task}, timeout=0.1)
+                if not done:
+                    continue
+                audio_bytes = chunk_task.result()
+                chunk_task = None
+                if len(audio_bytes) % self.bytes_per_frame != 0:
+                    print(
+                        f"{ERROR_LOG_LABEL} Dropping malformed audio chunk: "
+                        f"{len(audio_bytes)} bytes (expected multiple of {self.bytes_per_frame}).",
+                        file=sys.stderr,
+                    )
+                    continue
+                chunk_index = self.state_manager.increment_chunk_count()
+                if self._event_bus:
+                    await self._event_bus.publish(
+                        AudioChunkEvent(chunk=audio_bytes, index=chunk_index)
+                    )
+                self._log_chunk_progress(chunk_index)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            if chunk_task:
+                chunk_task.cancel()
+                with contextlib.suppress(Exception):
+                    await chunk_task
+
+    async def _watch_stop_signal(self) -> None:
+        try:
+            while True:
+                await self.context.stop_signal.wait()
+                if self._shutdown_event and self._shutdown_event.is_set():
+                    return
+                self.context.stop_signal.clear()
+                if self._event_bus:
+                    await self._event_bus.publish(ManualStopEvent())
+        except asyncio.CancelledError:
+            pass
+
+    async def _watch_server_stop_signal(self) -> None:
+        try:
+            while True:
+                await self.context.speech_stopped_signal.wait()
+                if self._shutdown_event and self._shutdown_event.is_set():
+                    return
+                self.context.speech_stopped_signal.clear()
+                if self._event_bus:
+                    await self._event_bus.publish(ServerStopEvent())
+        except asyncio.CancelledError:
+            pass
 
     def _log_startup(self) -> None:
         self._verbose_print("[INFO] Starting audio controller...")
@@ -163,100 +331,10 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
             )
         self._log_state_transition(None, self.state_manager.state, "awaiting wake phrase")
 
-    async def _process_chunk(self, audio_bytes: bytes) -> None:
-        if len(audio_bytes) % self.bytes_per_frame != 0:
-            print(
-                f"{ERROR_LOG_LABEL} Dropping malformed audio chunk: "
-                f"{len(audio_bytes)} bytes (expected multiple of {self.bytes_per_frame}).",
-                file=sys.stderr,
-            )
-            return
-        chunk_index = self.state_manager.increment_chunk_count()
-        silence_reached, observed_silence = self._observe_streaming_silence(audio_bytes)
-
-        if self._handle_server_stop_event():
-            return
-
-        self._buffer_preroll_if_listening(audio_bytes)
-
-        if await self._handle_stop_signal():
-            return
-
-        detection = self._run_wake_word_detection(audio_bytes)
-        skip_chunk, skip_loop = await self._handle_wake_detection(detection, audio_bytes)
-        if skip_loop:
-            return
-
-        now_streaming = self.state_manager.state == StreamState.STREAMING
-        if now_streaming and not observed_silence:
-            silence_reached, _ = self._observe_streaming_silence(audio_bytes)
-
-        if now_streaming and not skip_chunk:
-            await self._forward_audio(audio_bytes)
-
-        if self._auto_stop_enabled and now_streaming:
-            self._handle_auto_stop(silence_reached)
-
-        self._log_chunk_progress(chunk_index)
-
     def _observe_streaming_silence(self, audio_bytes: bytes) -> tuple[bool, bool]:
         if self.state_manager.state != StreamState.STREAMING:
             return False, False
         return self.silence_tracker.observe(audio_bytes), True
-
-    def _handle_server_stop_event(self) -> bool:
-        signal = self.context.speech_stopped_signal
-        if not signal.is_set():
-            return False
-        if self.state_manager.consume_suppressed_stop_event():
-            signal.clear()
-            self._verbose_print(
-                f"{TURN_LOG_LABEL} Ignoring stale server speech stop acknowledgement."
-            )
-            return True
-        ignore_reason = should_ignore_server_stop_event(
-            self.state_manager,
-            self.silence_tracker,
-            self._server_stop_min_silence_seconds,
-        )
-        if ignore_reason:
-            signal.clear()
-            self._verbose_print(f"{TURN_LOG_LABEL} Server speech stop ignored: {ignore_reason}")
-            return True
-        signal.clear()
-        self._clear_server_stop_timeout(cause="server_ack")
-        if self.state_manager.awaiting_server_stop:
-            reason = self.state_manager.complete_deferred_finalize("server speech stop event")
-            if reason:
-                self._finalize_turn(reason)
-            return False
-        previous_state = self.state_manager.transition_to_listening("server speech stop event")
-        if previous_state:
-            self._log_state_transition(
-                previous_state, self.state_manager.state, "server speech stop event"
-            )
-            self._reset_stream_resources()
-            self._finalize_turn("server speech stop event")
-        return False
-
-    async def _handle_stop_signal(self) -> bool:
-        signal = self.context.stop_signal
-        if not signal.is_set():
-            return False
-        signal.clear()
-        if self.state_manager.state != StreamState.STREAMING:
-            return True
-        self._verbose_print(f"{CONTROL_LOG_LABEL} Stop command received; returning to listening.")
-        previous_state = self.state_manager.transition_to_listening("stop command received")
-        if previous_state:
-            self._log_state_transition(
-                previous_state, self.state_manager.state, "stop command received"
-            )
-            self._reset_stream_resources()
-        self._clear_server_stop_timeout(cause="manual_stop")
-        await self.context.transcript_buffer.clear_current_turn("manual stop command")
-        self.response_tasks.cancel("manual stop command")
-        return True
 
     def _buffer_preroll_if_listening(self, audio_bytes: bytes) -> None:
         if self.state_manager.state == StreamState.LISTENING:
@@ -286,55 +364,6 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
         self._log_state_transition(previous_state, self.state_manager.state, reason)
         return True
 
-    async def _handle_wake_detection(
-        self,
-        detection: WakeWordDetection,
-        audio_bytes: bytes,
-    ) -> tuple[bool, bool]:
-        skip_chunk = False
-        skip_loop = False
-
-        if not (self.wake_engine and detection.triggered):
-            return skip_chunk, skip_loop
-
-        if self.state_manager.awaiting_server_stop:
-            self._verbose_print(
-                f"{WAKE_LOG_LABEL} Wake phrase ignored while awaiting server stop confirmation."
-            )
-            skip_loop = True
-        elif self.state_manager.state != StreamState.LISTENING:
-            retrigger_count = self.state_manager.increment_retrigger_budget()
-            print(
-                f"{WAKE_LOG_LABEL} Wake word retrigger detected during streaming "
-                f"(count={retrigger_count})"
-            )
-        elif self.state_manager.finalizing_turn:
-            self._verbose_print(
-                f"{WAKE_LOG_LABEL} Wake phrase ignored while finalizing previous turn."
-            )
-            skip_loop = True
-        else:
-            if self.state_manager.awaiting_assistant_reply:
-                self._verbose_print(f"{TURN_LOG_LABEL} Wake phrase overriding assistant reply.")
-                self.state_manager.clear_awaiting_assistant_reply()
-                self.response_tasks.cancel("wake phrase override")
-            transitioned = await self._enter_streaming_state(
-                trigger="wake_phrase",
-                reason="wake phrase detected",
-            )
-            if not transitioned:
-                return skip_chunk, skip_loop
-            self.wake_engine.reset_detection()
-            self.silence_tracker.reset()
-            payload = self.pre_roll.flush()
-            if payload:
-                await self._send_preroll_payload(payload)
-                skip_chunk = True
-            else:
-                self._verbose_print(f"{WAKE_LOG_LABEL} Triggered -> streaming (no buffered audio)")
-
-        return skip_chunk, skip_loop
-
     async def _send_preroll_payload(self, payload: bytes) -> None:
         buffered_frames = len(payload) // self.bytes_per_frame
         duration_ms = buffered_frames / self.capture_sample_rate * 1000
@@ -349,39 +378,6 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
         stream_chunk = self.chunk_preparer.prepare(audio_bytes)
         if stream_chunk:
             await self.ws_client.send_audio_chunk(stream_chunk)
-
-    def _handle_auto_stop(self, silence_reached: bool) -> None:
-        if not silence_reached:
-            return
-        if self.state_manager.retrigger_budget == 0:
-            if self.state_manager.awaiting_server_stop:
-                self._verbose_print(
-                    f"{TURN_LOG_LABEL} Silence timer fired but awaiting server stop; "
-                    "skipping duplicate close request."
-                )
-                return
-            previous_state = self.state_manager.transition_to_listening(
-                "silence detected",
-                defer_finalize=True,
-            )
-            if previous_state:
-                self._log_state_transition(
-                    previous_state, self.state_manager.state, "silence detected"
-                )
-                self._reset_stream_resources()
-                self._verbose_print(
-                    f"{TURN_LOG_LABEL} Awaiting server confirmation before finalizing turn."
-                )
-                self._schedule_server_stop_timeout()
-            return
-        retrigger_count = self.state_manager.retrigger_budget
-        retrigger_log = (
-            f"{TURN_LOG_LABEL} Silence detected but "
-            f"{retrigger_count} retrigger(s) observed; keeping stream open"
-        )
-        self._verbose_print(retrigger_log)
-        self.state_manager.reset_retrigger_budget()
-        self.silence_tracker.clear_silence()
 
     def _log_chunk_progress(self, chunk_index: int) -> None:
         if chunk_index % 100 != 0:
@@ -445,6 +441,26 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
         reason: str,
     ) -> None:
         self._controller_module.log_state_transition(previous, current, reason)
+
+    async def _notify_state_transition(
+        self,
+        previous: StreamState | None,
+        current: StreamState,
+        *,
+        notification: StateTransitionNotification,
+    ) -> None:
+        if previous is None or not self._event_bus:
+            return
+        await self._event_bus.publish(
+            StateTransitionEvent(
+                previous=previous,
+                current=current,
+                reason=notification.reason,
+                trigger=notification.trigger,
+                trigger_chunk_index=notification.trigger_chunk_index,
+            ),
+            priority=notification.priority,
+        )
 
 
 __all__ = ["AudioControllerContext", "ControllerLoopBindings", "_AudioControllerLoop"]
