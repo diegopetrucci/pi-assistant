@@ -12,9 +12,9 @@ from .transcription_session import (
     TranscriptionConfigValidator,
     TranscriptionRunConfig,
     TranscriptionSession,
-    TranscriptionTaskCoordinator,
     run_simulated_query_once,
 )
+from .transcription_task_coordinator import TranscriptionTaskCoordinator
 
 __all__ = [
     "ASSISTANT_AUDIO_MODE_CHOICES",
