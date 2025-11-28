@@ -1,48 +1,73 @@
 flowchart TB
     subgraph Launch["CLI bootstrap (pi_assistant.cli.app)"]
-        Config[["config/defaults.toml\n+ env vars"]] --> Validator["TranscriptionConfigValidator"]
+        Config[["config/defaults.toml\n+ env overrides"]] --> Validator["TranscriptionConfigValidator"]
         Validator --> Builder["TranscriptionComponentBuilder"]
-        Builder --> Session["TranscriptionSession"]
-        Session --> Coordinator["TranscriptionTaskCoordinator"]
+        Builder --> Components{{"TranscriptionComponents"}}
+        Components --> Session["TranscriptionSession"]
     end
 
-    Session --> AudioCap["audio.AudioCapture"]
-    Session --> WSClient["network.WebSocketClient"]
-    Session --> Assistant["assistant.LLMResponder"]
-    Session --> Speech["audio.SpeechPlayer"]
+    Components --> AudioCap["audio.AudioCapture"]
+    Components --> WSClient["network.WebSocketClient"]
+    Components --> Buffer["assistant.TurnTranscriptAggregator"]
+    Components --> Assistant["assistant.LLMResponder"]
+    Components --> Speech["audio.SpeechPlayer"]
 
+    Session --> Supervisor["SessionSupervisor"]
+    subgraph Services["Session services"]
+        Supervisor --> AssistantPrep["AssistantPrepService\n(warm Responses/TTS clients)"]
+        Supervisor --> WebSocketSvc["WebSocketSessionService\n(connect Realtime WS)"]
+        Supervisor --> AudioSvc["AudioCaptureSessionService\n(start PortAudio stream)"]
+        Supervisor --> Diagnostics["DiagnosticsSessionService\n(verify readiness trio)"]
+    end
+    AssistantPrep --> Assistant
+    WebSocketSvc --> WSClient
+    AudioSvc --> AudioCap
+    Diagnostics --> Supervisor
+
+    Session --> Coordinator["TranscriptionTaskCoordinator"]
     Coordinator --> AudioCtrl["run_audio_controller\n(cli.controller)"]
     Coordinator --> EventRx["receive_transcription_events\n(cli.events)"]
     Coordinator -. optional .-> SimQuery["run_simulated_query_once"]
 
-    Mic((USB Mic)) --> AudioCap
-    AudioCap --> AudioCtrl
+    SimQuery --> Assistant
+    SimQuery --> Speech
 
-    subgraph Streaming["Wake-word gated streaming"]
-        AudioCtrl --> PreRoll["PreRollBuffer"]
-        PreRoll --> AudioCtrl
-        AudioCtrl --> WakeWord["WakeWordEngine"]
-        WakeWord --> AudioCtrl
-        AudioCtrl --> ChunkPrep["AudioChunkPreparer\n+ LinearResampler"]
+    subgraph AudioController["Event-driven audio controller (_AudioControllerLoop)"]
+        AudioCtrl --> Producer["Audio producer\n(audio_capture.get_audio_chunk loop)"]
+        Producer --> EventBus["ControllerEventBus"]
+        StopWatcher["stop_signal watcher"] -. "Manual stop" .-> EventBus
+        ServerStopWatcher["speech_stopped watcher"] -. "Server ack" .-> EventBus
+
+        EventBus --> WakeActor["WakeWordActor\n(PreRollBuffer + WakeWordEngine)"]
+        EventBus --> SilenceActor["SilenceActor\n(SilenceTracker)"]
+        EventBus --> StreamUploader["StreamUploaderActor\n(AudioChunkPreparer + LinearResampler)"]
+        EventBus --> Gate["SpeechGateActor\n(StreamStateManager + ResponseTaskManager)"]
+        EventBus --> Responder["AssistantResponderActor"]
     end
 
-    ChunkPrep --> WSClient
+    Mic((USB Mic)) --> AudioCap
+    WakeActor --> StreamUploader
+    WakeActor --> Gate
+    SilenceActor --> Gate
+    Gate --> Responder
+    Gate --> Buffer
+    Gate -->|"reset"| SilenceActor
+    Responder --> RespTasks["ResponseTaskManager\n(schedule_turn_response)"]
+    RespTasks --> Assistant
+    RespTasks --> Speech
+
+    StreamUploader --> WSClient
     WSClient --> Realtime[("OpenAI Realtime API\n(VAD + transcripts)")]
-
     Realtime --> EventRx
-    EventRx --> Buffer["TurnTranscriptAggregator"]
-    AudioCtrl -->|"start / finish turns"| Buffer
-    Buffer -->|"final transcript"| Assistant
-    SimQuery -->|"synthetic prompt"| Assistant
+    EventRx --> Buffer
+    EventRx -- "stop commands" --> StopWatcher
+    EventRx -- "speech_stopped ack" --> ServerStopWatcher
+    EventRx -->|"maybe_stop_playback"| Speech
 
+    Buffer -->|"final transcript"| Assistant
     Assistant --> ResponsesAPI[("OpenAI Responses API\n+ Audio API fallback")]
     ResponsesAPI --> Assistant
 
     Assistant --> Speech
     Speech --> User((Speaker / CLI))
     Assistant --> Console["CLI transcript + logs"]
-
-    EventRx -- "stop commands" --> Speech
-    EventRx -- "stop signal" --> AudioCtrl
-    EventRx -- "speech_stopped ack" --> AudioCtrl
-    Assistant -. "confirmation cue cache" .-> Speech
