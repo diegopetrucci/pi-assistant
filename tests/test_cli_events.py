@@ -12,6 +12,52 @@ def test_normalize_command_strips_non_alphanum():
     assert events._normalize_command("") == ""
 
 
+def test_handle_transcription_event_partial_and_vad(monkeypatch):
+    calls = []
+
+    def fake_verbose(*args, **kwargs):
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr(events, "verbose_print", fake_verbose)
+
+    events.handle_transcription_event(
+        {"type": "conversation.item.input_audio_transcription.delta", "delta": "hi"}
+    )
+    events.handle_transcription_event({"type": "input_audio_buffer.committed", "item_id": "xyz"})
+
+    assert calls[0] == (("[PARTIAL] hi",), {"flush": True})
+    assert calls[1][0][0] == f"{events.VAD_LOG_LABEL} Speech detected (item: xyz)"
+
+
+def test_handle_transcription_event_session_updates(monkeypatch):
+    messages = []
+
+    def fake_verbose(message, **kwargs):
+        messages.append(message)
+
+    monkeypatch.setattr(events, "verbose_print", fake_verbose)
+
+    events.handle_transcription_event({"type": "transcription_session.created"})
+    events.handle_transcription_event({"type": "transcription_session.updated"})
+
+    assert messages == [
+        "[INFO] Transcription session created",
+        "[INFO] Transcription session configuration updated",
+    ]
+
+
+def test_handle_transcription_event_error_branch(capsys):
+    events.handle_transcription_event(
+        {
+            "type": "error",
+            "error": {"type": "fatal", "message": "boom", "code": "E42"},
+        }
+    )
+
+    captured = capsys.readouterr()
+    assert f"{events.ERROR_LOG_LABEL} fatal (E42): boom" in captured.err
+
+
 @pytest.mark.asyncio
 async def test_maybe_stop_playback_detects_stop_command(monkeypatch):
     halted = asyncio.Event()
@@ -36,6 +82,16 @@ async def test_maybe_stop_playback_ignores_other_text():
     result = await events.maybe_stop_playback("No command here", DummySpeechPlayer())
 
     assert result is False
+
+
+@pytest.mark.asyncio
+async def test_maybe_stop_playback_returns_false_for_empty_input():
+    speech_player = DummySpeechPlayer(stop_result=True)
+
+    result = await events.maybe_stop_playback("   ...   ", speech_player)
+
+    assert result is False
+    assert speech_player.stop_calls == 0
 
 
 class DummyTranscriptBuffer:
@@ -67,6 +123,25 @@ class FakeWebSocketClient:
     async def receive_events(self) -> AsyncIterator[dict]:
         for event in self._events:
             yield event
+
+
+class _RaisingEventIterator:
+    def __init__(self, exc: BaseException):
+        self._exc = exc
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        raise self._exc
+
+
+class FaultyWebSocketClient:
+    def __init__(self, exc: BaseException):
+        self._exc = exc
+
+    def receive_events(self) -> AsyncIterator[dict]:
+        return _RaisingEventIterator(self._exc)
 
 
 @pytest.mark.asyncio
@@ -124,3 +199,53 @@ async def test_receive_events_handles_stop_command(monkeypatch):
     assert buffer.appended == []
     assert buffer.cleared == ["assistant stop command"]
     assert stop_signal.is_set()
+
+
+@pytest.mark.asyncio
+async def test_receive_events_logs_cancelled_error(monkeypatch):
+    ws_client = FaultyWebSocketClient(asyncio.CancelledError())
+    buffer = DummyTranscriptBuffer()
+    speech_player = DummySpeechPlayer()
+    stop_signal = asyncio.Event()
+    speech_stopped_signal = asyncio.Event()
+    messages = []
+
+    def fake_verbose(message, **kwargs):
+        messages.append(message)
+
+    monkeypatch.setattr(events, "verbose_print", fake_verbose)
+
+    with pytest.raises(asyncio.CancelledError):
+        await events.receive_transcription_events(
+            ws_client,
+            buffer,
+            speech_player,
+            stop_signal=stop_signal,
+            speech_stopped_signal=speech_stopped_signal,
+        )
+
+    assert messages[0] == "[INFO] Starting event receiver..."
+    assert messages[-1].startswith("[INFO] Event receiver stopped")
+
+
+@pytest.mark.asyncio
+async def test_receive_events_logs_generic_exception(monkeypatch, capsys):
+    ws_client = FaultyWebSocketClient(RuntimeError("boom"))
+    buffer = DummyTranscriptBuffer()
+    speech_player = DummySpeechPlayer()
+    stop_signal = asyncio.Event()
+    speech_stopped_signal = asyncio.Event()
+
+    monkeypatch.setattr(events, "verbose_print", lambda *args, **kwargs: None)
+
+    with pytest.raises(RuntimeError):
+        await events.receive_transcription_events(
+            ws_client,
+            buffer,
+            speech_player,
+            stop_signal=stop_signal,
+            speech_stopped_signal=speech_stopped_signal,
+        )
+
+    stderr = capsys.readouterr().err
+    assert f"{events.ERROR_LOG_LABEL} Event receiver error: boom" in stderr

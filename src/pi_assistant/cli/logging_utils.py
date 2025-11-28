@@ -7,7 +7,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, TextIO
+from typing import Any, Optional, TextIO
 
 from pi_assistant.config import VERBOSE_LOG_CAPTURE_ENABLED, VERBOSE_LOG_DIRECTORY
 from pi_assistant.wake_word import StreamState
@@ -21,6 +21,7 @@ COLOR_BLUE = "\033[34m"
 COLOR_CYAN = "\033[36m"
 COLOR_MAGENTA = "\033[35m"
 COLOR_RED = "\033[31m"
+COLOR_WHITE = "\033[37m"
 
 TURN_LOG_LABEL = f"{COLOR_ORANGE}[TURN]{RESET}"
 TRANSCRIPT_LOG_LABEL = f"{COLOR_GREEN}[TRANSCRIPT]{RESET}"
@@ -30,6 +31,12 @@ WAKE_LOG_LABEL = f"{COLOR_BLUE}[WAKE]{RESET}"
 ASSISTANT_LOG_LABEL = f"{COLOR_MAGENTA}[ASSISTANT]{RESET}"
 CONTROL_LOG_LABEL = f"{COLOR_MAGENTA}[CONTROL]{RESET}"
 ERROR_LOG_LABEL = f"{COLOR_RED}[ERROR]{RESET}"
+WS_LOG_LABEL = f"{COLOR_WHITE}[WS]{RESET}"
+_WS_LABELS = {
+    "": WS_LOG_LABEL,
+    "←": f"{COLOR_WHITE}[WS←]{RESET}",
+    "→": f"{COLOR_WHITE}[WS→]{RESET}",
+}
 
 _VERBOSE_LOGGING = False
 _VERBOSE_LOG_FILE: Optional[TextIO] = None
@@ -187,6 +194,23 @@ def is_verbose_logging_enabled() -> bool:
     return _VERBOSE_LOGGING
 
 
+def ws_log_label(direction: str | None = None) -> str:
+    """Return the colored [WS] label, optionally annotated with a direction arrow."""
+
+    arrow = direction if direction in ("←", "→") else ""
+    return _WS_LABELS[arrow]
+
+
+def _emit_timestamped_print(
+    timestamp: str, args: tuple[object, ...], kwargs: dict[str, Any]
+) -> None:
+    if args:
+        first, *rest = args
+        print(f"[{timestamp}] {first}", *rest, **kwargs)
+    else:
+        print(f"[{timestamp}]", **kwargs)
+
+
 def verbose_print(*args, **kwargs) -> None:
     """Print when verbose logging is enabled and optionally persist to disk."""
 
@@ -200,20 +224,14 @@ def verbose_print(*args, **kwargs) -> None:
     if not _VERBOSE_LOGGING:
         return
 
-    if args:
-        first, *rest = args
-        print(f"[{timestamp}] {first}", *rest, **kwargs)
-    else:
-        print(f"[{timestamp}]", **kwargs)
+    _emit_timestamped_print(timestamp, args, kwargs)
 
 
 def console_print(*args, **kwargs) -> None:
-    """Print to stdout/stderr, adding timestamps when verbose logging is enabled."""
+    """Print CLI output with timestamps regardless of verbose mode."""
 
-    if _VERBOSE_LOGGING:
-        verbose_print(*args, **kwargs)
-    else:
-        print(*args, **kwargs)
+    timestamp = _format_timestamp()
+    _emit_timestamped_print(timestamp, args, kwargs)
 
 
 def log_state_transition(previous: Optional[StreamState], new: StreamState, reason: str) -> None:

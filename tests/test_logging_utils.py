@@ -67,13 +67,36 @@ def test_verbose_print_emits_timestamp_when_enabled(capsys):
     assert "message" in out
 
 
-def test_console_print_passthrough_when_not_verbose(capsys):
+def test_console_print_includes_timestamp_when_not_verbose(capsys):
     logging_utils.set_verbose_logging(False)
 
     logging_utils.console_print("plain output")
 
-    out = capsys.readouterr().out
-    assert out.strip() == "plain output"
+    out = capsys.readouterr().out.strip()
+    assert out.startswith("[")
+    assert out.endswith("plain output")
+
+
+def test_console_print_includes_timestamp_when_verbose(capsys):
+    logging_utils.set_verbose_logging(True)
+
+    logging_utils.console_print("verbose output")
+
+    out = capsys.readouterr().out.strip()
+    assert out.startswith("[")
+    assert out.endswith("verbose output")
+    logging_utils.set_verbose_logging(False)
+
+
+def test_ws_log_label_directional_variants():
+    logging_utils.set_verbose_logging(False)
+    base = logging_utils.ws_log_label()
+    assert base == logging_utils.WS_LOG_LABEL
+
+    inbound = logging_utils.ws_log_label("←")
+    outbound = logging_utils.ws_log_label("→")
+    assert "[WS←]" in inbound
+    assert "[WS→]" in outbound
 
 
 def test_log_state_transition_skips_when_state_unchanged(monkeypatch):
@@ -86,6 +109,34 @@ def test_log_state_transition_skips_when_state_unchanged(monkeypatch):
     logging_utils.log_state_transition(StreamState.LISTENING, StreamState.LISTENING, "noop")
 
     assert calls == []
+
+
+def test_log_state_transition_logs_from_pending(monkeypatch):
+    messages: list[str] = []
+    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURE_PENDING", False)
+    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURED", True)
+    monkeypatch.setattr(
+        logging_utils, "verbose_print", lambda message, **_: messages.append(message)
+    )
+    logging_utils.set_verbose_logging(True)
+
+    logging_utils.log_state_transition(None, StreamState.LISTENING, "boot")
+
+    assert messages and "Entered LISTENING" in messages[-1]
+
+
+def test_log_state_transition_logs_between_states(monkeypatch):
+    messages: list[str] = []
+    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURE_PENDING", False)
+    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURED", True)
+    monkeypatch.setattr(
+        logging_utils, "verbose_print", lambda message, **_: messages.append(message)
+    )
+    logging_utils.set_verbose_logging(True)
+
+    logging_utils.log_state_transition(StreamState.LISTENING, StreamState.STREAMING, "hotword")
+
+    assert messages and "LISTENING -> STREAMING" in messages[-1]
 
 
 def test_auto_configuration_enables_capture(tmp_path, monkeypatch):

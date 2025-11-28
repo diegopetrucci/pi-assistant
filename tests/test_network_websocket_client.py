@@ -6,8 +6,9 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-# Stub out the CLI package to avoid circular imports when loading WebSocketClient.
-if "pi_assistant.cli.logging_utils" not in sys.modules:
+try:
+    from pi_assistant.cli import logging_utils as cli_logging_utils
+except ImportError:
 
     class LoggingUtilsModule(ModuleType):
         ERROR_LOG_LABEL: str
@@ -20,6 +21,11 @@ if "pi_assistant.cli.logging_utils" not in sys.modules:
         def verbose_print(*args, **kwargs) -> None:
             return None
 
+        @staticmethod
+        def ws_log_label(direction=None) -> str:
+            arrow = direction if direction in ("←", "→") else ""
+            return f"[WS{arrow}]"
+
     class CliModule(ModuleType):
         logging_utils: LoggingUtilsModule
 
@@ -31,6 +37,7 @@ if "pi_assistant.cli.logging_utils" not in sys.modules:
     cli_pkg = CliModule(logging_utils)
     sys.modules["pi_assistant.cli"] = cli_pkg
     sys.modules["pi_assistant.cli.logging_utils"] = logging_utils
+    cli_logging_utils = logging_utils
 
 from pi_assistant.network.websocket_client import WebSocketClient
 
@@ -56,6 +63,23 @@ class DummyWebSocket:
 
     async def close(self) -> None:
         self.closed = True
+
+
+@pytest.fixture
+def verbose_capture(monkeypatch):
+    records: list[str] = []
+
+    def _capture(*args, **kwargs):
+        if args:
+            records.append(args[0])
+        else:
+            records.append("")
+
+    monkeypatch.setattr(
+        "pi_assistant.network.websocket_client.verbose_print",
+        _capture,
+    )
+    return records
 
 
 @pytest.mark.asyncio
@@ -177,15 +201,73 @@ async def test_receive_events_yields_until_closed():
 
 
 @pytest.mark.asyncio
+async def test_receive_events_skips_transcription_logs(verbose_capture):
+    messages = [
+        json.dumps(
+            {
+                "type": "conversation.item.input_audio_transcription.delta",
+                "delta": "hello",
+            }
+        ),
+        json.dumps(
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "transcript": "hey raspy?",
+            }
+        ),
+    ]
+    client = WebSocketClient()
+    client.websocket = DummyWebSocket(messages)
+    client.connected = True
+
+    async for _ in client.receive_events():
+        pass
+
+    assert verbose_capture == []
+
+
+@pytest.mark.asyncio
+async def test_receive_events_logs_other_payloads(verbose_capture):
+    messages = [
+        json.dumps(
+            {
+                "type": "input_audio_buffer.append",
+                "audio": "aGVsbG8=",
+            }
+        ),
+    ]
+    client = WebSocketClient()
+    client.websocket = DummyWebSocket(messages)
+    client.connected = True
+
+    async for _ in client.receive_events():
+        pass
+
+    label = cli_logging_utils.ws_log_label("←")
+    assert any(entry.startswith(label) and "audio_chars=8" in entry for entry in verbose_capture)
+
+
+@pytest.mark.asyncio
+async def test_send_audio_chunk_does_not_log(verbose_capture):
+    client = WebSocketClient()
+    client.websocket = DummyWebSocket()
+    client.connected = True
+
+    await client.send_audio_chunk(b"\x00\x01\x02\x03")
+
+    assert not any("WS→" in entry for entry in verbose_capture)
+
+
+@pytest.mark.asyncio
 async def test_wait_for_session_created_malformed_json(capsys):
     client = WebSocketClient()
     client.websocket = DummyWebSocket(["{invalid json"])
 
-    with pytest.raises(json.JSONDecodeError):
+    with pytest.raises(RuntimeError, match="transcription_session.created"):
         await client.wait_for_session_created()
 
     err = capsys.readouterr().err
-    assert "Error waiting for session" in err
+    assert "Malformed session payload" in err
 
 
 @pytest.mark.asyncio

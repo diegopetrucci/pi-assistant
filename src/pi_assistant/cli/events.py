@@ -41,7 +41,7 @@ def handle_transcription_event(event: dict) -> None:
 
     if event_type == "conversation.item.input_audio_transcription.delta":
         delta = event.get("delta", "")
-        verbose_print(f"[PARTIAL] {delta}", end="", flush=True)
+        verbose_print(f"[PARTIAL] {delta}", flush=True)
 
     elif event_type == "conversation.item.input_audio_transcription.completed":
         transcript = event.get("transcript", "")

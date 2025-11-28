@@ -12,12 +12,19 @@ from typing import Any, Protocol, cast
 
 import websockets
 
-from pi_assistant.cli.logging_utils import ERROR_LOG_LABEL, verbose_print
+from pi_assistant.cli.logging_utils import ERROR_LOG_LABEL, verbose_print, ws_log_label
 from pi_assistant.config import (
     OPENAI_REALTIME_ENDPOINT,
     SESSION_CONFIG,
     WEBSOCKET_HEADERS,
 )
+
+_TRANSCRIPTION_EVENT_TYPES = {
+    "conversation.item.input_audio_transcription.delta",
+    "conversation.item.input_audio_transcription.completed",
+}
+_MAX_SUMMARY_KEYS = 5
+_MAX_CONSECUTIVE_SESSION_ERRORS = 10
 
 
 class _WebSocketProtocol(Protocol):
@@ -36,6 +43,62 @@ class WebSocketClient:
     def __init__(self):
         self.websocket: _WebSocketProtocol | None = None
         self.connected = False
+
+    def _log_ws_payload(self, direction: str, payload: Any) -> None:
+        """Verbose helper to display websocket payloads."""
+
+        summary = self._summarize_payload(payload, direction)
+        if summary is not None:
+            verbose_print(summary)
+
+    def _summarize_payload(self, payload: Any, direction: str) -> str | None:
+        """Return a concise description for websocket payload logging, or None to silence."""
+
+        structured = payload
+        if isinstance(payload, str):
+            try:
+                structured = json.loads(payload)
+            except ValueError:
+                return f"{ws_log_label(direction)} {payload}"
+
+        label = ws_log_label(direction)
+
+        def _default_summary(text: str) -> str:
+            return f"{label} {text}"
+
+        def _summarize_keys(data: dict[str, Any]) -> str:
+            keys = [key for key in data.keys() if key != "type"]
+            if not keys:
+                return "<none>"
+            keys.sort()
+            if len(keys) > _MAX_SUMMARY_KEYS:
+                displayed = ", ".join(keys[:_MAX_SUMMARY_KEYS])
+                return f"{displayed},…"
+            return ", ".join(keys)
+
+        summary: str
+        if isinstance(structured, dict):
+            payload_type = structured.get("type")
+            if payload_type in _TRANSCRIPTION_EVENT_TYPES:
+                # Conversation transcriptions may include raw user speech; suppress both directions.
+                return None
+            if payload_type == "input_audio_buffer.append":
+                audio = structured.get("audio")
+                length = len(audio) if isinstance(audio, str) else "?"
+                summary = _default_summary(f"type={payload_type} audio_chars={length}")
+                return summary
+            elif payload_type:
+                keys = _summarize_keys(structured)
+                summary = _default_summary(f"type={payload_type} keys={keys}")
+            else:
+                keys = _summarize_keys(structured)
+                summary = _default_summary(f"keys={keys}")
+        elif isinstance(structured, list):
+            summary = _default_summary(f"list(len={len(structured)})")
+        else:
+            summary = _default_summary(type(structured).__name__)
+
+        return summary
 
     async def connect(self) -> None:
         """
@@ -84,11 +147,32 @@ class WebSocketClient:
         """
         verbose_print("Waiting for transcription_session.created event...")
         websocket = self._require_websocket()
+        consecutive_decode_errors = 0
 
         try:
             async for message in websocket:
-                event = cast(dict[str, Any], json.loads(message))
+                raw_message = (
+                    message.decode("utf-8", errors="replace")
+                    if isinstance(message, bytes)
+                    else message
+                )
+                try:
+                    event = cast(dict[str, Any], json.loads(raw_message))
+                except json.JSONDecodeError as exc:
+                    consecutive_decode_errors += 1
+                    snippet = raw_message[:120]
+                    message = (
+                        f"{ERROR_LOG_LABEL} Malformed session payload at pos {exc.pos}: {snippet!r}"
+                    )
+                    print(message, file=sys.stderr)
+                    if consecutive_decode_errors >= _MAX_CONSECUTIVE_SESSION_ERRORS:
+                        raise RuntimeError(
+                            "Too many malformed session payloads received from server"
+                        ) from exc
+                    continue
+                consecutive_decode_errors = 0
                 event_type = event.get("type")
+                self._log_ws_payload("←", event)
 
                 # Debug: print what we received
                 verbose_print(f"[DEBUG] Received event type: {event_type}")
@@ -133,6 +217,7 @@ class WebSocketClient:
             session_update = {"type": "transcription_session.update", "session": SESSION_CONFIG}
             websocket = self._require_websocket()
             await websocket.send(json.dumps(session_update))
+            self._log_ws_payload("→", session_update)
             verbose_print("✓ Session configuration sent")
 
         except Exception as e:
@@ -170,6 +255,7 @@ class WebSocketClient:
             async for message in websocket:
                 # Parse JSON event
                 event = cast(dict[str, Any], json.loads(message))
+                self._log_ws_payload("←", event)
                 yield event
 
         except websockets.exceptions.ConnectionClosed:

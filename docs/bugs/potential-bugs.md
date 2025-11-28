@@ -93,12 +93,6 @@ This document catalogs potential bugs and issues discovered through code analysi
 - **Root Cause:** No event context in error message.
 - **Fix Required:** Include event type and partial event data in error log.
 
-### 14. Awaiting server stop without retry mechanism
-- **Location:** `src/pi_assistant/cli/controller.py:263-267`
-- **Impact:** If the server never sends the speech_stopped event (network issue, server bug), the system waits indefinitely in `awaiting_server_stop` state.
-- **Root Cause:** No timeout on deferred finalization.
-- **Fix Required:** Add a timeout (e.g., 5 seconds) after which finalization proceeds anyway.
-
 ## RECOMMENDATIONS
 
 ### Code Quality Improvements
