@@ -33,19 +33,22 @@ class AssistantPrepService(BaseSessionService):
 
     async def _stop(self) -> None:
         cue_task = self._cue_task
-        self._cue_task = None
-        if cue_task:
+        if not cue_task:
+            return
+
+        try:
             if not cue_task.done():
                 cue_task.cancel()
-            try:
-                await cue_task
-            except asyncio.CancelledError:
-                pass
-            except Exception as exc:
-                print(
-                    f"{ASSISTANT_LOG_LABEL} Confirmation cue cleanup failed: {exc}",
-                    file=sys.stderr,
-                )
+            await cue_task
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            print(
+                f"{ASSISTANT_LOG_LABEL} Confirmation cue cleanup failed: {exc}",
+                file=sys.stderr,
+            )
+        finally:
+            self._cue_task = None
 
     def _log_assistant_context(self) -> None:
         assistant = self._assistant

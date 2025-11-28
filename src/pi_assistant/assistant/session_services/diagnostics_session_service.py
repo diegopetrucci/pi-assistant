@@ -22,4 +22,4 @@ class DiagnosticsSessionService(BaseSessionService):
         print("Listening... (Press Ctrl+C to stop)\n")
 
     async def _stop(self) -> None:
-        return
+        pass
