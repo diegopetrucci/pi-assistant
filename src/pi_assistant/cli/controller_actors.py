@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable, Optional
 
+from pi_assistant.cli.controller_components import (
+    ResponseTaskManager,
+    SilenceTracker,
+    StreamStateManager,
+)
 from pi_assistant.cli.logging_utils import CONTROL_LOG_LABEL, TURN_LOG_LABEL, WAKE_LOG_LABEL
-from pi_assistant.wake_word import StreamState
+from pi_assistant.wake_word import (
+    PreRollBuffer,
+    StreamState,
+    WakeWordDetection,
+    WakeWordEngine,
+)
 
 from .controller_events import (
     AudioChunkEvent,
@@ -22,27 +33,41 @@ from .controller_events import (
 )
 from .controller_helpers import should_ignore_server_stop_event
 
-if TYPE_CHECKING:
-    from .controller_loop import _AudioControllerLoop
+
+@dataclass(slots=True)
+class WakeWordActorDependencies:
+    """Bundle of dependencies required to construct a WakeWordActor."""
+
+    state_manager: StreamStateManager
+    silence_tracker: SilenceTracker
+    pre_roll: PreRollBuffer
+    run_wake_word_detection: Callable[[bytes], WakeWordDetection]
+    verbose_print: Callable[[str], None]
+    wake_engine: Optional[WakeWordEngine] = None
 
 
 class WakeWordActor:
     """Convert raw audio chunks into wake-word and streaming events."""
 
-    def __init__(self, loop: "_AudioControllerLoop", bus: ControllerEventBus) -> None:
-        self.loop = loop
+    def __init__(self, bus: ControllerEventBus, deps: WakeWordActorDependencies) -> None:
         self.bus = bus
+        self.state_manager = deps.state_manager
+        self.silence_tracker = deps.silence_tracker
+        self.pre_roll = deps.pre_roll
+        self._run_wake_word_detection = deps.run_wake_word_detection
+        self._verbose_print = deps.verbose_print
+        self.wake_engine = deps.wake_engine
         self._last_listening_chunk: tuple[int, bytes] | None = None
         bus.subscribe(AudioChunkEvent, self._on_audio_chunk)
         bus.subscribe(StateTransitionEvent, self._on_state_transition)
 
     async def _on_audio_chunk(self, event: AudioChunkEvent) -> None:
-        state = self.loop.state_manager.state
+        state = self.state_manager.state
         if state == StreamState.LISTENING:
             self._last_listening_chunk = (event.index, event.chunk)
-            self.loop._buffer_preroll_if_listening(event.chunk)
+            self.pre_roll.add(event.chunk)
 
-        detection = self.loop._run_wake_word_detection(event.chunk)
+        detection = self._run_wake_word_detection(event.chunk)
         if detection.triggered:
             await self.bus.publish(
                 WakeWordTriggeredEvent(
@@ -58,16 +83,14 @@ class WakeWordActor:
 
     async def _on_state_transition(self, event: StateTransitionEvent) -> None:
         if event.current == StreamState.STREAMING:
-            self.loop.silence_tracker.reset()
-            payload = self.loop.pre_roll.flush()
+            self.silence_tracker.reset()
+            payload = self.pre_roll.flush()
             if payload:
                 await self.bus.publish(
                     PrerollReadyEvent(payload=payload, chunk_index=event.trigger_chunk_index)
                 )
-            elif (
-                event.trigger_chunk_index is not None
-                and self._last_listening_chunk
-                and event.trigger_chunk_index == self._last_listening_chunk[0]
+            elif self._last_listening_chunk and self._should_emit_last_listening_chunk(
+                event, self._last_listening_chunk
             ):
                 await self.bus.publish(
                     StreamChunkEvent(
@@ -76,30 +99,46 @@ class WakeWordActor:
                     )
                 )
             else:
-                self.loop._verbose_print(
-                    f"{WAKE_LOG_LABEL} Triggered -> streaming (no buffered audio)"
-                )
+                self._verbose_print(f"{WAKE_LOG_LABEL} Triggered -> streaming (no buffered audio)")
             if self._last_listening_chunk:
-                self.loop.silence_tracker.observe(self._last_listening_chunk[1])
+                self.silence_tracker.observe(self._last_listening_chunk[1])
             self._last_listening_chunk = None
-            if self.loop.wake_engine:
-                self.loop.wake_engine.reset_detection()
+            if self.wake_engine:
+                self.wake_engine.reset_detection()
         elif event.current == StreamState.LISTENING:
             self._last_listening_chunk = None
+
+    def _should_emit_last_listening_chunk(
+        self,
+        event: StateTransitionEvent,
+        last_chunk: tuple[int, bytes],
+    ) -> bool:
+        if event.trigger_chunk_index is None:
+            return False
+        return event.trigger_chunk_index == last_chunk[0]
 
 
 class SilenceActor:
     """Surface silence events for the speech gate to evaluate."""
 
-    def __init__(self, loop: "_AudioControllerLoop", bus: ControllerEventBus) -> None:
-        self.loop = loop
+    def __init__(
+        self,
+        bus: ControllerEventBus,
+        *,
+        auto_stop_enabled: bool,
+        observe_streaming_silence: Callable[[bytes], tuple[bool, bool]],
+        silence_tracker: SilenceTracker,
+    ) -> None:
         self.bus = bus
+        self._auto_stop_enabled = auto_stop_enabled
+        self._observe_streaming_silence = observe_streaming_silence
+        self._silence_tracker = silence_tracker
         bus.subscribe(AudioChunkEvent, self._on_audio_chunk)
         bus.subscribe(StateTransitionEvent, self._on_state_transition)
 
     async def _on_audio_chunk(self, event: AudioChunkEvent) -> None:
-        silence_reached, observed = self.loop._observe_streaming_silence(event.chunk)
-        if self.loop._auto_stop_enabled and silence_reached and observed:
+        silence_reached, observed = self._observe_streaming_silence(event.chunk)
+        if self._auto_stop_enabled and silence_reached and observed:
             await self.bus.publish(
                 SilenceDetectedEvent(chunk_index=event.index),
                 priority=True,
@@ -107,41 +146,96 @@ class SilenceActor:
 
     async def _on_state_transition(self, event: StateTransitionEvent) -> None:
         if event.current == StreamState.LISTENING:
-            self.loop.silence_tracker.reset()
+            self._silence_tracker.reset()
 
 
 class StreamUploaderActor:
     """Forward prepared audio payloads to the websocket client."""
 
-    def __init__(self, loop: "_AudioControllerLoop", bus: ControllerEventBus) -> None:
-        self.loop = loop
+    def __init__(
+        self,
+        bus: ControllerEventBus,
+        *,
+        send_preroll_payload: Callable[[bytes], Awaitable[None]],
+        forward_audio: Callable[[bytes], Awaitable[None]],
+    ) -> None:
+        self._send_preroll_payload = send_preroll_payload
+        self._forward_audio = forward_audio
         bus.subscribe(PrerollReadyEvent, self._on_preroll_ready)
         bus.subscribe(StreamChunkEvent, self._on_stream_chunk)
 
     async def _on_preroll_ready(self, event: PrerollReadyEvent) -> None:
-        await self.loop._send_preroll_payload(event.payload)
+        await self._send_preroll_payload(event.payload)
 
     async def _on_stream_chunk(self, event: StreamChunkEvent) -> None:
-        await self.loop._forward_audio(event.payload)
+        await self._forward_audio(event.payload)
 
 
 class AssistantResponderActor:
     """Schedule assistant responses whenever a turn finalizes."""
 
-    def __init__(self, loop: "_AudioControllerLoop", bus: ControllerEventBus) -> None:
-        self.loop = loop
+    def __init__(
+        self,
+        bus: ControllerEventBus,
+        finalize_turn: Callable[[str], None],
+    ) -> None:
+        self._finalize_turn = finalize_turn
         bus.subscribe(FinalizeTurnEvent, self._on_finalize)
 
     async def _on_finalize(self, event: FinalizeTurnEvent) -> None:
-        self.loop._finalize_turn(event.reason)
+        self._finalize_turn(event.reason)
+
+
+@dataclass(slots=True)
+class SpeechGateActorDependencies:
+    """Bundle of orchestration helpers used by the SpeechGateActor."""
+
+    state_manager: StreamStateManager
+    response_tasks: ResponseTaskManager
+    transcript_buffer: Any
+    silence_tracker: SilenceTracker
+    enter_streaming_state: Callable[..., Awaitable[bool]]
+    notify_state_transition: Callable[
+        [StreamState | None, StreamState, StateTransitionNotification], Awaitable[None]
+    ]
+    log_state_transition: Callable[[StreamState | None, StreamState, str], None]
+    reset_stream_resources: Callable[[], None]
+    clear_server_stop_timeout: Callable[[str], None]
+    schedule_server_stop_timeout: Callable[[], None]
+    verbose_print: Callable[[str], None]
+
+
+@dataclass(slots=True)
+class SpeechGateActorConfig:
+    """Configuration toggles for SpeechGateActor behavior."""
+
+    auto_stop_enabled: bool
+    server_stop_min_silence_seconds: float
 
 
 class SpeechGateActor:
     """Coordinate state transitions based on wake events and control signals."""
 
-    def __init__(self, loop: "_AudioControllerLoop", bus: ControllerEventBus) -> None:
-        self.loop = loop
+    def __init__(
+        self,
+        bus: ControllerEventBus,
+        deps: SpeechGateActorDependencies,
+        config: SpeechGateActorConfig,
+    ) -> None:
         self.bus = bus
+        self.state_manager = deps.state_manager
+        self.response_tasks = deps.response_tasks
+        self.transcript_buffer = deps.transcript_buffer
+        self.silence_tracker = deps.silence_tracker
+        self._enter_streaming_state = deps.enter_streaming_state
+        self._notify_state_transition = deps.notify_state_transition
+        self._log_state_transition = deps.log_state_transition
+        self._reset_stream_resources = deps.reset_stream_resources
+        self._clear_server_stop_timeout = deps.clear_server_stop_timeout
+        self._schedule_server_stop_timeout = deps.schedule_server_stop_timeout
+        self._verbose_print = deps.verbose_print
+        self._auto_stop_enabled = config.auto_stop_enabled
+        self._server_stop_min_silence_seconds = config.server_stop_min_silence_seconds
         bus.subscribe(WakeWordTriggeredEvent, self._on_wake_word)
         bus.subscribe(ManualStopEvent, self._on_manual_stop)
         bus.subscribe(ServerStopEvent, self._on_server_stop)
@@ -149,37 +243,37 @@ class SpeechGateActor:
 
     async def _on_wake_word(self, event: WakeWordTriggeredEvent) -> None:
         state = event.state_at_detection
-        if self.loop.state_manager.awaiting_server_stop:
-            self.loop._verbose_print(
+        if self.state_manager.awaiting_server_stop:
+            self._verbose_print(
                 f"{WAKE_LOG_LABEL} Wake phrase ignored while awaiting server stop confirmation."
             )
             return
         if state != StreamState.LISTENING:
-            retrigger_count = self.loop.state_manager.increment_retrigger_budget()
-            print(
+            retrigger_count = self.state_manager.increment_retrigger_budget()
+            self._verbose_print(
                 f"{WAKE_LOG_LABEL} Wake word retrigger detected during streaming "
                 f"(count={retrigger_count})"
             )
             return
-        if self.loop.state_manager.finalizing_turn:
-            self.loop._verbose_print(
+        if self.state_manager.finalizing_turn:
+            self._verbose_print(
                 f"{WAKE_LOG_LABEL} Wake phrase ignored while finalizing previous turn."
             )
             return
-        if self.loop.state_manager.awaiting_assistant_reply:
-            self.loop._verbose_print(f"{TURN_LOG_LABEL} Wake phrase overriding assistant reply.")
-            self.loop.state_manager.clear_awaiting_assistant_reply()
-            self.loop.response_tasks.cancel("wake phrase override")
-        transitioned = await self.loop._enter_streaming_state(
+        if self.state_manager.awaiting_assistant_reply:
+            self._verbose_print(f"{TURN_LOG_LABEL} Wake phrase overriding assistant reply.")
+            self.state_manager.clear_awaiting_assistant_reply()
+            self.response_tasks.cancel("wake phrase override")
+        transitioned = await self._enter_streaming_state(
             trigger="wake_phrase",
             reason="wake phrase detected",
         )
         if not transitioned:
             return
-        await self.loop._notify_state_transition(
-            StreamState.LISTENING,
-            self.loop.state_manager.state,
-            notification=StateTransitionNotification(
+        await self._notify_state_transition(
+            event.state_at_detection,
+            self.state_manager.state,
+            StateTransitionNotification(
                 reason="wake phrase detected",
                 trigger="wake_phrase",
                 trigger_chunk_index=event.chunk_index,
@@ -188,124 +282,118 @@ class SpeechGateActor:
         )
 
     async def _on_manual_stop(self, event: ManualStopEvent) -> None:
-        if self.loop.state_manager.state != StreamState.STREAMING:
+        if self.state_manager.state != StreamState.STREAMING:
             return
-        self.loop._verbose_print(
-            f"{CONTROL_LOG_LABEL} Stop command received; returning to listening."
-        )
-        previous_state = self.loop.state_manager.transition_to_listening(event.reason)
+        self._verbose_print(f"{CONTROL_LOG_LABEL} Stop command received; returning to listening.")
+        previous_state = self.state_manager.transition_to_listening(event.reason)
         if previous_state:
-            self.loop._log_state_transition(
-                previous_state, self.loop.state_manager.state, event.reason
-            )
-            await self.loop._notify_state_transition(
+            self._log_state_transition(previous_state, self.state_manager.state, event.reason)
+            await self._notify_state_transition(
                 previous_state,
-                self.loop.state_manager.state,
-                notification=StateTransitionNotification(
+                self.state_manager.state,
+                StateTransitionNotification(
                     reason=event.reason,
                     trigger="manual_stop",
                     priority=True,
                 ),
             )
-            self.loop._reset_stream_resources()
-        self.loop._clear_server_stop_timeout(cause="manual_stop")
-        await self.loop.context.transcript_buffer.clear_current_turn(event.reason)
-        self.loop.response_tasks.cancel(event.reason)
+            self._reset_stream_resources()
+        self._clear_server_stop_timeout("manual_stop")
+        await self.transcript_buffer.clear_current_turn(event.reason)
+        self.response_tasks.cancel(event.reason)
 
     async def _on_server_stop(self, event: ServerStopEvent) -> None:
-        if self.loop.state_manager.consume_suppressed_stop_event():
-            self.loop._verbose_print(
+        if self.state_manager.consume_suppressed_stop_event():
+            self._verbose_print(
                 f"{TURN_LOG_LABEL} Ignoring stale server speech stop acknowledgement."
             )
             return
         ignore_reason = should_ignore_server_stop_event(
-            self.loop.state_manager,
-            self.loop.silence_tracker,
-            self.loop._server_stop_min_silence_seconds,
+            self.state_manager,
+            self.silence_tracker,
+            self._server_stop_min_silence_seconds,
         )
         if ignore_reason:
-            self.loop._verbose_print(
-                f"{TURN_LOG_LABEL} Server speech stop ignored: {ignore_reason}"
-            )
+            self._verbose_print(f"{TURN_LOG_LABEL} Server speech stop ignored: {ignore_reason}")
             return
-        self.loop._clear_server_stop_timeout(cause="server_ack")
-        if self.loop.state_manager.awaiting_server_stop:
-            reason = self.loop.state_manager.complete_deferred_finalize(event.reason)
+        self._clear_server_stop_timeout("server_ack")
+        if self.state_manager.awaiting_server_stop:
+            reason = self.state_manager.complete_deferred_finalize(event.reason)
             if reason:
                 await self.bus.publish(
                     FinalizeTurnEvent(reason=reason),
                     priority=True,
                 )
             return
-        previous_state = self.loop.state_manager.transition_to_listening(event.reason)
+        previous_state = self.state_manager.transition_to_listening(event.reason)
         if previous_state:
-            self.loop._log_state_transition(
-                previous_state, self.loop.state_manager.state, event.reason
-            )
-            await self.loop._notify_state_transition(
+            self._log_state_transition(previous_state, self.state_manager.state, event.reason)
+            await self._notify_state_transition(
                 previous_state,
-                self.loop.state_manager.state,
-                notification=StateTransitionNotification(
+                self.state_manager.state,
+                StateTransitionNotification(
                     reason=event.reason,
                     trigger="server_stop",
                     priority=True,
                 ),
             )
-            self.loop._reset_stream_resources()
+            self._reset_stream_resources()
             await self.bus.publish(
                 FinalizeTurnEvent(reason=event.reason),
                 priority=True,
             )
 
     async def _on_silence_detected(self, event: SilenceDetectedEvent) -> None:
-        if not self.loop._auto_stop_enabled:
+        if not self._auto_stop_enabled:
             return
-        state_manager = self.loop.state_manager
-        if state_manager.retrigger_budget == 0:
-            if state_manager.awaiting_server_stop:
-                self.loop._verbose_print(
+        if self.state_manager.retrigger_budget == 0:
+            if self.state_manager.awaiting_server_stop:
+                self._verbose_print(
                     f"{TURN_LOG_LABEL} Silence timer fired but awaiting server stop; "
                     "skipping duplicate close request."
                 )
                 return
-            previous_state = state_manager.transition_to_listening(
+            previous_state = self.state_manager.transition_to_listening(
                 "silence detected",
                 defer_finalize=True,
             )
             if previous_state:
-                self.loop._log_state_transition(
-                    previous_state, self.loop.state_manager.state, "silence detected"
+                self._log_state_transition(
+                    previous_state, self.state_manager.state, "silence detected"
                 )
-                await self.loop._notify_state_transition(
+                await self._notify_state_transition(
                     previous_state,
-                    self.loop.state_manager.state,
-                    notification=StateTransitionNotification(
+                    self.state_manager.state,
+                    StateTransitionNotification(
                         reason="silence detected",
                         trigger="auto_stop",
                         trigger_chunk_index=event.chunk_index,
                         priority=True,
                     ),
                 )
-                self.loop._reset_stream_resources()
-                self.loop._verbose_print(
+                self._reset_stream_resources()
+                self._verbose_print(
                     f"{TURN_LOG_LABEL} Awaiting server confirmation before finalizing turn."
                 )
-                self.loop._schedule_server_stop_timeout()
+                self._schedule_server_stop_timeout()
             return
-        retrigger_count = state_manager.retrigger_budget
+        retrigger_count = self.state_manager.retrigger_budget
         retrigger_log = (
             f"{TURN_LOG_LABEL} Silence detected but "
             f"{retrigger_count} retrigger(s) observed; keeping stream open"
         )
-        self.loop._verbose_print(retrigger_log)
-        state_manager.reset_retrigger_budget()
-        self.loop.silence_tracker.clear_silence()
+        self._verbose_print(retrigger_log)
+        self.state_manager.reset_retrigger_budget()
+        self.silence_tracker.clear_silence()
 
 
 __all__ = [
     "AssistantResponderActor",
     "SilenceActor",
     "SpeechGateActor",
+    "SpeechGateActorConfig",
+    "SpeechGateActorDependencies",
     "StreamUploaderActor",
     "WakeWordActor",
+    "WakeWordActorDependencies",
 ]

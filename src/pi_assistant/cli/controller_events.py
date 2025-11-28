@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, DefaultDict, List, Optional, Type, TypeVar, cast
@@ -85,13 +86,15 @@ EventHandler = Callable[[E], Awaitable[None]]
 class ControllerEventBus:
     """Lightweight async event bus for coordinating controller actors."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, max_queue_size: int | None = 1024) -> None:
         self._queue: deque[ControllerEvent | None] = deque()
         self._subscribers: DefaultDict[Type[ControllerEvent], List[EventHandler[Any]]] = (
             defaultdict(list)
         )
         self._closed = False
         self._condition = asyncio.Condition()
+        self._max_queue_size = max_queue_size
+        self._logger = logging.getLogger(__name__)
 
     def subscribe(self, event_type: Type[E], handler: EventHandler[E]) -> None:
         """Register ``handler`` to run whenever ``event_type`` is published."""
@@ -103,14 +106,20 @@ class ControllerEventBus:
     async def publish(self, event: ControllerEvent, *, priority: bool = False) -> None:
         """Queue ``event`` for asynchronous delivery to subscribers."""
 
-        if self._closed:
-            return
         async with self._condition:
+            while (
+                not self._closed
+                and self._max_queue_size is not None
+                and len(self._queue) >= self._max_queue_size
+            ):
+                await self._condition.wait()
+            if self._closed:
+                return
             if priority:
                 self._queue.appendleft(event)
             else:
                 self._queue.append(event)
-            self._condition.notify()
+            self._condition.notify_all()
 
     async def run(self) -> None:
         """Dispatch queued events until :meth:`shutdown` is invoked."""
@@ -121,14 +130,25 @@ class ControllerEventBus:
                     while not self._queue:
                         await self._condition.wait()
                     event = self._queue.popleft()
+                    self._condition.notify_all()
                 if event is None:
                     async with self._condition:
                         if self._queue:
+                            # Requeue the sentinel so the dispatcher exits only after
+                            # draining all pending events that raced with shutdown.
+                            self._queue.append(None)
                             continue
                     break
                 handlers = list(self._subscribers.get(type(event), ()))
                 for handler in handlers:
-                    await handler(event)
+                    try:
+                        await handler(event)
+                    except Exception:
+                        self._logger.exception(
+                            "ControllerEventBus handler %s raised while processing %s",
+                            getattr(handler, "__qualname__", repr(handler)),
+                            type(event).__name__,
+                        )
         finally:
             self._closed = True
 
@@ -140,7 +160,7 @@ class ControllerEventBus:
         async with self._condition:
             self._closed = True
             self._queue.append(None)
-            self._condition.notify()
+            self._condition.notify_all()
 
 
 __all__ = [

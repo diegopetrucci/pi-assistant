@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import sys
 from collections.abc import Callable
 from typing import Any, Optional
@@ -46,8 +47,11 @@ from .controller_actors import (
     AssistantResponderActor,
     SilenceActor,
     SpeechGateActor,
+    SpeechGateActorConfig,
+    SpeechGateActorDependencies,
     StreamUploaderActor,
     WakeWordActor,
+    WakeWordActorDependencies,
 )
 from .controller_events import (
     AudioChunkEvent,
@@ -181,25 +185,94 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
                 await self._event_bus.shutdown()
             for task in tasks:
                 task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            gather_results = await asyncio.gather(*tasks, return_exceptions=True)
+            for result in gather_results:
+                if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
+                    print(
+                        f"{ERROR_LOG_LABEL} Exception during task cancellation: {result}",
+                        file=sys.stderr,
+                    )
             await self._await_server_stop_timeout_task()
             await self.response_tasks.drain()
 
     def _install_actors(self) -> None:
         if not self._event_bus:
             return
+
+        async def _notify_transition(
+            previous: StreamState | None,
+            current: StreamState,
+            notification: StateTransitionNotification,
+        ) -> None:
+            await self._notify_state_transition(
+                previous,
+                current,
+                notification=notification,
+            )
+
+        def _clear_server_stop_timeout(cause: str) -> None:
+            self._clear_server_stop_timeout(cause=cause)
+
         self._actors = [
-            WakeWordActor(self, self._event_bus),
-            SilenceActor(self, self._event_bus),
-            StreamUploaderActor(self, self._event_bus),
-            AssistantResponderActor(self, self._event_bus),
-            SpeechGateActor(self, self._event_bus),
+            WakeWordActor(
+                bus=self._event_bus,
+                deps=WakeWordActorDependencies(
+                    state_manager=self.state_manager,
+                    silence_tracker=self.silence_tracker,
+                    pre_roll=self.pre_roll,
+                    run_wake_word_detection=self._run_wake_word_detection,
+                    verbose_print=self._verbose_print,
+                    wake_engine=self.wake_engine,
+                ),
+            ),
+            SilenceActor(
+                bus=self._event_bus,
+                auto_stop_enabled=self._auto_stop_enabled,
+                observe_streaming_silence=self._observe_streaming_silence,
+                silence_tracker=self.silence_tracker,
+            ),
+            StreamUploaderActor(
+                bus=self._event_bus,
+                send_preroll_payload=self._send_preroll_payload,
+                forward_audio=self._forward_audio,
+            ),
+            AssistantResponderActor(
+                bus=self._event_bus,
+                finalize_turn=self._finalize_turn,
+            ),
+            SpeechGateActor(
+                bus=self._event_bus,
+                deps=SpeechGateActorDependencies(
+                    state_manager=self.state_manager,
+                    response_tasks=self.response_tasks,
+                    transcript_buffer=self.context.transcript_buffer,
+                    silence_tracker=self.silence_tracker,
+                    enter_streaming_state=self._enter_streaming_state,
+                    notify_state_transition=_notify_transition,
+                    log_state_transition=self._log_state_transition,
+                    reset_stream_resources=self._reset_stream_resources,
+                    clear_server_stop_timeout=_clear_server_stop_timeout,
+                    schedule_server_stop_timeout=self._schedule_server_stop_timeout,
+                    verbose_print=self._verbose_print,
+                ),
+                config=SpeechGateActorConfig(
+                    auto_stop_enabled=self._auto_stop_enabled,
+                    server_stop_min_silence_seconds=self._server_stop_min_silence_seconds,
+                ),
+            ),
         ]
 
     async def _run_audio_producer(self) -> None:
+        chunk_task: Optional[asyncio.Task[bytes]] = None
         try:
             while not (self._shutdown_event and self._shutdown_event.is_set()):
-                audio_bytes = await self.audio_capture.get_audio_chunk()
+                if chunk_task is None:
+                    chunk_task = asyncio.create_task(self.audio_capture.get_audio_chunk())
+                done, _ = await asyncio.wait({chunk_task}, timeout=0.1)
+                if not done:
+                    continue
+                audio_bytes = chunk_task.result()
+                chunk_task = None
                 if len(audio_bytes) % self.bytes_per_frame != 0:
                     print(
                         f"{ERROR_LOG_LABEL} Dropping malformed audio chunk: "
@@ -215,6 +288,11 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
                 self._log_chunk_progress(chunk_index)
         except asyncio.CancelledError:
             raise
+        finally:
+            if chunk_task:
+                chunk_task.cancel()
+                with contextlib.suppress(Exception):
+                    await chunk_task
 
     async def _watch_stop_signal(self) -> None:
         try:
