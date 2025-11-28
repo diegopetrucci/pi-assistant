@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
-import asyncio
 import sys
 from dataclasses import dataclass
 from typing import Optional
 
 from pi_assistant.assistant.llm import LLMResponder
+from pi_assistant.assistant.session_services import (
+    AssistantPrepService,
+    AudioCaptureSessionService,
+    DiagnosticsSessionService,
+    SessionService,
+    SessionSupervisor,
+    WebSocketSessionService,
+)
 from pi_assistant.assistant.transcript import TurnTranscriptAggregator
+from pi_assistant.assistant.transcription_task_coordinator import (
+    TranscriptionTaskCoordinator,
+)
 from pi_assistant.audio import AudioCapture, SpeechPlayer
 from pi_assistant.cli.logging_utils import ASSISTANT_LOG_LABEL, TURN_LOG_LABEL, console_print
 from pi_assistant.config import (
@@ -17,8 +27,6 @@ from pi_assistant.config import (
     ASSISTANT_TTS_RESPONSES_ENABLED,
     ASSISTANT_TTS_SAMPLE_RATE,
     ASSISTANT_WEB_SEARCH_ENABLED,
-    CONFIRMATION_CUE_ENABLED,
-    CONFIRMATION_CUE_TEXT,
     SIMULATED_QUERY_TEXT,
     reasoning_effort_choices_for_model,
 )
@@ -126,62 +134,6 @@ class TranscriptionComponentBuilder:
         )
 
 
-class TranscriptionTaskCoordinator:
-    """Orchestrate the long-running tasks that make up a session."""
-
-    def __init__(
-        self,
-        components: TranscriptionComponents,
-        simulated_query: Optional[str],
-    ):
-        self._components = components
-        self._simulated_query = simulated_query
-        self._stop_signal = asyncio.Event()
-        self._speech_stopped_signal = asyncio.Event()
-
-    async def run(self) -> None:
-        coroutines = [
-            self._run_audio_controller(),
-            self._run_event_receiver(),
-        ]
-        if self._simulated_query:
-            coroutines.append(
-                run_simulated_query_once(
-                    self._simulated_query,
-                    self._components.assistant,
-                    self._components.speech_player,
-                )
-            )
-
-        async with asyncio.TaskGroup() as task_group:
-            for coroutine in coroutines:
-                task_group.create_task(coroutine)
-
-    async def _run_audio_controller(self) -> None:
-        from pi_assistant.cli.controller import run_audio_controller
-
-        await run_audio_controller(
-            self._components.audio_capture,
-            self._components.ws_client,
-            transcript_buffer=self._components.transcript_buffer,
-            assistant=self._components.assistant,
-            speech_player=self._components.speech_player,
-            stop_signal=self._stop_signal,
-            speech_stopped_signal=self._speech_stopped_signal,
-        )
-
-    async def _run_event_receiver(self) -> None:
-        from pi_assistant.cli.events import receive_transcription_events
-
-        await receive_transcription_events(
-            self._components.ws_client,
-            self._components.transcript_buffer,
-            self._components.speech_player,
-            stop_signal=self._stop_signal,
-            speech_stopped_signal=self._speech_stopped_signal,
-        )
-
-
 class TranscriptionSession:
     """Context manager that wires configuration, components, and tasks together."""
 
@@ -195,130 +147,48 @@ class TranscriptionSession:
         self._config = config
         self._components = components
         self._task_coordinator_cls = task_coordinator_cls
-        self._responses_audio_enabled = False
-        self._audio_started = False
-        self._ws_connected = False
-        self._cue_task: Optional[asyncio.Task] = None
+        self._supervisor: Optional[SessionSupervisor] = None
 
     async def __aenter__(self) -> TranscriptionSession:
-        try:
-            self._log_assistant_context()
-            self._warm_confirmation_cue()
-            await self._probe_responses_audio()
-            await self._start_streams()
-        except Exception:
-            await self._teardown_partial()
-            raise
+        services = self._build_services()
+        self._supervisor = SessionSupervisor(services)
+        await self._supervisor.start_all()
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         print("Cleaning up...")
-        await self._teardown_partial()
+        supervisor = self._supervisor
+        if supervisor:
+            await supervisor.stop_all()
         print("✓ Shutdown complete\n")
 
     async def run(self) -> None:
-        coordinator = self._task_coordinator_cls(self._components, self._config.simulated_query)
+        coordinator = self._task_coordinator_cls(
+            self._components,
+            self._config.simulated_query,
+            simulated_query_runner=_run_simulated_query_with_components,
+        )
         await coordinator.run()
 
-    def _log_assistant_context(self) -> None:
-        assistant = self._components.assistant
-        console_print(f"{ASSISTANT_LOG_LABEL} Using assistant model: {assistant.model_name}")
-        enabled_tools = assistant.enabled_tools
-        tools_summary = ", ".join(enabled_tools) if enabled_tools else "none"
-        console_print(f"{ASSISTANT_LOG_LABEL} Tools enabled: {tools_summary}")
-        reasoning_summary = self._config.reasoning_effort or "auto"
-        console_print(f"{ASSISTANT_LOG_LABEL} Reasoning effort: {reasoning_summary}")
-        location_summary = (assistant.location_name or "").strip() or "unspecified"
-        console_print(f"{ASSISTANT_LOG_LABEL} Location context: {location_summary}")
+    def _build_services(self) -> list[SessionService]:
+        assistant_service = AssistantPrepService(self._components.assistant, self._config)
+        websocket_service = WebSocketSessionService(self._components.ws_client)
+        audio_service = AudioCaptureSessionService(self._components.audio_capture)
+        diagnostics_service = DiagnosticsSessionService(
+            (assistant_service.ready, websocket_service.ready, audio_service.ready)
+        )
+        return [assistant_service, websocket_service, audio_service, diagnostics_service]
 
-    def _warm_confirmation_cue(self) -> None:
-        assistant = self._components.assistant
-        if not (assistant.tts_enabled and CONFIRMATION_CUE_ENABLED and CONFIRMATION_CUE_TEXT):
-            return
 
-        self._cue_task = asyncio.create_task(assistant.warm_phrase_audio(CONFIRMATION_CUE_TEXT))
-
-        def _log_cue_error(fut: asyncio.Task) -> None:
-            try:
-                fut.result()
-            except Exception as exc:
-                print(
-                    f"{ASSISTANT_LOG_LABEL} Failed to warm confirmation cue: {exc}",
-                    file=sys.stderr,
-                )
-
-        self._cue_task.add_done_callback(_log_cue_error)
-
-    async def _probe_responses_audio(self) -> None:
-        assistant = self._components.assistant
-        if not (assistant.tts_enabled and self._config.use_responses_audio):
-            self._announce_tts_mode(False)
-            return
-
-        try:
-            self._responses_audio_enabled = await assistant.verify_responses_audio_support()
-        except Exception as exc:  # pragma: no cover - network failure
-            assistant.set_responses_audio_supported(False)
-            print(
-                f"{ASSISTANT_LOG_LABEL} Unable to verify Responses audio support: {exc}",
-                file=sys.stderr,
-            )
-            self._responses_audio_enabled = False
-        self._announce_tts_mode(self._responses_audio_enabled)
-
-    def _announce_tts_mode(self, responses_audio_enabled: bool) -> None:
-        assistant = self._components.assistant
-        if responses_audio_enabled:
-            print(f"{ASSISTANT_LOG_LABEL} Responses audio enabled; streaming assistant replies.")
-        elif assistant.tts_enabled:
-            if self._config.use_responses_audio:
-                print(
-                    f"{ASSISTANT_LOG_LABEL} Responses audio not available; using Audio API for TTS."
-                )
-            else:
-                print(
-                    f"{ASSISTANT_LOG_LABEL} Local TTS mode active; "
-                    "synthesizing replies after receiving text."
-                )
-
-    async def _start_streams(self) -> None:
-        loop = asyncio.get_running_loop()
-        await self._components.ws_client.connect()
-        self._ws_connected = True
-
-        self._components.audio_capture.start_stream(loop)
-        self._audio_started = True
-
-        print("\n✓ System ready")
-        print("Listening... (Press Ctrl+C to stop)\n")
-
-    async def _teardown_partial(self) -> None:
-        if self._audio_started:
-            try:
-                self._components.audio_capture.stop_stream()
-            finally:
-                self._audio_started = False
-
-        if self._ws_connected:
-            try:
-                await self._components.ws_client.close()
-            finally:
-                self._ws_connected = False
-
-        cue_task = self._cue_task
-        self._cue_task = None
-        if cue_task:
-            if not cue_task.done():
-                cue_task.cancel()
-            try:
-                await cue_task
-            except asyncio.CancelledError:
-                pass
-            except Exception as exc:
-                print(
-                    f"{ASSISTANT_LOG_LABEL} Confirmation cue cleanup failed: {exc}",
-                    file=sys.stderr,
-                )
+async def _run_simulated_query_with_components(
+    query_text: str,
+    components: TranscriptionComponents,
+) -> None:
+    await run_simulated_query_once(
+        query_text,
+        components.assistant,
+        components.speech_player,
+    )
 
 
 async def run_simulated_query_once(

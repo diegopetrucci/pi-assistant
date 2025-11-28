@@ -11,7 +11,7 @@ Quick capture of key architecture pivots we would pursue if rebuilding the proje
 - Introduce an explicit event bus with small async actors (wake engine, speech gate, stream uploader, assistant responder). This keeps state transitions testable, enables replay tooling, and makes it easier to split functionality across devices later.
 - Status: implemented on the `event-driven-controller` branch with the new controller event bus, actor set, and unit-test coverage (`tests/test_cli_controller_event_bus.py`, `tests/test_cli_controller_actors.py`).
 
-## 3. Service-Oriented Session Lifecycle
+## 3. Service-Oriented Session Lifecycle ✅
 - `TranscriptionSession` owns cue warming, Responses audio probing, WebSocket start, and teardown logic, so any new transport re-opens that class.
 - Move to a supervisor that treats capture, websocket, assistant, and diagnostics as services with `start/stop` hooks and readiness events. That yields granular restarts and simpler plug-in support for future transports (MQTT, on-device ASR).
 

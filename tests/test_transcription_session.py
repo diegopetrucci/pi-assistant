@@ -1,9 +1,18 @@
+import asyncio
 import types
 from typing import Any, Optional, cast
 
 import pytest
 
 import pi_assistant.assistant.transcription_session as ts
+from pi_assistant.assistant.session_services import (
+    AssistantPrepService,
+    AudioCaptureSessionService,
+    BaseSessionService,
+    DiagnosticsSessionService,
+    SessionSupervisor,
+    WebSocketSessionService,
+)
 from pi_assistant.assistant.transcription_session import (
     DEFAULT_ASSISTANT_AUDIO_MODE,
     TranscriptionComponentBuilder,
@@ -11,8 +20,10 @@ from pi_assistant.assistant.transcription_session import (
     TranscriptionConfigValidator,
     TranscriptionRunConfig,
     TranscriptionSession,
-    TranscriptionTaskCoordinator,
     run_simulated_query_once,
+)
+from pi_assistant.assistant.transcription_task_coordinator import (
+    TranscriptionTaskCoordinator,
 )
 from pi_assistant.config import ASSISTANT_MODEL, ASSISTANT_REASONING_EFFORT
 
@@ -36,13 +47,17 @@ class _WebSocketStub:
         self.connected = False
         self.closed = False
         self.fail_connect = fail_connect
+        self.connect_calls = 0
+        self.close_calls = 0
 
     async def connect(self):
         if self.fail_connect:
             raise RuntimeError("connect failed")
+        self.connect_calls += 1
         self.connected = True
 
     async def close(self):
+        self.close_calls += 1
         self.closed = True
 
     def receive_events(self):
@@ -93,6 +108,52 @@ class _SpeechPlayerStub:
     async def stop(self) -> bool:
         self.stop_calls += 1
         return True
+
+
+class _BaseServiceStub(BaseSessionService):
+    def __init__(self):
+        super().__init__("base-stub")
+        self.start_calls = 0
+        self.stop_calls = 0
+
+    async def _start(self) -> None:
+        self.start_calls += 1
+
+    async def _stop(self) -> None:
+        self.stop_calls += 1
+
+
+class _ServiceStub:
+    def __init__(
+        self,
+        name: str,
+        *,
+        fail_start: bool = False,
+        log: Optional[list[str]] = None,
+    ):
+        self.name = name
+        self.ready = asyncio.Event()
+        self.fail_start = fail_start
+        self.start_calls = 0
+        self.stop_calls = 0
+        self.events: list[str] = []
+        self._log = log
+
+    async def start(self) -> None:
+        self.start_calls += 1
+        self.events.append(f"start:{self.name}")
+        if self._log is not None:
+            self._log.append(f"start:{self.name}")
+        if self.fail_start:
+            raise RuntimeError(f"{self.name} boom")
+        self.ready.set()
+
+    async def stop(self) -> None:
+        self.stop_calls += 1
+        self.events.append(f"stop:{self.name}")
+        if self._log is not None:
+            self._log.append(f"stop:{self.name}")
+        self.ready.clear()
 
 
 def _make_config(
@@ -249,16 +310,16 @@ async def test_transcription_session_runs_and_cleans_up(
     monkeypatch.setattr(ts, "CONFIRMATION_CUE_ENABLED", False, raising=False)
 
     class _CoordinatorStub(TranscriptionTaskCoordinator):
-        def __init__(self, comps, simulated_query):
-            self.comps = comps
-            self.simulated_query = simulated_query
+        def __init__(self, comps, simulated_query, *, simulated_query_runner=None):
+            super().__init__(
+                cast(ts.TranscriptionComponents, comps),
+                simulated_query,
+                simulated_query_runner=simulated_query_runner,
+            )
             self.run_calls = 0
 
         async def run(self):
             self.run_calls += 1
-
-    logs: list[str] = []
-    monkeypatch.setattr(ts, "console_print", lambda message, *args, **kwargs: logs.append(message))
 
     session = TranscriptionSession(config, components, task_coordinator_cls=_CoordinatorStub)
     async with session:
@@ -266,10 +327,10 @@ async def test_transcription_session_runs_and_cleans_up(
 
     captured = capsys.readouterr()
     assert "System ready" in captured.out
+    assert "Reasoning effort" in captured.out
     assert audio_capture.started and audio_capture.stopped
     assert ws_client.connected and ws_client.closed
     assert assistant.verify_calls == 1
-    assert any("Reasoning effort" in entry for entry in logs)
 
 
 @pytest.mark.asyncio
@@ -305,7 +366,12 @@ async def test_transcription_session_logs_probe_failure(
     config = _make_config()
 
     class _CoordinatorStub(TranscriptionTaskCoordinator):
-        def __init__(self, comps, simulated_query):
+        def __init__(self, comps, simulated_query, *, simulated_query_runner=None):
+            super().__init__(
+                cast(ts.TranscriptionComponents, comps),
+                simulated_query,
+                simulated_query_runner=simulated_query_runner,
+            )
             self.run_calls = 0
 
         async def run(self):
@@ -342,8 +408,9 @@ async def test_task_coordinator_runs_all_tasks(monkeypatch: pytest.MonkeyPatch) 
         calls["events"] += 1
         await kwargs["stop_signal"].wait()
 
-    async def fake_simulated_query(query_text, assistant_obj, speech_player_obj):
+    async def fake_simulated_query(query_text, components):
         assert query_text == "hello"
+        assert components.assistant is assistant
         calls["query"] += 1
 
     monkeypatch.setattr(
@@ -354,9 +421,11 @@ async def test_task_coordinator_runs_all_tasks(monkeypatch: pytest.MonkeyPatch) 
         "pi_assistant.cli.events.receive_transcription_events",
         fake_receive_events,
     )
-    monkeypatch.setattr(ts, "run_simulated_query_once", fake_simulated_query)
-
-    coordinator = TranscriptionTaskCoordinator(components, "hello")
+    coordinator = TranscriptionTaskCoordinator(
+        components,
+        "hello",
+        simulated_query_runner=fake_simulated_query,
+    )
     await coordinator.run()
 
     assert calls == {"audio": 1, "events": 1, "query": 1}
@@ -392,3 +461,171 @@ async def test_run_simulated_query_once_noop_for_empty() -> None:
     )
 
     assert assistant.generate_calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_simulated_query_helper_passes_components(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assistant = _AssistantStub()
+    speech_player = _SpeechPlayerStub()
+    components = _make_components(
+        _AudioCaptureStub(), _WebSocketStub(), object(), assistant, speech_player
+    )
+
+    calls: list[str] = []
+
+    async def fake_runner(query_text: str, assistant_obj, speech_player_obj):
+        calls.append(query_text)
+        assert assistant_obj is assistant
+        assert speech_player_obj is speech_player
+
+    monkeypatch.setattr(ts, "run_simulated_query_once", fake_runner)
+    await ts._run_simulated_query_with_components("hello world", components)
+
+    assert calls == ["hello world"]
+
+
+@pytest.mark.asyncio
+async def test_session_supervisor_starts_and_stops_services() -> None:
+    log: list[str] = []
+    services = [
+        _ServiceStub("assistant", log=log),
+        _ServiceStub("websocket", log=log),
+        _ServiceStub("capture", log=log),
+    ]
+
+    supervisor = SessionSupervisor(services)
+    await supervisor.start_all()
+    await supervisor.stop_all()
+
+    assert [svc.start_calls for svc in services] == [1, 1, 1]
+    assert [svc.stop_calls for svc in services] == [1, 1, 1]
+    assert log == [
+        "start:assistant",
+        "start:websocket",
+        "start:capture",
+        "stop:capture",
+        "stop:websocket",
+        "stop:assistant",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_session_supervisor_rolls_back_failed_start() -> None:
+    log: list[str] = []
+    services = [
+        _ServiceStub("assistant", log=log),
+        _ServiceStub("websocket", log=log, fail_start=True),
+        _ServiceStub("capture", log=log),
+    ]
+
+    supervisor = SessionSupervisor(services)
+    with pytest.raises(RuntimeError, match="websocket boom"):
+        await supervisor.start_all()
+
+    assert log == ["start:assistant", "start:websocket", "stop:assistant"]
+    assert services[0].stop_calls == 1
+    assert services[1].start_calls == 1
+    assert services[1].stop_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_service_waits_for_dependencies(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dep_a = asyncio.Event()
+    dep_b = asyncio.Event()
+    service = DiagnosticsSessionService((dep_a, dep_b))
+
+    start_task = asyncio.create_task(service.start())
+    await asyncio.sleep(0)
+    assert service.ready.is_set() is False
+
+    dep_a.set()
+    await asyncio.sleep(0)
+    assert service.ready.is_set() is False
+
+    dep_b.set()
+    await start_task
+    assert service.ready.is_set() is True
+
+    output = capsys.readouterr().out
+    assert "System ready" in output
+
+    await service.stop()
+
+
+@pytest.mark.asyncio
+async def test_assistant_prep_service_cancels_warmup(monkeypatch: pytest.MonkeyPatch) -> None:
+    assistant = _AssistantStub()
+    config = _make_config()
+    blocker = asyncio.Event()
+
+    async def fake_warm(text: str):
+        await blocker.wait()
+
+    assistant.warm_phrase_audio = fake_warm
+    monkeypatch.setattr(ts, "CONFIRMATION_CUE_ENABLED", True, raising=False)
+    monkeypatch.setattr(ts, "CONFIRMATION_CUE_TEXT", "Test cue", raising=False)
+
+    service = AssistantPrepService(cast(ts.LLMResponder, assistant), config)
+    await service.start()
+    cue_task = service._cue_task
+    assert cue_task is not None
+    assert cue_task.done() is False
+    await service.stop()
+
+    assert cue_task.cancelled() is True
+
+
+@pytest.mark.asyncio
+async def test_audio_capture_service_controls_stream() -> None:
+    capture = _AudioCaptureStub()
+    service = AudioCaptureSessionService(cast(ts.AudioCapture, capture))
+
+    await service.start()
+    assert capture.started is True
+
+    await service.stop()
+    assert capture.stopped is True
+
+
+@pytest.mark.asyncio
+async def test_websocket_session_service_manages_connection() -> None:
+    ws_client = _WebSocketStub()
+    service = WebSocketSessionService(cast(ts.WebSocketClient, ws_client))
+
+    await service.start()
+    assert ws_client.connected is True
+    assert ws_client.connect_calls == 1
+    assert service.ready.is_set()
+
+    await service.start()
+    assert ws_client.connect_calls == 1  # idempotent
+
+    await service.stop()
+    assert ws_client.close_calls == 1
+    assert ws_client.closed is True
+    assert service.ready.is_set() is False
+
+    await service.stop()
+    assert ws_client.close_calls == 1  # idempotent
+
+
+@pytest.mark.asyncio
+async def test_base_session_service_idempotent_start_stop() -> None:
+    service = _BaseServiceStub()
+
+    assert service.ready.is_set() is False
+    await service.start()
+    assert service.ready.is_set() is True
+
+    await service.start()
+    assert service.start_calls == 1
+
+    await service.stop()
+    assert service.ready.is_set() is False
+
+    await service.stop()
+    assert service.stop_calls == 1
