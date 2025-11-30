@@ -4,17 +4,17 @@
 * The project has not shipped yet. There is no need to preserve any kind of backward-compatibility.
 
 ## Project Structure & Module Organization
-* `src/pi_assistant/` houses the CLI, audio capture, wake-word logic, and websocket client; keep new runtime code under the matching subpackage instead of the root.
+* `src/pi_assistant/` now mirrors runtime layers: `assistant/` (llm, transcripts, session services), `audio/` (capture/playback/processing/wake_word), `cli/` (app + controller package), `core/`, `diagnostics/`, `network/`, and `config/`. Keep new code under the matching subpackage rather than the root.
 * Assistant-specific glue (Responses API client, reasoning controls, transcript aggregation, and speech playback helpers) belongs under `src/pi_assistant/assistant/` rather than mixing it into the CLI.
-* Configuration defaults live in `config/defaults.toml`, while hardware calibration helpers and provisioning scripts belong in `scripts/`.
-* Bundled wake-word artifacts are stored in `models/` and should not be regenerated at runtime.
-* Tests reside in `tests/`, with manual diagnostics under `tests/manual/`. Store long-form documentation or diagrams in `docs/` so README stays concise.
+* Configuration defaults live in `config/defaults.toml`, while hardware calibration helpers go in `scripts/provisioning/` and repo automation in `scripts/tooling/`.
+* Bundled wake-word artifacts are stored in `models/wake_word/` and should not be regenerated at runtime.
+* Tests reside in `tests/assistant`, `tests/audio`, `tests/cli`, etc., with manual diagnostics under `tests/manual/`. Store long-form documentation or diagrams in `docs/` so README stays concise.
 
 ## Build, Test, and Development Commands
 * Use `uv sync --group dev` to provision the managed `.venv/` plus lint/test tooling.
 * Run the CLI via `uv run pi-assistant` and pass flags such as `--audio-mode local-tts` or `--simulate-query` depending on the scenario.
 * Format and lint with `uv run ruff format .` and `uv run ruff check --fix .`, respectively.
-* Execute the fast wake-word regression with `uv run python -m unittest tests/test_wake_word.py`, and prefer `uv run pytest -v` (optionally `--cov`) for the full suite.
+* Execute the fast wake-word regression with `uv run python -m unittest tests/wake_word/test_wake_word.py`, and prefer `uv run pytest -v` (optionally `--cov`) for the full suite.
 * When invoking the interpreter directly, call `python3` (not `python`) to avoid hitting the system stub.
 * After completing a change, always run `uv run pyright && uv run pytest && uv run ruff format .`.
 * Never add annotations to ignore pyright, ruff, or other checkers warnings. Existing ones are okay.

@@ -3,8 +3,7 @@
 from openai import BadRequestError
 
 from .llm import LLMReply, LLMResponder, LLMResponderConfig
-from .transcript import TurnTranscriptAggregator
-from .transcription_session import (
+from .transcription import (
     ASSISTANT_AUDIO_MODE_CHOICES,
     DEFAULT_ASSISTANT_AUDIO_MODE,
     TranscriptionComponentBuilder,
@@ -12,9 +11,10 @@ from .transcription_session import (
     TranscriptionConfigValidator,
     TranscriptionRunConfig,
     TranscriptionSession,
+    TranscriptionTaskCoordinator,
     run_simulated_query_once,
 )
-from .transcription_task_coordinator import TranscriptionTaskCoordinator
+from .transcripts import TurnTranscriptAggregator
 
 __all__ = [
     "ASSISTANT_AUDIO_MODE_CHOICES",

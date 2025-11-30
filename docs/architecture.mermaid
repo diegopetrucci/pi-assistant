@@ -72,7 +72,7 @@ flowchart TB
     Speech --> User((Speaker / CLI))
     Assistant --> Console["CLI transcript + logs"]
 
-    subgraph Logging["Structured logging (cli.logging_utils)"]
+    subgraph Logging["Structured logging (cli.logging)"]
         LoggerNode["Logger\n(timestamped, colorized,\nANSI-stripped capture)"]
         VerboseLogs["Verbose log file\n(VERBOSE_LOG_DIRECTORY or per-run)"]
         ConsoleStreams["Console stdout/stderr"]

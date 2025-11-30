@@ -6,4 +6,4 @@
 - [ ] Unit test env/config helpers in `src/pi_assistant/config/__init__.py:81-246`, including `_env_*`, `_persist_env_value`, API-key prompt behavior, and LOCATION_NAME resolution.
 - [ ] Write async fakes for `diagnostics.test_audio_capture` / `test_websocket_client` (`src/pi_assistant/diagnostics.py:14-96`) to verify timeout messaging and resource cleanup.
 - [ ] Expand `tests/test_audio_capture.py` to hit `start_stream`, `stop_stream`, `_describe_device`, and failure paths in `src/pi_assistant/audio/capture.py:61-202`.
-- [ ] Add stdout-capture tests for `log_state_transition` (`src/pi_assistant/cli/logging_utils.py:29-38`) to lock formatting and duplicate-state suppression.
+- [ ] Add stdout-capture tests for `log_state_transition` (`src/pi_assistant/cli/logging.py:29-38`) to lock formatting and duplicate-state suppression.
