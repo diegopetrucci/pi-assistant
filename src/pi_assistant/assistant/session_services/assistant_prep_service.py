@@ -46,6 +46,7 @@ class AssistantPrepService(BaseSessionService):
                 ASSISTANT_LOG_LABEL,
                 f"Confirmation cue cleanup failed: {exc}",
                 error=True,
+                exc_info=exc,
             )
         finally:
             self._cue_task = None
@@ -78,6 +79,7 @@ class AssistantPrepService(BaseSessionService):
                     ASSISTANT_LOG_LABEL,
                     f"Failed to warm confirmation cue: {exc}",
                     error=True,
+                    exc_info=exc,
                 )
 
         self._cue_task.add_done_callback(_log_cue_error)
@@ -96,6 +98,7 @@ class AssistantPrepService(BaseSessionService):
                 ASSISTANT_LOG_LABEL,
                 f"Unable to verify Responses audio support: {exc}",
                 error=True,
+                exc_info=exc,
             )
             self._responses_audio_enabled = False
         self._announce_tts_mode(self._responses_audio_enabled)

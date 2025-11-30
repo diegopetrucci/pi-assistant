@@ -205,7 +205,12 @@ async def run_simulated_query_once(
     try:
         reply = await assistant.generate_reply(cleaned)
     except Exception as exc:  # pragma: no cover - network failure
-        LOGGER.log(ASSISTANT_LOG_LABEL, f"Simulated query failed: {exc}", error=True)
+        LOGGER.log(
+            ASSISTANT_LOG_LABEL,
+            f"Simulated query failed: {exc}",
+            error=True,
+            exc_info=exc,
+        )
         return
 
     if not reply:
@@ -225,4 +230,5 @@ async def run_simulated_query_once(
                 ASSISTANT_LOG_LABEL,
                 f"Error playing simulated reply audio: {exc}",
                 error=True,
+                exc_info=exc,
             )

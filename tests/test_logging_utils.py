@@ -1,3 +1,6 @@
+import importlib.util
+import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -262,3 +265,159 @@ def test_chunk_progress_logging_toggle():
 
     logging_utils.set_chunk_progress_logging(False)
     assert logging_utils.is_chunk_progress_logging_enabled() is False
+
+
+def test_logger_requires_source() -> None:
+    with pytest.raises(ValueError):
+        logging_utils.LOGGER.log("", "noop")
+
+
+def test_logger_log_flushes_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DummyStream:
+        def __init__(self) -> None:
+            self.flush_calls = 0
+            self.contents: list[str] = []
+
+        def write(self, value: str) -> None:
+            self.contents.append(value)
+
+        def flush(self) -> None:
+            self.flush_calls += 1
+
+    stream = DummyStream()
+    monkeypatch.setattr(logging_utils.sys, "stdout", stream, raising=False)
+    logging_utils.set_verbose_logging(True)
+
+    logging_utils.LOGGER.log("TRACE", "hello", flush=True)
+
+    assert stream.flush_calls == 1
+    assert "".join(stream.contents).strip().endswith("hello")
+    logging_utils.set_verbose_logging(False)
+
+
+def test_format_exc_details_rejects_unexpected_type() -> None:
+    with pytest.raises(TypeError):
+        logging_utils._format_exc_details(object())  # type: ignore[arg-type]
+
+
+def test_configure_verbose_log_capture_reports_error_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "logs" / "session.log"
+    original_open = logging_utils.Path.open
+
+    def fake_open(self, *args, **kwargs):
+        if self == target:
+            raise OSError("disk full")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(logging_utils.Path, "open", fake_open, raising=False)
+
+    logging_utils.configure_verbose_log_capture(target)
+
+    err = capsys.readouterr().err
+    assert "Unable to open verbose log file" in err
+
+    logging_utils.configure_verbose_log_capture(None)
+
+
+def test_build_session_log_path_retries_on_collisions(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    retry_threshold = 3
+    original_open = logging_utils.Path.open
+    attempts = {"count": 0}
+
+    def flaky_open(self, mode="r", *args, **kwargs):
+        if mode == "x" and self.parent == tmp_path:
+            attempts["count"] += 1
+            if attempts["count"] < retry_threshold:
+                raise FileExistsError
+        return original_open(self, mode, *args, **kwargs)
+
+    monkeypatch.setattr(logging_utils.Path, "open", flaky_open, raising=False)
+
+    path = logging_utils.LOGGER._build_session_log_path(tmp_path)
+
+    assert attempts["count"] >= retry_threshold
+    assert path.exists()
+
+
+def test_build_session_log_path_falls_back_to_named_tempfile(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    original_open = logging_utils.Path.open
+
+    def always_conflict(self, mode="r", *args, **kwargs):
+        if mode == "x" and self.parent == tmp_path:
+            raise FileExistsError
+        return original_open(self, mode, *args, **kwargs)
+
+    monkeypatch.setattr(logging_utils.Path, "open", always_conflict, raising=False)
+    monkeypatch.setattr(logging_utils, "MAX_SESSION_LOG_COLLISIONS", 0, raising=False)
+
+    created = tmp_path / "fallback.log"
+
+    class DummyTempFile:
+        def __init__(self) -> None:
+            self.name = str(created)
+
+        def __enter__(self):
+            created.touch()
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(
+        logging_utils.tempfile,
+        "NamedTemporaryFile",
+        lambda **kwargs: DummyTempFile(),
+    )
+
+    path = logging_utils.LOGGER._build_session_log_path(tmp_path)
+
+    assert path == created
+    assert path.exists()
+
+
+def test_write_verbose_log_entry_noop_when_inactive() -> None:
+    logging_utils.LOGGER._write_verbose_log_entry("[00:00.000] [TEST] msg", "\n")
+    assert logging_utils.LOGGER._log_capture_active() is False
+
+
+def test_verbose_logging_flag_helpers() -> None:
+    logging_utils.set_verbose_logging(True)
+    assert logging_utils.is_verbose_logging_enabled() is True
+    logging_utils.set_verbose_logging(False)
+    assert logging_utils.is_verbose_logging_enabled() is False
+
+
+def test_auto_configure_skips_when_directory_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(logging_utils.LOGGER, "_auto_configure_pending", True, raising=False)
+    monkeypatch.setattr(logging_utils.LOGGER, "_auto_configured", False, raising=False)
+    monkeypatch.setattr(logging_utils, "VERBOSE_LOG_DIRECTORY", None, raising=False)
+
+    logging_utils.LOGGER._ensure_auto_configured()
+
+    assert logging_utils.LOGGER._auto_configure_pending is False
+
+
+def test_logging_utils_imports_unpack_from_typing_extensions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import typing
+
+    monkeypatch.delattr(typing, "Unpack", raising=False)
+    monkeypatch.setattr("atexit.register", lambda *_, **__: None)
+
+    module_name = "pi_assistant.cli.logging_utils_reimport"
+    spec = importlib.util.spec_from_file_location(module_name, Path(logging_utils.__file__))
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    loader = spec.loader
+    assert loader is not None
+    monkeypatch.setitem(sys.modules, module_name, module)
+    loader.exec_module(module)  # type: ignore[arg-type]
+
+    assert module.Unpack.__module__.startswith("typing_extensions")

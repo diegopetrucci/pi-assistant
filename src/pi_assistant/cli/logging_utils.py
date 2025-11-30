@@ -5,6 +5,7 @@ from __future__ import annotations
 import atexit
 import re
 import sys
+import tempfile
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -61,6 +62,7 @@ class LogOptions(TypedDict, total=False):
 
 
 EXC_INFO_TUPLE_LEN = 3
+MAX_SESSION_LOG_COLLISIONS = 1000
 
 
 def strip_ansi_sequences(text: str) -> str:
@@ -191,8 +193,6 @@ class Logger:
             raise ValueError("source is required")
 
         cleaned_source = source.strip()
-        timestamp = self._format_timestamp()
-
         sep = options.pop("sep", " ")
         end = options.pop("end", "\n")
         exc_info = options.pop("exc_info", None)
@@ -204,14 +204,27 @@ class Logger:
             unexpected = ", ".join(sorted(options))
             raise TypeError(f"Unsupported log option(s): {unexpected}")
 
-        message = sep.join(str(part) for part in message_parts)
-        line = f"[{timestamp}] [{cleaned_source}]"
-        if message:
-            line = f"{line} {message}"
+        parts = tuple(message_parts)
+        line_cache: Optional[str] = None
 
-        trace_details = _format_exc_details(exc_info)
-        if trace_details:
-            line = f"{line}\n{trace_details}"
+        def _render_line() -> str:
+            nonlocal line_cache
+            if line_cache is not None:
+                return line_cache
+
+            timestamp = self._format_timestamp()
+            line = f"[{timestamp}] [{cleaned_source}]"
+            if parts:
+                message = sep.join(str(part) for part in parts)
+                if message:
+                    line = f"{line} {message}"
+
+            trace_details = _format_exc_details(exc_info)
+            if trace_details:
+                line = f"{line}\n{trace_details}"
+
+            line_cache = line
+            return line_cache
 
         if verbose:
             self._ensure_auto_configured()
@@ -222,14 +235,14 @@ class Logger:
             return
 
         if should_capture:
-            self._write_verbose_log_entry(line, end)
+            self._write_verbose_log_entry(_render_line(), end)
 
         color_code = color if color is not None else _LABEL_COLORS.get(cleaned_source)
-        console_line = line
+        console_line = _render_line()
         if color_code:
             label_token = f"[{cleaned_source}]"
             colored_label = f"{color_code}{label_token}{RESET}"
-            console_line = line.replace(label_token, colored_label, 1)
+            console_line = console_line.replace(label_token, colored_label, 1)
 
         if should_emit:
             stream = sys.stderr if error else sys.stdout
@@ -271,8 +284,7 @@ class Logger:
             pass
 
         counter = 1
-        max_attempts = 1000
-        while counter <= max_attempts:
+        while counter <= MAX_SESSION_LOG_COLLISIONS:
             candidate = directory / f"{safe_timestamp}_{counter}.log"
             try:
                 with candidate.open("x", encoding="utf-8"):
@@ -281,9 +293,13 @@ class Logger:
             except FileExistsError:
                 counter += 1
 
-        raise RuntimeError(
-            f"Unable to create a unique log file in {directory} after {max_attempts} attempts."
-        )
+        with tempfile.NamedTemporaryFile(
+            dir=directory,
+            prefix=f"{safe_timestamp}_",
+            suffix=".log",
+            delete=False,
+        ) as handle:
+            return Path(handle.name)
 
     def _write_verbose_log_entry(self, line: str, end: str) -> None:
         if self._log_file is None:

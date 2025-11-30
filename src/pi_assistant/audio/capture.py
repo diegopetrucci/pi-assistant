@@ -66,7 +66,7 @@ class AudioCapture:
             )
 
         if status:
-            LOGGER.log(AUDIO_LOG_LABEL, f"Audio callback status: {status}", error=True)
+            LOGGER.verbose(AUDIO_LOG_LABEL, f"Audio callback status: {status}")
 
         # Convert numpy array to bytes
         audio_bytes = indata.copy().tobytes()

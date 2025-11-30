@@ -78,7 +78,9 @@ class _AssistantStub:
         self.set_supported: list[bool] = []
         self.warm_calls: list[str] = []
         self.generate_calls: list[str] = []
-        self.reply = types.SimpleNamespace(text="ok", audio_bytes=b"bytes", audio_sample_rate=16000)
+        self.reply: types.SimpleNamespace | None = types.SimpleNamespace(
+            text="ok", audio_bytes=b"bytes", audio_sample_rate=16000
+        )
 
     async def verify_responses_audio_support(self) -> bool:
         self.verify_calls += 1
@@ -464,6 +466,43 @@ async def test_run_simulated_query_once_noop_for_empty() -> None:
     )
 
     assert assistant.generate_calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_simulated_query_once_logs_when_reply_missing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assistant = _AssistantStub()
+    assistant.reply = None
+    speech_player = _SpeechPlayerStub()
+
+    await run_simulated_query_once(
+        "hello",
+        cast(ts.LLMResponder, assistant),
+        cast(ts.SpeechPlayer, speech_player),
+    )
+
+    captured = capsys.readouterr()
+    assert "Simulated query returned no response" in captured.out
+    assert speech_player.play_calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_simulated_query_once_logs_when_text_missing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assistant = _AssistantStub()
+    assistant.reply = types.SimpleNamespace(text=None, audio_bytes=None, audio_sample_rate=None)
+    speech_player = _SpeechPlayerStub()
+
+    await run_simulated_query_once(
+        "hello",
+        cast(ts.LLMResponder, assistant),
+        cast(ts.SpeechPlayer, speech_player),
+    )
+
+    captured = capsys.readouterr()
+    assert "(no text content)" in captured.out
 
 
 @pytest.mark.asyncio
