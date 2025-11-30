@@ -1,12 +1,10 @@
 import asyncio
-import re
 from collections.abc import AsyncIterator
 
 import pytest
 
 from pi_assistant.cli import events
-
-ANSI_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+from pi_assistant.cli.logging_utils import strip_ansi_sequences
 
 
 def test_normalize_command_strips_non_alphanum():
@@ -59,7 +57,7 @@ def test_handle_transcription_event_error_branch(capsys):
     )
 
     captured = capsys.readouterr()
-    clean_err = ANSI_RE.sub("", captured.err)
+    clean_err = strip_ansi_sequences(captured.err)
     assert "[ERROR] fatal (E42): boom" in clean_err
 
 
@@ -253,5 +251,5 @@ async def test_receive_events_logs_generic_exception(monkeypatch, capsys):
         )
 
     stderr = capsys.readouterr().err
-    clean_err = ANSI_RE.sub("", stderr)
+    clean_err = strip_ansi_sequences(stderr)
     assert "[ERROR] Event receiver error: boom" in clean_err

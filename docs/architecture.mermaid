@@ -71,3 +71,17 @@ flowchart TB
     Assistant --> Speech
     Speech --> User((Speaker / CLI))
     Assistant --> Console["CLI transcript + logs"]
+
+    subgraph Logging["Structured logging (cli.logging_utils)"]
+        LoggerNode["Logger\n(timestamped, colorized,\nANSI-stripped capture)"]
+        VerboseLogs["Verbose log file\n(VERBOSE_LOG_DIRECTORY or per-run)"]
+        ConsoleStreams["Console stdout/stderr"]
+        LoggerNode --> VerboseLogs
+        LoggerNode --> ConsoleStreams
+    end
+
+    Config -->|"VERBOSE_* toggles"| LoggerNode
+    Session -. "state + diagnostics" .-> LoggerNode
+    AudioController -. "wake/VAD + chunk progress" .-> LoggerNode
+    WSClient -. "Realtime flow (ws_log_label)" .-> LoggerNode
+    Assistant -. "turn + playback status" .-> LoggerNode

@@ -11,11 +11,11 @@ try:
 except ImportError:
 
     class _DummyLogger:
-        def log(self, *args, **kwargs) -> None:  # pragma: no cover - fallback guard
-            return None
+        def log(self, *args, **kwargs) -> None:
+            pass
 
-        def verbose(self, *args, **kwargs) -> None:  # pragma: no cover - fallback guard
-            return None
+        def verbose(self, *args, **kwargs) -> None:
+            pass
 
     class LoggingUtilsModule(ModuleType):
         ERROR_LOG_LABEL: str

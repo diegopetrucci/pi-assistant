@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 from pi_assistant.cli import logging_utils
@@ -84,6 +86,68 @@ def test_logger_log_includes_timestamp(capsys):
     assert "] [TRACE] plain output" in out
 
 
+def test_logger_log_with_exc_info(capsys):
+    logging_utils.set_verbose_logging(True)
+
+    try:
+        raise RuntimeError("boom")
+    except RuntimeError:
+        logging_utils.LOGGER.log(
+            logging_utils.ERROR_LOG_LABEL,
+            "Failure encountered",
+            exc_info=True,
+            error=True,
+        )
+
+    captured = capsys.readouterr()
+    assert "RuntimeError: boom" in captured.err
+    assert "Traceback" in captured.err
+    logging_utils.set_verbose_logging(False)
+
+
+def test_logger_log_exc_info_with_exception_instance(capsys):
+    logging_utils.set_verbose_logging(True)
+
+    try:
+        raise ValueError("invalid")
+    except ValueError as exc:
+        logging_utils.LOGGER.log(
+            logging_utils.ERROR_LOG_LABEL,
+            "Second failure",
+            exc_info=exc,
+            error=True,
+        )
+
+    err = capsys.readouterr().err
+    assert "ValueError: invalid" in err
+    logging_utils.set_verbose_logging(False)
+
+
+def test_logger_log_exc_info_with_tuple(capsys):
+    logging_utils.set_verbose_logging(True)
+
+    try:
+        raise KeyError("missing")
+    except KeyError as exc:
+        info = (exc.__class__, exc, exc.__traceback__)
+        logging_utils.LOGGER.log(
+            logging_utils.ERROR_LOG_LABEL,
+            "Tuple failure",
+            exc_info=info,
+            error=True,
+        )
+
+    err = capsys.readouterr().err
+    assert "KeyError: 'missing'" in err
+    logging_utils.set_verbose_logging(False)
+
+
+def test_logger_log_rejects_unknown_option():
+    with pytest.raises(TypeError):
+        bad_kwargs: dict[str, Any] = {"unsupported": True}
+        logging_utils.LOGGER.log("TRACE", "noop", **bad_kwargs)
+
+
 def test_logger_applies_color_for_known_label(capsys):
     logging_utils.set_verbose_logging(True)
 
@@ -93,6 +157,11 @@ def test_logger_applies_color_for_known_label(capsys):
     assert "\033[" in out  # ANSI color present
     assert "[TURN]" in out
     logging_utils.set_verbose_logging(False)
+
+
+def test_strip_ansi_sequences_removes_codes():
+    colored = "\033[31mhello\033[0m world"
+    assert logging_utils.strip_ansi_sequences(colored) == "hello world"
 
 
 def test_ws_log_label_directional_variants():

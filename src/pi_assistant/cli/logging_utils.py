@@ -5,9 +5,16 @@ from __future__ import annotations
 import atexit
 import re
 import sys
+import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, TextIO
+from types import TracebackType
+from typing import Any, Optional, TextIO, TypedDict
+
+try:
+    from typing import Unpack
+except ImportError:
+    from typing_extensions import Unpack
 
 from pi_assistant.config import VERBOSE_LOG_CAPTURE_ENABLED, VERBOSE_LOG_DIRECTORY
 from pi_assistant.wake_word import StreamState
@@ -40,6 +47,53 @@ _WS_LABELS = {
     "→": "WS→",
 }
 
+ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+
+
+class LogOptions(TypedDict, total=False):
+    sep: str
+    end: str
+    verbose: bool
+    error: bool
+    flush: bool
+    color: str | None
+    exc_info: bool | BaseException | tuple[type[BaseException], BaseException, TracebackType | None]
+
+
+EXC_INFO_TUPLE_LEN = 3
+
+
+def strip_ansi_sequences(text: str) -> str:
+    """Return *text* with ANSI escape codes removed."""
+
+    return ANSI_ESCAPE_RE.sub("", text)
+
+
+def _format_exc_details(exc_info: object) -> Optional[str]:
+    if not exc_info:
+        return None
+
+    if exc_info is True:
+        formatted = traceback.format_exc()
+        return None if formatted.strip() == "NoneType: None" else formatted.rstrip()
+
+    if isinstance(exc_info, BaseException):
+        return "".join(
+            traceback.format_exception(exc_info.__class__, exc_info, exc_info.__traceback__)
+        ).rstrip()
+
+    if (
+        isinstance(exc_info, tuple)
+        and len(exc_info) == EXC_INFO_TUPLE_LEN
+        and isinstance(exc_info[0], type)
+        and issubclass(exc_info[0], BaseException)
+        and isinstance(exc_info[2], (TracebackType, type(None)))
+    ):
+        return "".join(traceback.format_exception(*exc_info)).rstrip()
+
+    raise TypeError("exc_info must be True, an exception instance, or (type, value, traceback)")
+
+
 _LABEL_COLORS = {
     TURN_LOG_LABEL: COLOR_ORANGE,
     TRANSCRIPT_LOG_LABEL: COLOR_GREEN,
@@ -58,8 +112,6 @@ _LABEL_COLORS = {
 
 class Logger:
     """Centralized logger that enforces `[timestamp] [source] message` output."""
-
-    _ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 
     def __init__(self) -> None:
         self._verbose_logging = False
@@ -134,7 +186,7 @@ class Logger:
 
     # ------------------------------------------------------------------
     # Public logging APIs
-    def log(self, source: str, *message_parts: object, **options: Any) -> None:
+    def log(self, source: str, *message_parts: object, **options: Unpack[LogOptions]) -> None:
         if not source:
             raise ValueError("source is required")
 
@@ -143,6 +195,7 @@ class Logger:
 
         sep = options.pop("sep", " ")
         end = options.pop("end", "\n")
+        exc_info = options.pop("exc_info", None)
         verbose = bool(options.pop("verbose", False))
         error = bool(options.pop("error", False))
         flush = bool(options.pop("flush", False))
@@ -155,6 +208,10 @@ class Logger:
         line = f"[{timestamp}] [{cleaned_source}]"
         if message:
             line = f"{line} {message}"
+
+        trace_details = _format_exc_details(exc_info)
+        if trace_details:
+            line = f"{line}\n{trace_details}"
 
         if verbose:
             self._ensure_auto_configured()
@@ -214,8 +271,8 @@ class Logger:
             pass
 
         counter = 1
-        max_retries = 1000
-        while counter <= max_retries:
+        max_attempts = 1000
+        while counter <= max_attempts:
             candidate = directory / f"{safe_timestamp}_{counter}.log"
             try:
                 with candidate.open("x", encoding="utf-8"):
@@ -225,14 +282,14 @@ class Logger:
                 counter += 1
 
         raise RuntimeError(
-            f"Unable to create a unique log file in {directory} after {max_retries} attempts."
+            f"Unable to create a unique log file in {directory} after {max_attempts} attempts."
         )
 
     def _write_verbose_log_entry(self, line: str, end: str) -> None:
         if self._log_file is None:
             return
 
-        clean_line = self._ANSI_ESCAPE_RE.sub("", line)
+        clean_line = strip_ansi_sequences(line)
         try:
             self._log_file.write(clean_line + end)
             self._log_file.flush()

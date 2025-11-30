@@ -328,12 +328,11 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
     def _log_chunk_progress(self, chunk_index: int) -> None:
         if not self._chunk_progress_logging_enabled:
             return
-        if chunk_index % 100 != 0:
-            return
-        LOGGER.verbose(
-            "DEBUG",
-            f"Processed {chunk_index} audio chunks (state={self.state_manager.state.value})",
-        )
+        if chunk_index > 0 and chunk_index % 100 == 0:
+            LOGGER.verbose(
+                "DEBUG",
+                f"Processed {chunk_index} audio chunks (state={self.state_manager.state.value})",
+            )
 
     def _log_startup(self) -> None:
         LOGGER.verbose("INFO", "Starting audio controller...")
