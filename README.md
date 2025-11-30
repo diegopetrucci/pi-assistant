@@ -69,7 +69,7 @@ This stores the interpreter under `.uv/python/...` and records the version in `.
 `sounddevice` depends on the PortAudio shared libraries, which Raspberry Pi OS does not install by default. Run the helper script once per Pi to pull in the required packages:
 
 ```bash
-./scripts/install-portaudio-deps.sh
+./scripts/provisioning/install-portaudio-deps.sh
 ```
 
 The script performs an `apt-get update` and installs `libportaudio2`, `libportaudiocpp0`, and `portaudio19-dev` using `sudo`. If you're on a distro without `apt-get`, install the equivalent PortAudio development packages via your package manager before running `uv run pi-assistant`.
@@ -221,40 +221,60 @@ rather wait indefinitely for the server.
 
 ```
 pi-assistant/
+├── assets/                      # Shared fixtures (prompt snippets, sample WAVs)
 ├── config/
-│   └── defaults.toml        # Baseline runtime configuration
-├── models/                  # Bundled openWakeWord assets
-├── scripts/                 # Repo automation helpers
+│   └── defaults.toml            # Baseline runtime configuration
+├── docs/                        # CLI + architecture references
+├── logs/
+│   ├── diagnostics/             # Hardware checks
+│   └── runtime/                 # Verbose CLI sessions
+├── models/
+│   ├── wake_word/               # Bundled openWakeWord artifacts
+│   ├── tts/
+│   └── llm/
+├── scripts/
+│   ├── provisioning/            # Hardware + dependency setup
+│   └── tooling/                 # Repo automation helpers
 ├── src/
 │   └── pi_assistant/
-│       ├── __init__.py
 │       ├── assistant/
-│       │   ├── llm.py             # Responses API + TTS orchestration
-│       │   └── transcript.py      # Turn-level transcript aggregation
-│       ├── audio/capture.py
-│       ├── cli/app.py       # CLI + orchestration
-│       ├── config/__init__.py
-│       ├── diagnostics.py
-│       ├── network/websocket_client.py
-│       └── wake_word.py
+│       │   ├── llm.py
+│       │   ├── session/services/
+│       │   ├── transcription/
+│       │   └── transcripts/
+│       ├── audio/
+│       │   ├── capture/
+│       │   ├── playback/
+│       │   ├── processing/
+│       │   └── wake_word/
+│       ├── cli/
+│       │   ├── app.py
+│       │   ├── controller/
+│       │   └── logging.py
+│       ├── core/
+│       │   └── exceptions.py
+│       ├── diagnostics/
+│       ├── network/websocket/
+│       └── config/
 ├── tests/
-│   ├── hey_jarvis.wav
-│   ├── manual/
-│   │   ├── test_audio_device.py
-│   │   └── test_save_audio.py
-│   └── test_wake_word.py
+│   ├── assistant/
+│   ├── audio/
+│   ├── cli/
+│   ├── config/
+│   ├── diagnostics/
+│   ├── network/
+│   ├── wake_word/
+│   └── manual/
 ├── README.md
-├── pyproject.toml
-├── uv.lock / ruff.toml / docs/wake-word.md / todos.md
-└── .venv/ (managed by `uv sync`)
+└── pyproject.toml
 ```
 
 ## Automated Tests
 
-The `tests/test_wake_word.py` regression uses the generated `tests/hey_jarvis.wav` fixture (and explicitly loads the Jarvis model) to ensure the detector fires exactly once regardless of which wake word the CLI currently selects. Run it with:
+The `tests/wake_word/test_wake_word.py` regression uses the generated `tests/hey_jarvis.wav` fixture (and explicitly loads the Jarvis model) to ensure the detector fires exactly once regardless of which wake word the CLI currently selects. Run it with:
 
 ```bash
-uv run python -m unittest tests/test_wake_word.py
+uv run python -m unittest tests/wake_word/test_wake_word.py
 ```
 
 > **Note:** The wake-word test is skipped automatically when `openwakeword` (and its runtimes) are unavailable.
@@ -309,7 +329,7 @@ arecord -l
 - If the device does not report any supported rate, set `SAMPLE_RATE` manually (keep `STREAM_SAMPLE_RATE=24000` so capture audio is resampled before streaming) and re-run `uv run pi-assistant -v`.
 
 **Licensing for bundled wake-word models:**
-- `models/alexa_v0.1.(onnx|tflite)`, `models/hey_jarvis_v0.1.(onnx|tflite)`, `models/hey_rhasspy_v0.1.(onnx|tflite)`, `models/melspectrogram.onnx`, and `models/embedding_model.onnx` are distributed under the Apache 2.0 license from the [openWakeWord](https://github.com/dscripka/openWakeWord) project.
+- `models/wake_word/alexa_v0.1.(onnx|tflite)`, `models/wake_word/hey_jarvis_v0.1.(onnx|tflite)`, `models/wake_word/hey_rhasspy_v0.1.(onnx|tflite)`, `models/wake_word/melspectrogram.onnx`, and `models/wake_word/embedding_model.onnx` are distributed under the Apache 2.0 license from the [openWakeWord](https://github.com/dscripka/openWakeWord) project.
 
 **Microphone permission (macOS):**
 System Settings → Privacy & Security → Microphone

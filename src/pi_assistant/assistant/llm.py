@@ -10,7 +10,7 @@ from typing import Iterator, Literal, Mapping, Optional, Tuple, TypedDict, cast
 from openai import AsyncOpenAI, BadRequestError
 from typing_extensions import Unpack
 
-from pi_assistant.cli.logging_utils import ASSISTANT_LOG_LABEL, LOGGER
+from pi_assistant.cli.logging import ASSISTANT_LOG_LABEL, LOGGER
 from pi_assistant.config import (
     ASSISTANT_LANGUAGE,
     ASSISTANT_MODEL,

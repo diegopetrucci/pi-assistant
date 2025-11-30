@@ -22,7 +22,7 @@
   - The other branch down-samples to 16 kHz and feeds openWakeWord.
 
 ### Detection pipeline
-- Add `openwakeword` to dependencies and ship the bundled “hey_jarvis_v1.0.tflite` model (or similar) inside `models/`.
+- Add `openwakeword` to dependencies and ship the bundled “hey_jarvis_v1.0.tflite` model (or similar) inside `models/wake_word/`.
 - Load the model once at startup; keep inference in a background task that receives audio slices (~0.5s overlap) to minimize latency.
 - Apply the 0.5 score threshold plus the “two consecutive hits” rule before signaling a trigger.
 
@@ -39,11 +39,11 @@
 
 ### Observability & testing
 - Log every detection score ≥ threshold, accepted triggers, state transitions, and manual overrides.
-- Add `tests/test_wake_word.py` that streams a known WAV containing “hey jarvis” to the detector and asserts the trigger fires once.
+- Add `tests/wake_word/test_wake_word.py` that streams a known WAV containing “hey jarvis” to the detector and asserts the trigger fires once.
 
 ## Implementation Steps
 1. **Dependencies & assets**
-   - Add `openwakeword` to `pyproject.toml`, download/commit the Alexa, “hey jarvis”, and “hey rhasspy” models (if license permits) under `models/`.
+   - Add `openwakeword` to `pyproject.toml`, download/commit the Alexa, “hey jarvis”, and “hey rhasspy” models (if license permits) under `models/wake_word/`.
 2. **WakeWordEngine module**
    - Handles downsampling, buffering, scoring, and threshold logic.
    - Expose async methods: `submit_chunk(bytes)` and `async for detection`.
@@ -52,7 +52,7 @@
 4. **State management**
    - Embed a small controller in `start.py` that coordinates the wake-word engine, buffering, and websocket streaming tasks.
 5. **Tests & scripts**
-   - Create a fixture WAV (or reuse `tests/manual/test_recording.wav` if it contains the phrase), build `tests/test_wake_word.py`, and document a manual verification script in `README.md`.
+   - Create a fixture WAV (or reuse `tests/manual/test_recording.wav` if it contains the phrase), build `tests/wake_word/test_wake_word.py`, and document a manual verification script in `README.md`.
 6. **Docs & logging**
    - Update README usage section (wake-word mode, wake-word configuration env vars) and ensure logs clearly indicate detection activity.
 

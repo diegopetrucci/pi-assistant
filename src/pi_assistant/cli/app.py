@@ -17,7 +17,7 @@ from pi_assistant.assistant import (
     TranscriptionSession,
 )
 from pi_assistant.cli.events import handle_transcription_event
-from pi_assistant.cli.logging_utils import (
+from pi_assistant.cli.logging import (
     ASSISTANT_LOG_LABEL,
     ERROR_LOG_LABEL,
     LOGGER,
@@ -32,8 +32,8 @@ from pi_assistant.config import (
     reasoning_effort_choices_for_model,
     reset_first_launch_choices,
 )
+from pi_assistant.core.exceptions import AssistantRestartRequired
 from pi_assistant.diagnostics import test_audio_capture, test_websocket_client
-from pi_assistant.exceptions import AssistantRestartRequired
 
 REASONING_EFFORT_CHOICES = ("none", "minimal", "low", "medium", "high")
 SIMULATED_QUERY_FALLBACK = "Hey Rhasspy, is it going to rain tomorrow?"

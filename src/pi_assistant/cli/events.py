@@ -7,7 +7,7 @@ import re
 from collections.abc import AsyncIterator
 from typing import Any, Protocol
 
-from pi_assistant.cli.logging_utils import (
+from pi_assistant.cli.logging import (
     CONTROL_LOG_LABEL,
     ERROR_LOG_LABEL,
     LOGGER,

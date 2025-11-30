@@ -144,7 +144,7 @@ When hardware only exposes 44.1/48 kHz, the client now probes PortAudio, saves t
 - `WAKE_WORD_SCORE_THRESHOLD`, `WAKE_WORD_CONSECUTIVE_FRAMES`
 - `WAKE_WORD_TARGET_SAMPLE_RATE`
 
-Bundled models live in `models/`. Detection events above the configured threshold log with `[WAKE]` tags, and state changes emit `[STATE]`.
+Bundled models live in `models/wake_word/`. Detection events above the configured threshold log with `[WAKE]` tags, and state changes emit `[STATE]`.
 
 ### UX Helpers
 

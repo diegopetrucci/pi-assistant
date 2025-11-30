@@ -3,7 +3,7 @@
 Quick capture of key architecture pivots we would pursue if rebuilding the project from a clean slate.
 
 ## 1. Centralized Settings Object
-- Current modules freeze `.env` defaults at import time (see `src/pi_assistant/assistant/transcription_session.py` and `src/pi_assistant/audio/capture.py`), which blocks dynamic overrides and complicates testing.
+- Current modules freeze `.env` defaults at import time (see `src/pi_assistant/assistant/transcription/session.py` and `src/pi_assistant/audio/capture/__init__.py`), which blocks dynamic overrides and complicates testing.
 - Rebuild around a typed `Settings` container that loads `config/defaults.toml` + environment overrides once, then inject it into components so unit tests and future hot-reload UX can swap configurations without monkey-patching globals.
 
 ## 2. Event-Driven Controller ✅

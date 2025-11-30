@@ -4,7 +4,7 @@
 
 ### Untested Files (551 total lines)
 
-#### 1. `src/pi_assistant/cli/logging_utils.py` (38 lines)
+#### 1. `src/pi_assistant/cli/logging.py` (38 lines)
 **Priority**: 🟢 **LOW**
 
 **Functions lacking tests**:
@@ -37,7 +37,7 @@ Missing coverage:
 - _none so far_
 
 ### Wake Word Engine Edge Cases
-**File**: `src/pi_assistant/wake_word.py`
+**File**: `src/pi_assistant/audio/wake_word/engine.py`
 
 Gaps:
 - ❌ `process_chunk()` with very large audio chunks
@@ -120,7 +120,7 @@ Missing:
 
 ### Priority 3: 🟢 MEDIUM (Nice to Have)
 
-#### 1. Wake Word Edge Cases (`wake_word.py`)
+#### 1. Wake Word Edge Cases (`audio/wake_word/engine.py`)
 **Estimated effort**: 1 day
 
 **Tests needed**:
@@ -189,7 +189,7 @@ Missing:
 
 1. **Week 1**: Audio capture + logging
    - [ ] Cover device initialization/selection failures in `audio/capture.py`.
-   - [ ] Exercise `cli/logging_utils.log_state_transition()` with representative inputs.
+   - [ ] Exercise `cli/logging.log_state_transition()` with representative inputs.
    - [ ] **Target**: Remove remaining “no tests” entries for audio + logging helpers.
 
 2. **Week 2**: Realtime connectivity
@@ -201,7 +201,7 @@ Missing:
 **Goal**: Broaden error-path coverage for language + wake-word subsystems.
 
 3. **Week 3**: Wake word + speech playback
-   - [ ] Stress-test `wake_word.py` with oversize, zero-length, and corrupt buffers.
+   - [ ] Stress-test `audio/wake_word/engine.py` with oversize, zero-length, and corrupt buffers.
    - [ ] Cover playback failure scenarios (invalid sample rates, device issues).
    - [ ] **Target**: Confidence in on-device gating + playback fallbacks.
 
@@ -381,7 +381,7 @@ async def test_async_function():
 - [ ] 1. `src/pi_assistant/config/__init__.py` (246 lines)
 - [ ] 2. `src/pi_assistant/cli/app.py` (165 lines)
 - [ ] 3. `src/pi_assistant/diagnostics.py` (102 lines)
-- [ ] 4. `src/pi_assistant/cli/logging_utils.py` (38 lines)
+- [ ] 4. `src/pi_assistant/cli/logging.py` (38 lines)
 
 ### Partially Tested Files Needing Expansion
 - [ ] 1. `src/pi_assistant/assistant.py`
@@ -390,7 +390,7 @@ async def test_async_function():
 - [ ] 4. `src/pi_assistant/network/websocket_client.py`
 - [ ] 5. `src/pi_assistant/cli/events.py`
 - [ ] 6. `src/pi_assistant/audio/playback.py`
-- [ ] 7. `src/pi_assistant/wake_word.py`
+- [ ] 7. `src/pi_assistant/audio/wake_word/engine.py`
 
 ### Well-Tested Files (Maintain Coverage)
 - [ ] 1. `src/pi_assistant/audio/resampler.py`
