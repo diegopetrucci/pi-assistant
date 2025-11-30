@@ -101,6 +101,7 @@ uv run pi-assistant
 ```
 
 Say "Hey Rhaspy stop" (or "Rhaspy stop") while the assistant is talking to immediately halt playback, clear the pending turn, and return to listening mode. Follow the CLI guide for verbose logging, simulated queries, assistant model overrides, and diagnostics such as `test-audio` and `test-websocket`.
+When you need throughput counters (the per-100 chunk `[DEBUG] Processed …` lines), launch with `uv run pi-assistant -v --log-chunks` so only intentional debugging sessions see them.
 
 ### Assistant Models & Reasoning
 
@@ -138,6 +139,7 @@ Verbose logs are captured by default. Each `uv run pi-assistant` session:
 - Writes a log file named with an ISO-8601 timestamp (e.g., `~/.cache/pi-assistant/logs/2024-11-30T14-03-12.123.log`).
 - Mirrors console output timestamps in the log.
 - Strips ANSI colors for readability.
+- Run `uv run pi-assistant -v --log-chunks` to include the historical per-100 chunk counters in both the console and the captured log; omit the flag to keep verbose output quieter during normal development.
 
 Files live under `~/.cache/pi-assistant/logs/` unless you override the folder with `VERBOSE_LOG_DIRECTORY=/path/to/dir`. Disable capture entirely via `VERBOSE_LOG_CAPTURE_ENABLED=0` to conserve space on constrained devices.
 ## Code Quality

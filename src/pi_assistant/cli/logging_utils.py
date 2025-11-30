@@ -39,6 +39,7 @@ _WS_LABELS = {
 }
 
 _VERBOSE_LOGGING = False
+_CHUNK_PROGRESS_LOGGING = False
 _VERBOSE_LOG_FILE: Optional[TextIO] = None
 _VERBOSE_LOG_PATH: Optional[Path] = None
 _VERBOSE_LOG_ERROR_REPORTED = False
@@ -192,6 +193,19 @@ def is_verbose_logging_enabled() -> bool:
     """Return True if verbose logging is active."""
 
     return _VERBOSE_LOGGING
+
+
+def set_chunk_progress_logging(enabled: bool) -> None:
+    """Toggle per-100 chunk progress logs."""
+
+    global _CHUNK_PROGRESS_LOGGING
+    _CHUNK_PROGRESS_LOGGING = bool(enabled)
+
+
+def is_chunk_progress_logging_enabled() -> bool:
+    """Return True if chunk progress logging is active."""
+
+    return _CHUNK_PROGRESS_LOGGING
 
 
 def ws_log_label(direction: str | None = None) -> str:

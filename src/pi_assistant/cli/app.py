@@ -21,6 +21,7 @@ from pi_assistant.cli.logging_utils import (
     ASSISTANT_LOG_LABEL,
     ERROR_LOG_LABEL,
     console_print,
+    set_chunk_progress_logging,
     set_verbose_logging,
 )
 from pi_assistant.config import (
@@ -124,6 +125,11 @@ def parse_args():
         help="Show detailed diagnostic logs (wake word, state changes, etc.).",
     )
     parser.add_argument(
+        "--log-chunks",
+        action="store_true",
+        help="Emit per-100 chunk counters inside verbose logs (useful for throughput debugging).",
+    )
+    parser.add_argument(
         "--model",
         dest="assistant_model",
         type=_parse_assistant_model_arg,
@@ -210,6 +216,7 @@ def main():
         return
 
     set_verbose_logging(args.verbose)
+    set_chunk_progress_logging(getattr(args, "log_chunks", False))
     if args.mode == "test-audio":
         run_func = test_audio_capture
     elif args.mode == "test-websocket":

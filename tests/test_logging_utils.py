@@ -10,9 +10,11 @@ def reset_verbose_log_capture():
 
     logging_utils.configure_verbose_log_capture(None)
     logging_utils.set_verbose_logging(False)
+    logging_utils.set_chunk_progress_logging(False)
     yield
     logging_utils.configure_verbose_log_capture(None)
     logging_utils.set_verbose_logging(False)
+    logging_utils.set_chunk_progress_logging(False)
 
 
 def test_verbose_print_writes_to_disk_even_when_disabled(tmp_path):
@@ -167,3 +169,11 @@ def test_write_verbose_log_entry_reports_error_once(monkeypatch, capsys):
 
     err = capsys.readouterr().err
     assert err.count("Unable to write to verbose log file") == 1
+
+
+def test_chunk_progress_logging_toggle():
+    logging_utils.set_chunk_progress_logging(True)
+    assert logging_utils.is_chunk_progress_logging_enabled() is True
+
+    logging_utils.set_chunk_progress_logging(False)
+    assert logging_utils.is_chunk_progress_logging_enabled() is False

@@ -21,6 +21,7 @@ from pi_assistant.cli.logging_utils import (
     ERROR_LOG_LABEL,
     TURN_LOG_LABEL,
     WAKE_LOG_LABEL,
+    is_chunk_progress_logging_enabled,
 )
 from pi_assistant.config import (
     CHANNELS,
@@ -119,6 +120,7 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
         self._event_bus: ControllerEventBus | None = None
         self._shutdown_event: asyncio.Event | None = None
         self._actors: list[Any] = []
+        self._chunk_progress_logging_enabled = is_chunk_progress_logging_enabled()
 
     def _build_task_factory(self) -> Callable[[], asyncio.Task]:
         def _factory() -> asyncio.Task:
@@ -318,6 +320,16 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
         except asyncio.CancelledError:
             pass
 
+    def _log_chunk_progress(self, chunk_index: int) -> None:
+        if not self._chunk_progress_logging_enabled:
+            return
+        if chunk_index % 100 != 0:
+            return
+        debug_log = (
+            f"[DEBUG] Processed {chunk_index} audio chunks (state={self.state_manager.state.value})"
+        )
+        self._verbose_print(debug_log)
+
     def _log_startup(self) -> None:
         self._verbose_print("[INFO] Starting audio controller...")
         if self.chunk_preparer.is_resampling:
@@ -378,14 +390,6 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
         stream_chunk = self.chunk_preparer.prepare(audio_bytes)
         if stream_chunk:
             await self.ws_client.send_audio_chunk(stream_chunk)
-
-    def _log_chunk_progress(self, chunk_index: int) -> None:
-        if chunk_index % 100 != 0:
-            return
-        debug_log = (
-            f"[DEBUG] Processed {chunk_index} audio chunks (state={self.state_manager.state.value})"
-        )
-        self._verbose_print(debug_log)
 
     def _reset_stream_resources(self) -> None:
         self.pre_roll.clear()

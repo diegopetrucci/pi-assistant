@@ -156,6 +156,31 @@ def _make_controller_with_stubbed_wake_engine(monkeypatch):
     return controller._AudioControllerLoop(object(), ws_client, context)
 
 
+def test_log_chunk_progress_respects_flag(monkeypatch):
+    loop = _make_controller_with_stubbed_wake_engine(monkeypatch)
+    messages: list[str] = []
+    monkeypatch.setattr(
+        controller,
+        "verbose_print",
+        lambda message, **_: messages.append(message),
+    )
+
+    loop._chunk_progress_logging_enabled = True
+    loop._log_chunk_progress(100)
+    loop._log_chunk_progress(150)
+
+    assert messages == [
+        "[DEBUG] Processed 100 audio chunks (state=listening)",
+    ]
+
+    loop._chunk_progress_logging_enabled = False
+    loop._log_chunk_progress(200)
+
+    assert messages == [
+        "[DEBUG] Processed 100 audio chunks (state=listening)",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_enter_streaming_state_starts_turn_once(monkeypatch):
     loop = _make_controller_with_stubbed_wake_engine(monkeypatch)
