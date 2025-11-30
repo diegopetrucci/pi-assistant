@@ -158,7 +158,6 @@ async def test_wake_word_actor_publishes_trigger_and_stream_events():
             silence_tracker=cast(Any, silence_tracker),
             pre_roll=cast(Any, pre_roll),
             run_wake_word_detection=_run_detection,
-            verbose_print=lambda *_: None,
             wake_engine=None,
         ),
     )
@@ -195,7 +194,6 @@ async def test_wake_word_actor_flushes_preroll_on_stream_transition():
             silence_tracker=cast(Any, silence_tracker),
             pre_roll=cast(Any, pre_roll),
             run_wake_word_detection=lambda _: WakeWordDetection(),
-            verbose_print=lambda *_: None,
             wake_engine=cast(Any, wake_engine),
         ),
     )
@@ -362,7 +360,6 @@ async def test_speech_gate_actor_manual_stop_transitions_and_cleans_up():
             reset_stream_resources=_reset_stream_resources,
             clear_server_stop_timeout=_clear_server_stop_timeout,
             schedule_server_stop_timeout=lambda: None,
-            verbose_print=lambda *_: None,
         ),
         SpeechGateActorConfig(
             auto_stop_enabled=True,

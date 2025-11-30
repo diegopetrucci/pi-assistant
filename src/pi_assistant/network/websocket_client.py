@@ -6,13 +6,12 @@ Handles WebSocket connection to OpenAI Realtime API
 import asyncio
 import base64
 import json
-import sys
 from collections.abc import AsyncIterator
 from typing import Any, Protocol, cast
 
 import websockets
 
-from pi_assistant.cli.logging_utils import ERROR_LOG_LABEL, verbose_print, ws_log_label
+from pi_assistant.cli.logging_utils import ERROR_LOG_LABEL, LOGGER, ws_log_label
 from pi_assistant.config import (
     OPENAI_REALTIME_ENDPOINT,
     SESSION_CONFIG,
@@ -47,11 +46,11 @@ class WebSocketClient:
     def _log_ws_payload(self, direction: str, payload: Any) -> None:
         """Verbose helper to display websocket payloads."""
 
-        summary = self._summarize_payload(payload, direction)
+        summary = self._summarize_payload(payload)
         if summary is not None:
-            verbose_print(summary)
+            LOGGER.verbose(ws_log_label(direction), summary)
 
-    def _summarize_payload(self, payload: Any, direction: str) -> str | None:
+    def _summarize_payload(self, payload: Any) -> str | None:
         """Return a concise description for websocket payload logging, or None to silence."""
 
         structured = payload
@@ -59,12 +58,7 @@ class WebSocketClient:
             try:
                 structured = json.loads(payload)
             except ValueError:
-                return f"{ws_log_label(direction)} {payload}"
-
-        label = ws_log_label(direction)
-
-        def _default_summary(text: str) -> str:
-            return f"{label} {text}"
+                return str(payload)
 
         def _summarize_keys(data: dict[str, Any]) -> str:
             keys = [key for key in data.keys() if key != "type"]
@@ -85,18 +79,18 @@ class WebSocketClient:
             if payload_type == "input_audio_buffer.append":
                 audio = structured.get("audio")
                 length = len(audio) if isinstance(audio, str) else "?"
-                summary = _default_summary(f"type={payload_type} audio_chars={length}")
+                summary = f"type={payload_type} audio_chars={length}"
                 return summary
             elif payload_type:
                 keys = _summarize_keys(structured)
-                summary = _default_summary(f"type={payload_type} keys={keys}")
+                summary = f"type={payload_type} keys={keys}"
             else:
                 keys = _summarize_keys(structured)
-                summary = _default_summary(f"keys={keys}")
+                summary = f"keys={keys}"
         elif isinstance(structured, list):
-            summary = _default_summary(f"list(len={len(structured)})")
+            summary = f"list(len={len(structured)})"
         else:
-            summary = _default_summary(type(structured).__name__)
+            summary = type(structured).__name__
 
         return summary
 
@@ -104,9 +98,9 @@ class WebSocketClient:
         """
         Establish WebSocket connection to OpenAI Realtime API using API key
         """
-        verbose_print("Connecting to OpenAI Realtime API...")
-        verbose_print(f"  Endpoint: {OPENAI_REALTIME_ENDPOINT}")
-        verbose_print("  Auth method: API key")
+        LOGGER.verbose(ws_log_label(), "Connecting to OpenAI Realtime API...")
+        LOGGER.verbose(ws_log_label(), f"Endpoint: {OPENAI_REALTIME_ENDPOINT}")
+        LOGGER.verbose(ws_log_label(), "Auth method: API key")
 
         try:
             # Connect with required headers
@@ -117,20 +111,27 @@ class WebSocketClient:
                 ),
             )
             self.connected = True
-            verbose_print("✓ Connected to OpenAI Realtime API")
+            LOGGER.verbose(ws_log_label(), "Connected to OpenAI Realtime API")
 
             # Wait for initial session.created event (with timeout)
             try:
                 await asyncio.wait_for(self.wait_for_session_created(), timeout=10.0)
-                verbose_print("  (Initial session created)")
+                LOGGER.verbose(ws_log_label(), "Initial session created")
             except asyncio.TimeoutError:
-                print("  [WARNING] No session.created event received after 10s")
-                verbose_print("  [INFO] Trying to send session.update anyway...")
+                LOGGER.log(
+                    ws_log_label(),
+                    "No session.created event received after 10s",
+                )
+                LOGGER.verbose(ws_log_label(), "Trying to send session.update anyway...")
 
             await self.send_session_config()
 
         except Exception as e:
-            print(f"Error connecting to OpenAI: {e}", file=sys.stderr)
+            LOGGER.log(
+                ERROR_LOG_LABEL,
+                f"Error connecting to OpenAI: {e}",
+                error=True,
+            )
             raise
 
     def _require_websocket(self) -> _WebSocketProtocol:
@@ -145,7 +146,7 @@ class WebSocketClient:
         Returns:
             dict: The event from the server
         """
-        verbose_print("Waiting for transcription_session.created event...")
+        LOGGER.verbose(ws_log_label(), "Waiting for transcription_session.created event...")
         websocket = self._require_websocket()
         consecutive_decode_errors = 0
 
@@ -161,10 +162,8 @@ class WebSocketClient:
                 except json.JSONDecodeError as exc:
                     consecutive_decode_errors += 1
                     snippet = raw_message[:120]
-                    message = (
-                        f"{ERROR_LOG_LABEL} Malformed session payload at pos {exc.pos}: {snippet!r}"
-                    )
-                    print(message, file=sys.stderr)
+                    message = f"Malformed session payload at pos {exc.pos}: {snippet!r}"
+                    LOGGER.log(ERROR_LOG_LABEL, message, error=True)
                     if consecutive_decode_errors >= _MAX_CONSECUTIVE_SESSION_ERRORS:
                         raise RuntimeError(
                             "Too many malformed session payloads received from server"
@@ -175,25 +174,26 @@ class WebSocketClient:
                 self._log_ws_payload("←", event)
 
                 # Debug: print what we received
-                verbose_print(f"[DEBUG] Received event type: {event_type}")
+                LOGGER.verbose(ws_log_label("←"), f"Received event type: {event_type}")
 
                 # Handle both transcription_session.created and error events
                 if event_type == "transcription_session.created":
-                    verbose_print("✓ Transcription session created")
+                    LOGGER.verbose(ws_log_label("←"), "Transcription session created")
                     return event
                 elif event_type == "error":
                     error = event.get("error", {})
-                    print(
-                        f"{ERROR_LOG_LABEL} Server error: {error.get('message', 'Unknown error')}",
-                        file=sys.stderr,
+                    LOGGER.log(
+                        ERROR_LOG_LABEL,
+                        f"Server error: {error.get('message', 'Unknown error')}",
+                        error=True,
                     )
                     # Don't raise - continue listening for more events
                 else:
                     # Print the full event for debugging
-                    verbose_print(f"[DEBUG] Full event: {json.dumps(event, indent=2)}")
+                    LOGGER.verbose(ws_log_label("←"), f"Full event: {json.dumps(event, indent=2)}")
 
         except Exception as e:
-            print(f"Error waiting for session: {e}", file=sys.stderr)
+            LOGGER.log(ERROR_LOG_LABEL, f"Error waiting for session: {e}", error=True)
             raise
 
         raise RuntimeError("Connection closed before receiving transcription_session.created")
@@ -207,10 +207,10 @@ class WebSocketClient:
         vad = SESSION_CONFIG["turn_detection"]
         noise_reduction = SESSION_CONFIG["input_audio_noise_reduction"]
 
-        verbose_print("Sending session configuration...")
-        verbose_print(f"  Model: {transcription['model']}")
-        verbose_print(f"  VAD: {vad['type']}")
-        verbose_print(f"  Noise reduction: {noise_reduction['type']}")
+        LOGGER.verbose(ws_log_label(), "Sending session configuration...")
+        LOGGER.verbose(ws_log_label(), f"Model: {transcription['model']}")
+        LOGGER.verbose(ws_log_label(), f"VAD: {vad['type']}")
+        LOGGER.verbose(ws_log_label(), f"Noise reduction: {noise_reduction['type']}")
 
         try:
             # Send the session update event with required session wrapper
@@ -218,10 +218,10 @@ class WebSocketClient:
             websocket = self._require_websocket()
             await websocket.send(json.dumps(session_update))
             self._log_ws_payload("→", session_update)
-            verbose_print("✓ Session configuration sent")
+            LOGGER.verbose(ws_log_label(), "Session configuration sent")
 
         except Exception as e:
-            print(f"Error sending session config: {e}", file=sys.stderr)
+            LOGGER.log(ERROR_LOG_LABEL, f"Error sending session config: {e}", error=True)
             raise
 
     async def send_audio_chunk(self, audio_bytes: bytes) -> None:
@@ -259,11 +259,11 @@ class WebSocketClient:
                 yield event
 
         except websockets.exceptions.ConnectionClosed:
-            print("WebSocket connection closed by server")
+            LOGGER.log(ws_log_label(), "WebSocket connection closed by server")
             self.connected = False
 
         except Exception as e:
-            print(f"Error receiving events: {e}", file=sys.stderr)
+            LOGGER.log(ERROR_LOG_LABEL, f"Error receiving events: {e}", error=True)
             raise
 
     async def close(self) -> None:
@@ -272,4 +272,4 @@ class WebSocketClient:
             await self.websocket.close()
             self.websocket = None
             self.connected = False
-            verbose_print("WebSocket connection closed")
+            LOGGER.verbose(ws_log_label(), "WebSocket connection closed")

@@ -10,21 +10,28 @@ try:
     from pi_assistant.cli import logging_utils as cli_logging_utils
 except ImportError:
 
+    class _DummyLogger:
+        def log(self, *args, **kwargs) -> None:  # pragma: no cover - fallback guard
+            return None
+
+        def verbose(self, *args, **kwargs) -> None:  # pragma: no cover - fallback guard
+            return None
+
     class LoggingUtilsModule(ModuleType):
         ERROR_LOG_LABEL: str
+        WS_LOG_LABEL: str
+        LOGGER: _DummyLogger
 
         def __init__(self) -> None:
             super().__init__("pi_assistant.cli.logging_utils")
-            self.ERROR_LOG_LABEL = "[ERROR]"
-
-        @staticmethod
-        def verbose_print(*args, **kwargs) -> None:
-            return None
+            self.ERROR_LOG_LABEL = "ERROR"
+            self.WS_LOG_LABEL = "WS"
+            self.LOGGER = _DummyLogger()
 
         @staticmethod
         def ws_log_label(direction=None) -> str:
             arrow = direction if direction in ("←", "→") else ""
-            return f"[WS{arrow}]"
+            return f"WS{arrow}"
 
     class CliModule(ModuleType):
         logging_utils: LoggingUtilsModule
@@ -67,16 +74,13 @@ class DummyWebSocket:
 
 @pytest.fixture
 def verbose_capture(monkeypatch):
-    records: list[str] = []
+    records: list[tuple[str, str]] = []
 
-    def _capture(*args, **kwargs):
-        if args:
-            records.append(args[0])
-        else:
-            records.append("")
+    def _capture(source, message, **kwargs):
+        records.append((source, message))
 
     monkeypatch.setattr(
-        "pi_assistant.network.websocket_client.verbose_print",
+        "pi_assistant.network.websocket_client.LOGGER.verbose",
         _capture,
     )
     return records
@@ -244,7 +248,7 @@ async def test_receive_events_logs_other_payloads(verbose_capture):
         pass
 
     label = cli_logging_utils.ws_log_label("←")
-    assert any(entry.startswith(label) and "audio_chars=8" in entry for entry in verbose_capture)
+    assert any(src == label and "audio_chars=8" in message for src, message in verbose_capture)
 
 
 @pytest.mark.asyncio
@@ -255,7 +259,7 @@ async def test_send_audio_chunk_does_not_log(verbose_capture):
 
     await client.send_audio_chunk(b"\x00\x01\x02\x03")
 
-    assert not any("WS→" in entry for entry in verbose_capture)
+    assert not any(src == "WS→" for src, _ in verbose_capture)
 
 
 @pytest.mark.asyncio

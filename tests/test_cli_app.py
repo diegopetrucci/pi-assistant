@@ -337,10 +337,10 @@ def test_main_reset_short_circuits(monkeypatch: pytest.MonkeyPatch) -> None:
 
     logs: list[str] = []
 
-    def fake_console_print(message: str, *unused_args, **unused_kwargs):
+    def fake_log(_source: str, message: str, **_kwargs):
         logs.append(message)
 
-    monkeypatch.setattr("pi_assistant.cli.app.console_print", fake_console_print)
+    monkeypatch.setattr("pi_assistant.cli.app.LOGGER.log", fake_log)
 
     cleared = {"ASSISTANT_MODEL", "LOCATION_NAME"}
     monkeypatch.setattr("pi_assistant.cli.app.reset_first_launch_choices", lambda: cleared)

@@ -1,5 +1,4 @@
 import asyncio
-import io
 import os
 from types import SimpleNamespace
 
@@ -132,12 +131,16 @@ def test_enqueue_audio_bytes_warns_when_queue_full(monkeypatch):
 
     capture.audio_queue = FullQueue()
 
-    stderr = io.StringIO()
-    monkeypatch.setattr(capture_module.sys, "stderr", stderr)
+    logs: list[str] = []
+
+    def capture_log(_source: str, message: str, **kwargs) -> None:
+        logs.append(message)
+
+    monkeypatch.setattr(capture_module.LOGGER, "log", capture_log)
 
     capture._enqueue_audio_bytes(b"1234")
 
-    assert "Audio queue full" in stderr.getvalue()
+    assert any("Audio queue full" in entry for entry in logs)
 
 
 def test_enqueue_audio_bytes_enqueues_when_room(monkeypatch):
@@ -156,14 +159,14 @@ def test_enqueue_audio_bytes_enqueues_when_room(monkeypatch):
     queue = RecordingQueue()
     capture.audio_queue = queue
 
-    stderr = io.StringIO()
-    monkeypatch.setattr(capture_module.sys, "stderr", stderr)
+    logs: list[str] = []
+    monkeypatch.setattr(capture_module.LOGGER, "log", lambda *_args, **_kwargs: logs.append("hit"))
 
     payload = b"abcd"
     capture._enqueue_audio_bytes(payload)
 
     assert queue.items == [payload]
-    assert stderr.getvalue() == ""
+    assert logs == []
 
 
 def test_callback_schedules_enqueue_helper():
@@ -212,12 +215,16 @@ def test_callback_logs_status(monkeypatch):
     capture.audio_queue = Queue()
     audio_chunk = np.zeros((4,), dtype=np.int16)
 
-    stderr = io.StringIO()
-    monkeypatch.setattr(capture_module.sys, "stderr", stderr)
+    logs: list[str] = []
+    monkeypatch.setattr(
+        capture_module.LOGGER,
+        "log",
+        lambda _source, message, **__: logs.append(message),
+    )
 
     capture.callback(audio_chunk, frames=4, time_info=None, status="OVERFLOW")
 
-    assert "Audio callback status: OVERFLOW" in stderr.getvalue()
+    assert any("Audio callback status: OVERFLOW" in msg for msg in logs)
 
 
 def test_callback_returns_when_loop_missing(monkeypatch):

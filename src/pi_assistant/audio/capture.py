@@ -5,10 +5,9 @@ Handles audio capture from USB microphone
 
 import asyncio
 import os
-import sys
 from typing import Protocol, cast
 
-from pi_assistant.cli.logging_utils import verbose_print
+from pi_assistant.cli.logging_utils import AUDIO_LOG_LABEL, ERROR_LOG_LABEL, LOGGER
 from pi_assistant.config import (
     AUDIO_INPUT_DEVICE,
     AUDIO_QUEUE_MAX_SIZE,
@@ -60,12 +59,14 @@ class AudioCapture:
 
         # Debug: Print first few callbacks
         if self.callback_count <= CALLBACK_DEBUG_LIMIT:
-            verbose_print(
-                f"[DEBUG] Callback #{self.callback_count}: {len(indata)} frames", flush=True
+            LOGGER.verbose(
+                AUDIO_LOG_LABEL,
+                f"Callback #{self.callback_count}: {len(indata)} frames",
+                flush=True,
             )
 
         if status:
-            print(f"Audio callback status: {status}", file=sys.stderr)
+            LOGGER.log(AUDIO_LOG_LABEL, f"Audio callback status: {status}", error=True)
 
         # Convert numpy array to bytes
         audio_bytes = indata.copy().tobytes()
@@ -87,15 +88,15 @@ class AudioCapture:
         self.loop = loop
         self.sample_rate = SAMPLE_RATE
 
-        verbose_print("Initializing audio stream...")
-        verbose_print(f"  Sample rate: {self.sample_rate} Hz")
-        verbose_print(f"  Channels: {CHANNELS} (mono)")
-        verbose_print(f"  Buffer size: {BUFFER_SIZE} frames")
-        verbose_print(f"  Data type: {DTYPE}")
+        LOGGER.verbose(AUDIO_LOG_LABEL, "Initializing audio stream...")
+        LOGGER.verbose(AUDIO_LOG_LABEL, f"Sample rate: {self.sample_rate} Hz")
+        LOGGER.verbose(AUDIO_LOG_LABEL, f"Channels: {CHANNELS} (mono)")
+        LOGGER.verbose(AUDIO_LOG_LABEL, f"Buffer size: {BUFFER_SIZE} frames")
+        LOGGER.verbose(AUDIO_LOG_LABEL, f"Data type: {DTYPE}")
 
         device = self._select_input_device()
         self.input_device = device
-        verbose_print(f"  Input device: {self._describe_device(device)}")
+        LOGGER.verbose(AUDIO_LOG_LABEL, f"Input device: {self._describe_device(device)}")
 
         self._ensure_sample_rate_supported(device)
 
@@ -113,21 +114,21 @@ class AudioCapture:
             raise self._stream_initialization_error(exc, device) from exc
 
         self.stream.start()
-        verbose_print("Audio stream started")
+        LOGGER.verbose(AUDIO_LOG_LABEL, "Audio stream started")
 
     def stop_stream(self):
         """Stop and close the audio stream"""
         if self.stream:
             self.stream.stop()
             self.stream.close()
-            verbose_print("Audio stream closed")
+            LOGGER.verbose(AUDIO_LOG_LABEL, "Audio stream closed")
 
     def _enqueue_audio_bytes(self, audio_bytes: bytes) -> None:
         """Attempt a non-blocking enqueue of audio; drop if the queue is full."""
         try:
             self.audio_queue.put_nowait(audio_bytes)
         except asyncio.QueueFull:
-            print("Warning: Audio queue full, dropping frame", file=sys.stderr)
+            LOGGER.log(ERROR_LOG_LABEL, "Audio queue full, dropping frame", error=True)
 
     def _ensure_sample_rate_supported(self, device) -> None:
         """Validate that the selected device accepts the configured sample rate."""
@@ -158,10 +159,12 @@ class AudioCapture:
         device_label = self._describe_device(device)
         _persist_env_value("SAMPLE_RATE", str(fallback_rate))
         os.environ["SAMPLE_RATE"] = str(fallback_rate)
-        print(
-            "[ERROR] "
-            f"Detected microphone {device_label} prefers {fallback_rate} Hz. "
-            "Saved SAMPLE_RATE to .env; launch pi-assistant again to apply."
+        LOGGER.log(
+            ERROR_LOG_LABEL,
+            (
+                f"Detected microphone {device_label} prefers {fallback_rate} Hz. "
+                "Saved SAMPLE_RATE to .env; launch pi-assistant again to apply."
+            ),
         )
 
     def _unsupported_sample_rate_error(self, device) -> RuntimeError:

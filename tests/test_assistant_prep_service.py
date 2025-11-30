@@ -8,6 +8,7 @@ from pi_assistant.assistant.session_services.assistant_prep_service import (
     AssistantPrepService,
 )
 from pi_assistant.assistant.transcription_session import TranscriptionRunConfig
+from pi_assistant.cli import logging_utils as cli_logging_utils
 
 
 class _AssistantStub:
@@ -52,10 +53,13 @@ async def test_assistant_prep_service_warms_and_announces_responses_audio(
     config = _make_config(use_responses_audio=True, reasoning_effort="medium")
 
     logs: list[str] = []
-    monkeypatch.setattr(
-        "pi_assistant.assistant.session_services.assistant_prep_service.console_print",
-        lambda message: logs.append(message),
-    )
+    original_log = cli_logging_utils.LOGGER.log
+
+    def capture_log(source: str, message: str, **kwargs) -> None:
+        logs.append(message)
+        original_log(source, message, **kwargs)
+
+    monkeypatch.setattr(cli_logging_utils.LOGGER, "log", capture_log)
     monkeypatch.setattr(
         "pi_assistant.assistant.session_services.assistant_prep_service.CONFIRMATION_CUE_ENABLED",
         True,

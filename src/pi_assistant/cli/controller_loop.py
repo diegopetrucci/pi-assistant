@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import sys
 from collections.abc import Callable
 from typing import Any, Optional
 from uuid import uuid4
@@ -19,6 +18,7 @@ from pi_assistant.cli.controller_context import AudioControllerContext
 from pi_assistant.cli.logging_utils import (
     CONTROL_LOG_LABEL,
     ERROR_LOG_LABEL,
+    LOGGER,
     TURN_LOG_LABEL,
     WAKE_LOG_LABEL,
     is_chunk_progress_logging_enabled,
@@ -146,12 +146,13 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
                 threshold=WAKE_WORD_SCORE_THRESHOLD,
                 consecutive_required=WAKE_WORD_CONSECUTIVE_FRAMES,
             )
-            self._verbose_print(
-                f"{WAKE_LOG_LABEL} Wake-word model: {WAKE_WORD_PHRASE} ({WAKE_WORD_NAME})"
+            LOGGER.verbose(
+                WAKE_LOG_LABEL,
+                f"Wake-word model: {WAKE_WORD_PHRASE} ({WAKE_WORD_NAME})",
             )
             return engine
         except RuntimeError as exc:
-            print(f"{ERROR_LOG_LABEL} {exc}", file=sys.stderr)
+            LOGGER.log(ERROR_LOG_LABEL, str(exc), error=True)
             raise
 
     async def run(self) -> None:
@@ -172,12 +173,13 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
             await asyncio.gather(*tasks)
         except asyncio.CancelledError:
             processed_chunks = self.state_manager.chunk_count
-            self._verbose_print(
-                f"[INFO] Audio controller stopped ({processed_chunks} chunks processed)"
+            LOGGER.verbose(
+                "INFO",
+                f"Audio controller stopped ({processed_chunks} chunks processed)",
             )
             raise
         except Exception as exc:
-            print(f"{ERROR_LOG_LABEL} Audio controller error: {exc}", file=sys.stderr)
+            LOGGER.log(ERROR_LOG_LABEL, f"Audio controller error: {exc}", error=True)
             raise
         finally:
             if self._shutdown_event:
@@ -190,9 +192,10 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
             gather_results = await asyncio.gather(*tasks, return_exceptions=True)
             for result in gather_results:
                 if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
-                    print(
-                        f"{ERROR_LOG_LABEL} Exception during task cancellation: {result}",
-                        file=sys.stderr,
+                    LOGGER.log(
+                        ERROR_LOG_LABEL,
+                        f"Exception during task cancellation: {result}",
+                        error=True,
                     )
             await self._await_server_stop_timeout_task()
             await self.response_tasks.drain()
@@ -223,7 +226,6 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
                     silence_tracker=self.silence_tracker,
                     pre_roll=self.pre_roll,
                     run_wake_word_detection=self._run_wake_word_detection,
-                    verbose_print=self._verbose_print,
                     wake_engine=self.wake_engine,
                 ),
             ),
@@ -255,7 +257,6 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
                     reset_stream_resources=self._reset_stream_resources,
                     clear_server_stop_timeout=_clear_server_stop_timeout,
                     schedule_server_stop_timeout=self._schedule_server_stop_timeout,
-                    verbose_print=self._verbose_print,
                 ),
                 config=SpeechGateActorConfig(
                     auto_stop_enabled=self._auto_stop_enabled,
@@ -276,10 +277,14 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
                 audio_bytes = chunk_task.result()
                 chunk_task = None
                 if len(audio_bytes) % self.bytes_per_frame != 0:
-                    print(
-                        f"{ERROR_LOG_LABEL} Dropping malformed audio chunk: "
-                        f"{len(audio_bytes)} bytes (expected multiple of {self.bytes_per_frame}).",
-                        file=sys.stderr,
+                    LOGGER.log(
+                        ERROR_LOG_LABEL,
+                        (
+                            "Dropping malformed audio chunk: "
+                            f"{len(audio_bytes)} bytes "
+                            f"(expected multiple of {self.bytes_per_frame})."
+                        ),
+                        error=True,
                     )
                     continue
                 chunk_index = self.state_manager.increment_chunk_count()
@@ -325,21 +330,25 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
             return
         if chunk_index % 100 != 0:
             return
-        debug_log = (
-            f"[DEBUG] Processed {chunk_index} audio chunks (state={self.state_manager.state.value})"
+        LOGGER.verbose(
+            "DEBUG",
+            f"Processed {chunk_index} audio chunks (state={self.state_manager.state.value})",
         )
-        self._verbose_print(debug_log)
 
     def _log_startup(self) -> None:
-        self._verbose_print("[INFO] Starting audio controller...")
+        LOGGER.verbose("INFO", "Starting audio controller...")
         if self.chunk_preparer.is_resampling:
-            self._verbose_print(
-                f"{CONTROL_LOG_LABEL} Resampling capture audio "
-                f"{self.capture_sample_rate} Hz -> {self.stream_sample_rate} Hz for OpenAI."
+            LOGGER.verbose(
+                CONTROL_LOG_LABEL,
+                (
+                    "Resampling capture audio "
+                    f"{self.capture_sample_rate} Hz -> {self.stream_sample_rate} Hz for OpenAI."
+                ),
             )
         else:
-            self._verbose_print(
-                f"{CONTROL_LOG_LABEL} Streaming audio at {self.stream_sample_rate} Hz."
+            LOGGER.verbose(
+                CONTROL_LOG_LABEL,
+                f"Streaming audio at {self.stream_sample_rate} Hz.",
             )
         self._log_state_transition(None, self.state_manager.state, "awaiting wake phrase")
 
@@ -357,12 +366,13 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
             return WakeWordDetection()
         detection = self.wake_engine.process_chunk(audio_bytes)
         if detection.score >= WAKE_WORD_SCORE_THRESHOLD:
-            score_log = (
-                f"{WAKE_LOG_LABEL} score={detection.score:.2f} "
-                f"(threshold {WAKE_WORD_SCORE_THRESHOLD:.2f}) "
-                f"state={self.state_manager.state.value}"
+            LOGGER.verbose(
+                WAKE_LOG_LABEL,
+                (
+                    f"score={detection.score:.2f} (threshold {WAKE_WORD_SCORE_THRESHOLD:.2f}) "
+                    f"state={self.state_manager.state.value}"
+                ),
             )
-            self._verbose_print(score_log)
         return detection
 
     async def _enter_streaming_state(self, *, trigger: str, reason: str) -> bool:
@@ -379,8 +389,9 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
     async def _send_preroll_payload(self, payload: bytes) -> None:
         buffered_frames = len(payload) // self.bytes_per_frame
         duration_ms = buffered_frames / self.capture_sample_rate * 1000
-        self._verbose_print(
-            f"{WAKE_LOG_LABEL} Triggered -> streaming (sent {duration_ms:.0f} ms of buffered audio)"
+        LOGGER.verbose(
+            WAKE_LOG_LABEL,
+            f"Triggered -> streaming (sent {duration_ms:.0f} ms of buffered audio)",
         )
         resampled_payload = self.chunk_preparer.prepare(payload)
         if resampled_payload:
@@ -418,7 +429,7 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
             context["turn"] = self._active_turn_id
         context.update(fields)
         kv_pairs = " ".join(f"{key}={value!r}" for key, value in context.items())
-        self._console_print(f"{TURN_LOG_LABEL} action={action} {kv_pairs}")
+        LOGGER.log(TURN_LOG_LABEL, f"action={action} {kv_pairs}")
 
     @property
     def _auto_stop_enabled(self) -> bool:
@@ -431,12 +442,6 @@ class _AudioControllerLoop(ServerStopTimeoutMixin):
     @property
     def _server_stop_min_silence_seconds(self) -> float:
         return self._controller_module.SERVER_STOP_MIN_SILENCE_SECONDS
-
-    def _console_print(self, message: str) -> None:
-        self._controller_module.console_print(message)
-
-    def _verbose_print(self, message: str) -> None:
-        self._controller_module.verbose_print(message)
 
     def _log_state_transition(
         self,

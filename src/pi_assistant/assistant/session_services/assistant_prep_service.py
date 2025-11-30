@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 from typing import TYPE_CHECKING, Optional
 
 from pi_assistant.assistant.llm import LLMResponder
-from pi_assistant.cli.logging_utils import ASSISTANT_LOG_LABEL, console_print
+from pi_assistant.cli.logging_utils import ASSISTANT_LOG_LABEL, LOGGER
 from pi_assistant.config import CONFIRMATION_CUE_ENABLED, CONFIRMATION_CUE_TEXT
 
 from .session_service import BaseSessionService
@@ -43,23 +42,24 @@ class AssistantPrepService(BaseSessionService):
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            print(
-                f"{ASSISTANT_LOG_LABEL} Confirmation cue cleanup failed: {exc}",
-                file=sys.stderr,
+            LOGGER.log(
+                ASSISTANT_LOG_LABEL,
+                f"Confirmation cue cleanup failed: {exc}",
+                error=True,
             )
         finally:
             self._cue_task = None
 
     def _log_assistant_context(self) -> None:
         assistant = self._assistant
-        console_print(f"{ASSISTANT_LOG_LABEL} Using assistant model: {assistant.model_name}")
+        LOGGER.log(ASSISTANT_LOG_LABEL, f"Using assistant model: {assistant.model_name}")
         enabled_tools = assistant.enabled_tools
         tools_summary = ", ".join(enabled_tools) if enabled_tools else "none"
-        console_print(f"{ASSISTANT_LOG_LABEL} Tools enabled: {tools_summary}")
+        LOGGER.log(ASSISTANT_LOG_LABEL, f"Tools enabled: {tools_summary}")
         reasoning_summary = self._config.reasoning_effort or "auto"
-        console_print(f"{ASSISTANT_LOG_LABEL} Reasoning effort: {reasoning_summary}")
+        LOGGER.log(ASSISTANT_LOG_LABEL, f"Reasoning effort: {reasoning_summary}")
         location_summary = (assistant.location_name or "").strip() or "unspecified"
-        console_print(f"{ASSISTANT_LOG_LABEL} Location context: {location_summary}")
+        LOGGER.log(ASSISTANT_LOG_LABEL, f"Location context: {location_summary}")
 
     def _warm_confirmation_cue(self) -> None:
         assistant = self._assistant
@@ -74,9 +74,10 @@ class AssistantPrepService(BaseSessionService):
             except asyncio.CancelledError:
                 pass
             except Exception as exc:
-                print(
-                    f"{ASSISTANT_LOG_LABEL} Failed to warm confirmation cue: {exc}",
-                    file=sys.stderr,
+                LOGGER.log(
+                    ASSISTANT_LOG_LABEL,
+                    f"Failed to warm confirmation cue: {exc}",
+                    error=True,
                 )
 
         self._cue_task.add_done_callback(_log_cue_error)
@@ -91,9 +92,10 @@ class AssistantPrepService(BaseSessionService):
             self._responses_audio_enabled = await assistant.verify_responses_audio_support()
         except Exception as exc:
             assistant.set_responses_audio_supported(False)
-            print(
-                f"{ASSISTANT_LOG_LABEL} Unable to verify Responses audio support: {exc}",
-                file=sys.stderr,
+            LOGGER.log(
+                ASSISTANT_LOG_LABEL,
+                f"Unable to verify Responses audio support: {exc}",
+                error=True,
             )
             self._responses_audio_enabled = False
         self._announce_tts_mode(self._responses_audio_enabled)
@@ -101,14 +103,18 @@ class AssistantPrepService(BaseSessionService):
     def _announce_tts_mode(self, responses_audio_enabled: bool) -> None:
         assistant = self._assistant
         if responses_audio_enabled:
-            print(f"{ASSISTANT_LOG_LABEL} Responses audio enabled; streaming assistant replies.")
+            LOGGER.log(
+                ASSISTANT_LOG_LABEL,
+                "Responses audio enabled; streaming assistant replies.",
+            )
         elif assistant.tts_enabled:
             if self._config.use_responses_audio:
-                print(
-                    f"{ASSISTANT_LOG_LABEL} Responses audio not available; using Audio API for TTS."
+                LOGGER.log(
+                    ASSISTANT_LOG_LABEL,
+                    "Responses audio not available; using Audio API for TTS.",
                 )
             else:
-                print(
-                    f"{ASSISTANT_LOG_LABEL} Local TTS mode active; "
-                    "synthesizing replies after receiving text."
+                LOGGER.log(
+                    ASSISTANT_LOG_LABEL,
+                    "Local TTS mode active; synthesizing replies after receiving text.",
                 )

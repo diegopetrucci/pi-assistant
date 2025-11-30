@@ -17,12 +17,17 @@ def reset_verbose_log_capture():
     logging_utils.set_chunk_progress_logging(False)
 
 
-def test_verbose_print_writes_to_disk_even_when_disabled(tmp_path):
+def test_logger_verbose_writes_to_disk_even_when_disabled(tmp_path):
     log_file = tmp_path / "logs" / "session.log"
     logging_utils.configure_verbose_log_capture(log_file)
     logging_utils.set_verbose_logging(False)
 
-    logging_utils.verbose_print(logging_utils.STATE_LOG_LABEL, "hello", "world", end="!")
+    logging_utils.LOGGER.verbose(
+        logging_utils.STATE_LOG_LABEL,
+        "hello",
+        "world",
+        end="!",
+    )
 
     logging_utils.configure_verbose_log_capture(None)
 
@@ -59,34 +64,34 @@ def test_per_session_capture_generates_iso_filename(tmp_path):
     assert stem[:4].isdigit()
 
 
-def test_verbose_print_emits_timestamp_when_enabled(capsys):
+def test_logger_verbose_includes_timestamp_when_enabled(capsys):
     logging_utils.set_verbose_logging(True)
 
-    logging_utils.verbose_print("message")
+    logging_utils.LOGGER.verbose("TEST", "message")
 
     out = capsys.readouterr().out
     assert out.startswith("[")
-    assert "message" in out
+    assert "] [TEST] message" in out
 
 
-def test_console_print_includes_timestamp_when_not_verbose(capsys):
+def test_logger_log_includes_timestamp(capsys):
     logging_utils.set_verbose_logging(False)
 
-    logging_utils.console_print("plain output")
+    logging_utils.LOGGER.log("TRACE", "plain output")
 
     out = capsys.readouterr().out.strip()
     assert out.startswith("[")
-    assert out.endswith("plain output")
+    assert "] [TRACE] plain output" in out
 
 
-def test_console_print_includes_timestamp_when_verbose(capsys):
+def test_logger_applies_color_for_known_label(capsys):
     logging_utils.set_verbose_logging(True)
 
-    logging_utils.console_print("verbose output")
+    logging_utils.LOGGER.log(logging_utils.TURN_LOG_LABEL, "colorful")
 
-    out = capsys.readouterr().out.strip()
-    assert out.startswith("[")
-    assert out.endswith("verbose output")
+    out = capsys.readouterr().out
+    assert "\033[" in out  # ANSI color present
+    assert "[TURN]" in out
     logging_utils.set_verbose_logging(False)
 
 
@@ -97,15 +102,20 @@ def test_ws_log_label_directional_variants():
 
     inbound = logging_utils.ws_log_label("←")
     outbound = logging_utils.ws_log_label("→")
-    assert "[WS←]" in inbound
-    assert "[WS→]" in outbound
+    assert inbound == "WS←"
+    assert outbound == "WS→"
 
 
 def test_log_state_transition_skips_when_state_unchanged(monkeypatch):
     calls: list[tuple] = []
-    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURE_PENDING", False)
-    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURED", True)
-    monkeypatch.setattr(logging_utils, "verbose_print", lambda *args, **kwargs: calls.append(args))
+    monkeypatch.setattr(logging_utils.LOGGER, "_auto_configure_pending", False, raising=False)
+    monkeypatch.setattr(logging_utils.LOGGER, "_auto_configured", True, raising=False)
+    monkeypatch.setattr(
+        logging_utils.LOGGER,
+        "verbose",
+        lambda *args, **kwargs: calls.append(args),
+        raising=False,
+    )
     logging_utils.set_verbose_logging(True)
 
     logging_utils.log_state_transition(StreamState.LISTENING, StreamState.LISTENING, "noop")
@@ -114,39 +124,45 @@ def test_log_state_transition_skips_when_state_unchanged(monkeypatch):
 
 
 def test_log_state_transition_logs_from_pending(monkeypatch):
-    messages: list[str] = []
-    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURE_PENDING", False)
-    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURED", True)
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(logging_utils.LOGGER, "_auto_configure_pending", False, raising=False)
+    monkeypatch.setattr(logging_utils.LOGGER, "_auto_configured", True, raising=False)
     monkeypatch.setattr(
-        logging_utils, "verbose_print", lambda message, **_: messages.append(message)
+        logging_utils.LOGGER,
+        "verbose",
+        lambda source, message, **_: calls.append((source, message)),
+        raising=False,
     )
     logging_utils.set_verbose_logging(True)
 
     logging_utils.log_state_transition(None, StreamState.LISTENING, "boot")
 
-    assert messages and "Entered LISTENING" in messages[-1]
+    assert calls and "Entered LISTENING" in calls[-1][1]
 
 
 def test_log_state_transition_logs_between_states(monkeypatch):
-    messages: list[str] = []
-    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURE_PENDING", False)
-    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURED", True)
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(logging_utils.LOGGER, "_auto_configure_pending", False, raising=False)
+    monkeypatch.setattr(logging_utils.LOGGER, "_auto_configured", True, raising=False)
     monkeypatch.setattr(
-        logging_utils, "verbose_print", lambda message, **_: messages.append(message)
+        logging_utils.LOGGER,
+        "verbose",
+        lambda source, message, **_: calls.append((source, message)),
+        raising=False,
     )
     logging_utils.set_verbose_logging(True)
 
     logging_utils.log_state_transition(StreamState.LISTENING, StreamState.STREAMING, "hotword")
 
-    assert messages and "LISTENING -> STREAMING" in messages[-1]
+    assert calls and "LISTENING -> STREAMING" in calls[-1][1]
 
 
 def test_auto_configuration_enables_capture(tmp_path, monkeypatch):
-    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURE_PENDING", True)
-    monkeypatch.setattr(logging_utils, "_AUTO_CONFIGURED", False)
+    monkeypatch.setattr(logging_utils.LOGGER, "_auto_configure_pending", True, raising=False)
+    monkeypatch.setattr(logging_utils.LOGGER, "_auto_configured", False, raising=False)
     monkeypatch.setattr(logging_utils, "VERBOSE_LOG_DIRECTORY", tmp_path)
 
-    logging_utils._ensure_auto_configured()
+    logging_utils.LOGGER._ensure_auto_configured()
     path = logging_utils.current_verbose_log_path()
 
     assert path is not None
@@ -161,11 +177,11 @@ def test_write_verbose_log_entry_reports_error_once(monkeypatch, capsys):
         def flush(self):
             pass
 
-    monkeypatch.setattr(logging_utils, "_VERBOSE_LOG_FILE", BrokenLog())
-    monkeypatch.setattr(logging_utils, "_VERBOSE_LOG_ERROR_REPORTED", False)
+    monkeypatch.setattr(logging_utils.LOGGER, "_log_file", BrokenLog(), raising=False)
+    monkeypatch.setattr(logging_utils.LOGGER, "_log_error_reported", False, raising=False)
 
-    logging_utils._write_verbose_log_entry("00:00.000", ("msg",), " ", "\n")
-    logging_utils._write_verbose_log_entry("00:00.000", ("msg",), " ", "\n")
+    logging_utils.LOGGER._write_verbose_log_entry("[00:00.000] [TEST] msg", "\n")
+    logging_utils.LOGGER._write_verbose_log_entry("[00:00.000] [TEST] msg", "\n")
 
     err = capsys.readouterr().err
     assert err.count("Unable to write to verbose log file") == 1

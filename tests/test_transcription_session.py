@@ -436,7 +436,10 @@ async def test_run_simulated_query_once_handles_reply(monkeypatch: pytest.Monkey
     assistant = _AssistantStub()
     speech_player = _SpeechPlayerStub()
     logs: list[str] = []
-    monkeypatch.setattr(ts, "console_print", lambda message, *args, **kwargs: logs.append(message))
+    monkeypatch.setattr(
+        "pi_assistant.cli.logging_utils.LOGGER.log",
+        lambda _source, message, **__: logs.append(message),
+    )
 
     await run_simulated_query_once(
         " hi ",

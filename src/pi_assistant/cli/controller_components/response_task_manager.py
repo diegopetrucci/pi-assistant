@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Callable
 from typing import Set
 
-from pi_assistant.cli.logging_utils import TURN_LOG_LABEL, verbose_print
+from pi_assistant.cli.logging_utils import LOGGER, TURN_LOG_LABEL
 
 
 class ResponseTaskManager:
@@ -24,14 +24,14 @@ class ResponseTaskManager:
             self._tasks.discard(fut)
 
         task.add_done_callback(_discard_on_completion)
-        verbose_print(f"{TURN_LOG_LABEL} Scheduled assistant reply ({reason}).")
+        LOGGER.verbose(TURN_LOG_LABEL, f"Scheduled assistant reply ({reason}).")
 
     def cancel(self, reason: str) -> None:
         if not self._tasks:
             return
-        verbose_print(
-            f"{TURN_LOG_LABEL} Canceling {len(self._tasks)} pending assistant reply task(s) "
-            f"({reason})."
+        LOGGER.verbose(
+            TURN_LOG_LABEL,
+            f"Canceling {len(self._tasks)} pending assistant reply task(s) ({reason}).",
         )
         for pending in tuple(self._tasks):
             pending.cancel()

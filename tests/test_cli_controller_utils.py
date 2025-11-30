@@ -551,7 +551,11 @@ async def test_schedule_turn_response_logs_cancellation(monkeypatch):
     monkeypatch.setattr(controller_helpers, "finalize_turn_and_respond", pending)
 
     logs: list[str] = []
-    monkeypatch.setattr(controller_helpers, "verbose_print", lambda message: logs.append(message))
+    monkeypatch.setattr(
+        controller_helpers.LOGGER,
+        "verbose",
+        lambda _source, message, **_: logs.append(message),
+    )
 
     task = controller.schedule_turn_response(
         transcript_buffer=cast(controller.TurnTranscriptAggregator, _DummyTranscriptBuffer()),

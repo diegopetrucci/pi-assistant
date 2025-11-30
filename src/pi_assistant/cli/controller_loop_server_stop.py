@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from pi_assistant.cli.logging_utils import ERROR_LOG_LABEL, TURN_LOG_LABEL
+from pi_assistant.cli.logging_utils import ERROR_LOG_LABEL, LOGGER, TURN_LOG_LABEL
 
 if TYPE_CHECKING:
     from pi_assistant.cli.controller_components import StreamStateManager
@@ -18,8 +17,6 @@ if TYPE_CHECKING:
         _server_stop_timeout_task: asyncio.Task[None] | None
         _server_stop_timeout_turn_id: str | None
         state_manager: StreamStateManager
-
-        def _verbose_print(self, message: str) -> None: ...
 
         def _audit_log(self, action: str, **fields: Any) -> None: ...
 
@@ -43,9 +40,9 @@ class ServerStopTimeoutMixin:
             return
         turn_id = ctx._active_turn_id
         if turn_id is None:
-            ctx._verbose_print(
-                f"{TURN_LOG_LABEL} Skipping server stop timeout; "
-                "no active turn is associated with the pending stop."
+            LOGGER.verbose(
+                TURN_LOG_LABEL,
+                "Skipping server stop timeout; no active turn is associated with the pending stop.",
             )
             return
         ctx._clear_server_stop_timeout(cause="reschedule")
@@ -90,9 +87,9 @@ class ServerStopTimeoutMixin:
                 return
             active_turn = ctx._active_turn_id
             if active_turn and active_turn != expected_turn_id:
-                ctx._verbose_print(
-                    f"{TURN_LOG_LABEL} Timeout for {expected_turn_id} ignored; "
-                    f"current turn is {active_turn}."
+                LOGGER.verbose(
+                    TURN_LOG_LABEL,
+                    f"Timeout for {expected_turn_id} ignored; current turn is {active_turn}.",
                 )
                 return
             ctx._audit_log(
@@ -104,9 +101,10 @@ class ServerStopTimeoutMixin:
             if reason:
                 ctx._finalize_turn(reason)
         except Exception as exc:  # pragma: no cover - defensive logging
-            print(
-                f"{ERROR_LOG_LABEL} Server stop timeout handler failed: {exc}",
-                file=sys.stderr,
+            LOGGER.log(
+                ERROR_LOG_LABEL,
+                f"Server stop timeout handler failed: {exc}",
+                error=True,
             )
         finally:
             if ctx._server_stop_timeout_turn_id == expected_turn_id:

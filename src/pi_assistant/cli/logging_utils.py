@@ -1,4 +1,4 @@
-"""ANSI log labels and helpers for CLI output."""
+"""Structured logging utilities for the CLI."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any, Optional, TextIO
 from pi_assistant.config import VERBOSE_LOG_CAPTURE_ENABLED, VERBOSE_LOG_DIRECTORY
 from pi_assistant.wake_word import StreamState
 
-# ANSI color codes for log labels
+# ANSI color codes for console labels
 RESET = "\033[0m"
 COLOR_ORANGE = "\033[38;5;208m"
 COLOR_GREEN = "\033[32m"
@@ -23,244 +23,273 @@ COLOR_MAGENTA = "\033[35m"
 COLOR_RED = "\033[31m"
 COLOR_WHITE = "\033[37m"
 
-TURN_LOG_LABEL = f"{COLOR_ORANGE}[TURN]{RESET}"
-TRANSCRIPT_LOG_LABEL = f"{COLOR_GREEN}[TRANSCRIPT]{RESET}"
-VAD_LOG_LABEL = f"{COLOR_YELLOW}[VAD]{RESET}"
-STATE_LOG_LABEL = f"{COLOR_CYAN}[STATE]{RESET}"
-WAKE_LOG_LABEL = f"{COLOR_BLUE}[WAKE]{RESET}"
-ASSISTANT_LOG_LABEL = f"{COLOR_MAGENTA}[ASSISTANT]{RESET}"
-CONTROL_LOG_LABEL = f"{COLOR_MAGENTA}[CONTROL]{RESET}"
-ERROR_LOG_LABEL = f"{COLOR_RED}[ERROR]{RESET}"
-WS_LOG_LABEL = f"{COLOR_WHITE}[WS]{RESET}"
+TURN_LOG_LABEL = "TURN"
+TRANSCRIPT_LOG_LABEL = "TRANSCRIPT"
+VAD_LOG_LABEL = "VAD"
+STATE_LOG_LABEL = "STATE"
+WAKE_LOG_LABEL = "WAKE"
+ASSISTANT_LOG_LABEL = "ASSISTANT"
+CONTROL_LOG_LABEL = "CONTROL"
+ERROR_LOG_LABEL = "ERROR"
+AUDIO_LOG_LABEL = "AUDIO"
+WS_LOG_LABEL = "WS"
+
 _WS_LABELS = {
     "": WS_LOG_LABEL,
-    "←": f"{COLOR_WHITE}[WS←]{RESET}",
-    "→": f"{COLOR_WHITE}[WS→]{RESET}",
+    "←": "WS←",
+    "→": "WS→",
 }
 
-_VERBOSE_LOGGING = False
-_CHUNK_PROGRESS_LOGGING = False
-_VERBOSE_LOG_FILE: Optional[TextIO] = None
-_VERBOSE_LOG_PATH: Optional[Path] = None
-_VERBOSE_LOG_ERROR_REPORTED = False
-_ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
-_AUTO_CONFIGURE_PENDING = bool(VERBOSE_LOG_CAPTURE_ENABLED and VERBOSE_LOG_DIRECTORY is not None)
-_AUTO_CONFIGURED = False
+_LABEL_COLORS = {
+    TURN_LOG_LABEL: COLOR_ORANGE,
+    TRANSCRIPT_LOG_LABEL: COLOR_GREEN,
+    VAD_LOG_LABEL: COLOR_YELLOW,
+    STATE_LOG_LABEL: COLOR_CYAN,
+    WAKE_LOG_LABEL: COLOR_BLUE,
+    ASSISTANT_LOG_LABEL: COLOR_MAGENTA,
+    CONTROL_LOG_LABEL: COLOR_MAGENTA,
+    ERROR_LOG_LABEL: COLOR_RED,
+    AUDIO_LOG_LABEL: COLOR_BLUE,
+    WS_LOG_LABEL: COLOR_WHITE,
+    "WS←": COLOR_WHITE,
+    "WS→": COLOR_WHITE,
+}
 
 
-def _close_verbose_log() -> None:
-    """Close the on-disk verbose log if it is open."""
+class Logger:
+    """Centralized logger that enforces `[timestamp] [source] message` output."""
 
-    global _VERBOSE_LOG_FILE, _VERBOSE_LOG_PATH
-    if _VERBOSE_LOG_FILE is not None:
+    _ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+
+    def __init__(self) -> None:
+        self._verbose_logging = False
+        self._chunk_progress_logging = False
+        self._log_file: Optional[TextIO] = None
+        self._log_path: Optional[Path] = None
+        self._log_error_reported = False
+        self._auto_configure_pending = bool(
+            VERBOSE_LOG_CAPTURE_ENABLED and VERBOSE_LOG_DIRECTORY is not None
+        )
+        self._auto_configured = False
+
+    # ------------------------------------------------------------------
+    # Lifecycle helpers
+    def close(self) -> None:
+        if self._log_file is None:
+            return
+
         try:
-            _VERBOSE_LOG_FILE.close()
+            self._log_file.close()
         except Exception:
             pass
         finally:
-            _VERBOSE_LOG_FILE = None
-            _VERBOSE_LOG_PATH = None
+            self._log_file = None
+            self._log_path = None
+
+    def configure_verbose_log_capture(
+        self, destination: str | Path | None, *, per_session: bool = False
+    ) -> None:
+        self._auto_configure_pending = False
+        self._auto_configured = destination is not None
+        self.close()
+        if destination is None:
+            self._log_path = None
+            return
+
+        candidate = Path(destination)
+        try:
+            if per_session:
+                candidate.mkdir(parents=True, exist_ok=True)
+                log_path = self._build_session_log_path(candidate)
+            else:
+                candidate.parent.mkdir(parents=True, exist_ok=True)
+                log_path = candidate
+
+            self._log_file = log_path.open("a", encoding="utf-8")
+            self._log_path = log_path
+            self._log_error_reported = False
+        except OSError as exc:
+            self._log_path = None
+            if not self._log_error_reported:
+                sys.stderr.write(f"Unable to open verbose log file at {candidate}: {exc}\n")
+                self._log_error_reported = True
+
+    # ------------------------------------------------------------------
+    # Configuration
+    def set_verbose_logging(self, enabled: bool) -> None:
+        self._verbose_logging = bool(enabled)
+
+    def is_verbose_logging_enabled(self) -> bool:
+        return self._verbose_logging
+
+    def set_chunk_progress_logging(self, enabled: bool) -> None:
+        self._chunk_progress_logging = bool(enabled)
+
+    def is_chunk_progress_logging_enabled(self) -> bool:
+        return self._chunk_progress_logging
+
+    def current_verbose_log_path(self) -> Optional[Path]:
+        self._ensure_auto_configured()
+        return self._log_path
+
+    # ------------------------------------------------------------------
+    # Public logging APIs
+    def log(self, source: str, *message_parts: object, **options: Any) -> None:
+        if not source:
+            raise ValueError("source is required")
+
+        cleaned_source = source.strip()
+        timestamp = self._format_timestamp()
+
+        sep = options.pop("sep", " ")
+        end = options.pop("end", "\n")
+        verbose = bool(options.pop("verbose", False))
+        error = bool(options.pop("error", False))
+        flush = bool(options.pop("flush", False))
+        color = options.pop("color", None)
+        if options:
+            unexpected = ", ".join(sorted(options))
+            raise TypeError(f"Unsupported log option(s): {unexpected}")
+
+        message = sep.join(str(part) for part in message_parts)
+        line = f"[{timestamp}] [{cleaned_source}]"
+        if message:
+            line = f"{line} {message}"
+
+        if verbose:
+            self._ensure_auto_configured()
+
+        should_capture = verbose and self._log_file is not None
+        should_emit = not verbose or self._verbose_logging
+        if verbose and not should_emit and not should_capture:
+            return
+
+        if should_capture:
+            self._write_verbose_log_entry(line, end)
+
+        color_code = color if color is not None else _LABEL_COLORS.get(cleaned_source)
+        console_line = line
+        if color_code:
+            label_token = f"[{cleaned_source}]"
+            colored_label = f"{color_code}{label_token}{RESET}"
+            console_line = line.replace(label_token, colored_label, 1)
+
+        if should_emit:
+            stream = sys.stderr if error else sys.stdout
+            stream.write(console_line)
+            stream.write(end)
+            if flush:
+                stream.flush()
+
+    def verbose(self, source: str, *message_parts: object, **kwargs: Any) -> None:
+        kwargs["verbose"] = True
+        self.log(source, *message_parts, **kwargs)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    def _log_capture_active(self) -> bool:
+        return self._log_file is not None
+
+    def _ensure_auto_configured(self) -> None:
+        if not self._auto_configure_pending or self._auto_configured:
+            return
+
+        if VERBOSE_LOG_DIRECTORY is None:
+            self._auto_configure_pending = False
+            return
+
+        self.configure_verbose_log_capture(VERBOSE_LOG_DIRECTORY, per_session=True)
+        self._auto_configured = True
+
+    def _build_session_log_path(self, directory: Path) -> Path:
+        timestamp = datetime.now().isoformat(timespec="milliseconds")
+        safe_timestamp = timestamp.replace(":", "-")
+        base_path = directory / f"{safe_timestamp}.log"
+
+        try:
+            with base_path.open("x", encoding="utf-8"):
+                pass
+            return base_path
+        except FileExistsError:
+            pass
+
+        counter = 1
+        max_retries = 1000
+        while counter <= max_retries:
+            candidate = directory / f"{safe_timestamp}_{counter}.log"
+            try:
+                with candidate.open("x", encoding="utf-8"):
+                    pass
+                return candidate
+            except FileExistsError:
+                counter += 1
+
+        raise RuntimeError(
+            f"Unable to create a unique log file in {directory} after {max_retries} attempts."
+        )
+
+    def _write_verbose_log_entry(self, line: str, end: str) -> None:
+        if self._log_file is None:
+            return
+
+        clean_line = self._ANSI_ESCAPE_RE.sub("", line)
+        try:
+            self._log_file.write(clean_line + end)
+            self._log_file.flush()
+        except OSError as exc:
+            if not self._log_error_reported:
+                sys.stderr.write(f"Unable to write to verbose log file: {exc}\n")
+                self._log_error_reported = True
+
+    @staticmethod
+    def _format_timestamp() -> str:
+        now = datetime.now()
+        return f"{now:%M:%S}.{now.microsecond // 1000:03d}"
 
 
-atexit.register(_close_verbose_log)
+LOGGER = Logger()
+atexit.register(LOGGER.close)
 
 
 def configure_verbose_log_capture(
     destination: str | Path | None, *, per_session: bool = False
 ) -> None:
-    """Enable or disable persistent capture of verbose logs."""
-
-    global _VERBOSE_LOG_FILE, _VERBOSE_LOG_PATH, _VERBOSE_LOG_ERROR_REPORTED
-    global _AUTO_CONFIGURE_PENDING, _AUTO_CONFIGURED
-
-    _AUTO_CONFIGURE_PENDING = False
-    _AUTO_CONFIGURED = destination is not None
-    _close_verbose_log()
-    if destination is None:
-        _VERBOSE_LOG_PATH = None
-        return
-
-    candidate = Path(destination)
-    try:
-        if per_session:
-            candidate.mkdir(parents=True, exist_ok=True)
-            log_path = _build_session_log_path(candidate)
-        else:
-            candidate.parent.mkdir(parents=True, exist_ok=True)
-            log_path = candidate
-
-        _VERBOSE_LOG_FILE = log_path.open("a", encoding="utf-8")
-        _VERBOSE_LOG_PATH = log_path
-        _VERBOSE_LOG_ERROR_REPORTED = False
-    except OSError as exc:
-        _VERBOSE_LOG_PATH = None
-        if not _VERBOSE_LOG_ERROR_REPORTED:
-            sys.stderr.write(f"Unable to open verbose log file at {candidate}: {exc}\n")
-            _VERBOSE_LOG_ERROR_REPORTED = True
-
-
-def _build_session_log_path(directory: Path) -> Path:
-    timestamp = datetime.now().isoformat(timespec="milliseconds")
-    safe_timestamp = timestamp.replace(":", "-")
-    base_path = directory / f"{safe_timestamp}.log"
-
-    try:
-        with base_path.open("x", encoding="utf-8"):
-            pass
-        return base_path
-    except FileExistsError:
-        pass
-
-    counter = 1
-    MAX_RETRIES = 1000
-    while counter <= MAX_RETRIES:
-        candidate = directory / f"{safe_timestamp}_{counter}.log"
-        try:
-            with candidate.open("x", encoding="utf-8"):
-                pass
-            return candidate
-        except FileExistsError:
-            counter += 1
-    message = f"Unable to create a unique log file in {directory} after {MAX_RETRIES} attempts."
-    raise RuntimeError(message)
-
-
-def _log_capture_active() -> bool:
-    return _VERBOSE_LOG_FILE is not None
-
-
-def current_verbose_log_path() -> Optional[Path]:
-    """Return the active verbose log path, if capture is enabled."""
-
-    _ensure_auto_configured()
-    return _VERBOSE_LOG_PATH
-
-
-def _ensure_auto_configured() -> None:
-    """Lazily configure verbose log capture when defaults request it."""
-
-    global _AUTO_CONFIGURED
-    if not _AUTO_CONFIGURE_PENDING or _AUTO_CONFIGURED:
-        return
-
-    configure_verbose_log_capture(VERBOSE_LOG_DIRECTORY, per_session=True)
-    _AUTO_CONFIGURED = True
-
-
-def _compose_verbose_line(timestamp: str, args: tuple[object, ...], sep: str) -> str:
-    if not args:
-        return f"[{timestamp}]"
-
-    first, *rest = args
-    segments = [f"[{timestamp}] {first}"]
-    if rest:
-        segments.extend(str(value) for value in rest)
-    return sep.join(segments)
-
-
-def _write_verbose_log_entry(timestamp: str, args: tuple[object, ...], sep: str, end: str) -> None:
-    global _VERBOSE_LOG_ERROR_REPORTED
-
-    if _VERBOSE_LOG_FILE is None:
-        return
-
-    line = _compose_verbose_line(timestamp, args, sep)
-    clean_line = _ANSI_ESCAPE_RE.sub("", line)
-    try:
-        _VERBOSE_LOG_FILE.write(clean_line + end)
-        _VERBOSE_LOG_FILE.flush()
-    except OSError as exc:
-        if not _VERBOSE_LOG_ERROR_REPORTED:
-            sys.stderr.write(f"Unable to write to verbose log file: {exc}\n")
-            _VERBOSE_LOG_ERROR_REPORTED = True
-
-
-def _format_timestamp() -> str:
-    """Return the current time formatted as mm:ss.mmm (minutes:seconds.milliseconds)."""
-
-    now = datetime.now()
-    return f"{now:%M:%S}.{now.microsecond // 1000:03d}"
+    LOGGER.configure_verbose_log_capture(destination, per_session=per_session)
 
 
 def set_verbose_logging(enabled: bool) -> None:
-    """Toggle verbose logging for CLI helpers."""
-
-    global _VERBOSE_LOGGING
-    _VERBOSE_LOGGING = bool(enabled)
+    LOGGER.set_verbose_logging(enabled)
 
 
 def is_verbose_logging_enabled() -> bool:
-    """Return True if verbose logging is active."""
-
-    return _VERBOSE_LOGGING
+    return LOGGER.is_verbose_logging_enabled()
 
 
 def set_chunk_progress_logging(enabled: bool) -> None:
-    """Toggle per-100 chunk progress logs."""
-
-    global _CHUNK_PROGRESS_LOGGING
-    _CHUNK_PROGRESS_LOGGING = bool(enabled)
+    LOGGER.set_chunk_progress_logging(enabled)
 
 
 def is_chunk_progress_logging_enabled() -> bool:
-    """Return True if chunk progress logging is active."""
+    return LOGGER.is_chunk_progress_logging_enabled()
 
-    return _CHUNK_PROGRESS_LOGGING
+
+def current_verbose_log_path() -> Optional[Path]:
+    return LOGGER.current_verbose_log_path()
 
 
 def ws_log_label(direction: str | None = None) -> str:
-    """Return the colored [WS] label, optionally annotated with a direction arrow."""
-
     arrow = direction if direction in ("←", "→") else ""
     return _WS_LABELS[arrow]
 
 
-def _emit_timestamped_print(
-    timestamp: str, args: tuple[object, ...], kwargs: dict[str, Any]
-) -> None:
-    if args:
-        first, *rest = args
-        print(f"[{timestamp}] {first}", *rest, **kwargs)
-    else:
-        print(f"[{timestamp}]", **kwargs)
-
-
-def verbose_print(*args, **kwargs) -> None:
-    """Print when verbose logging is enabled and optionally persist to disk."""
-
-    _ensure_auto_configured()
-    timestamp = _format_timestamp()
-    if _log_capture_active():
-        sep = kwargs.get("sep", " ")
-        end = kwargs.get("end", "\n")
-        _write_verbose_log_entry(timestamp, args, sep, end)
-
-    if not _VERBOSE_LOGGING:
-        return
-
-    _emit_timestamped_print(timestamp, args, kwargs)
-
-
-def console_print(*args, **kwargs) -> None:
-    """Print CLI output with timestamps regardless of verbose mode."""
-
-    timestamp = _format_timestamp()
-    _emit_timestamped_print(timestamp, args, kwargs)
-
-
 def log_state_transition(previous: Optional[StreamState], new: StreamState, reason: str) -> None:
-    """Emit a consistent log for controller state changes."""
-
-    _ensure_auto_configured()
-    if not _VERBOSE_LOGGING and not _log_capture_active():
-        return
-
     if previous == new:
         return
 
     if previous is None:
-        verbose_print(f"{STATE_LOG_LABEL} Entered {new.value.upper()} ({reason})")
+        LOGGER.verbose(STATE_LOG_LABEL, f"Entered {new.value.upper()} ({reason})")
     else:
-        verbose_print(
-            f"{STATE_LOG_LABEL} {previous.value.upper()} -> {new.value.upper()} ({reason})"
+        LOGGER.verbose(
+            STATE_LOG_LABEL,
+            f"{previous.value.upper()} -> {new.value.upper()} ({reason})",
         )
