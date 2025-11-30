@@ -475,11 +475,11 @@ class LLMResponderTest(unittest.IsolatedAsyncioTestCase):
         responder = LLMResponder(client=client)  # pyright: ignore[reportArgumentType]
         err = DummyBadRequest(message="Unknown parameter audio")
 
-        with patch("builtins.print") as mock_print:
+        with patch("pi_assistant.assistant.llm.LOGGER.log") as mock_log:
             responder._log_audio_fallback_warning(err)
             responder._log_audio_fallback_warning(err)
 
-        mock_print.assert_called_once()
+        mock_log.assert_called_once()
 
     def test_peek_phrase_audio_requires_cached_phrase(self):
         client = FakeOpenAIClient({"output": []})

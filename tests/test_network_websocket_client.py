@@ -3,6 +3,7 @@ import base64
 import json
 import sys
 from types import ModuleType, SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -10,21 +11,28 @@ try:
     from pi_assistant.cli import logging_utils as cli_logging_utils
 except ImportError:
 
+    class _DummyLogger:
+        def log(self, *args, **kwargs) -> None:
+            pass
+
+        def verbose(self, *args, **kwargs) -> None:
+            pass
+
     class LoggingUtilsModule(ModuleType):
         ERROR_LOG_LABEL: str
+        WS_LOG_LABEL: str
+        LOGGER: _DummyLogger
 
         def __init__(self) -> None:
             super().__init__("pi_assistant.cli.logging_utils")
-            self.ERROR_LOG_LABEL = "[ERROR]"
-
-        @staticmethod
-        def verbose_print(*args, **kwargs) -> None:
-            return None
+            self.ERROR_LOG_LABEL = "ERROR"
+            self.WS_LOG_LABEL = "WS"
+            self.LOGGER = _DummyLogger()
 
         @staticmethod
         def ws_log_label(direction=None) -> str:
             arrow = direction if direction in ("←", "→") else ""
-            return f"[WS{arrow}]"
+            return f"WS{arrow}"
 
     class CliModule(ModuleType):
         logging_utils: LoggingUtilsModule
@@ -67,16 +75,13 @@ class DummyWebSocket:
 
 @pytest.fixture
 def verbose_capture(monkeypatch):
-    records: list[str] = []
+    records: list[tuple[str, str]] = []
 
-    def _capture(*args, **kwargs):
-        if args:
-            records.append(args[0])
-        else:
-            records.append("")
+    def _capture(source, message, **kwargs):
+        records.append((source, message))
 
     monkeypatch.setattr(
-        "pi_assistant.network.websocket_client.verbose_print",
+        "pi_assistant.network.websocket_client.LOGGER.verbose",
         _capture,
     )
     return records
@@ -244,7 +249,7 @@ async def test_receive_events_logs_other_payloads(verbose_capture):
         pass
 
     label = cli_logging_utils.ws_log_label("←")
-    assert any(entry.startswith(label) and "audio_chars=8" in entry for entry in verbose_capture)
+    assert any(src == label and "audio_chars=8" in message for src, message in verbose_capture)
 
 
 @pytest.mark.asyncio
@@ -255,7 +260,7 @@ async def test_send_audio_chunk_does_not_log(verbose_capture):
 
     await client.send_audio_chunk(b"\x00\x01\x02\x03")
 
-    assert not any("WS→" in entry for entry in verbose_capture)
+    assert not any(src == "WS→" for src, _ in verbose_capture)
 
 
 @pytest.mark.asyncio
@@ -296,3 +301,162 @@ async def test_close_marks_disconnected():
 
     assert dummy_ws.closed is True
     assert client.connected is False
+
+
+def test_summarize_payload_handles_invalid_string():
+    client = WebSocketClient()
+
+    summary = client._summarize_payload("not json")
+
+    assert summary == "not json"
+
+
+def test_summarize_payload_truncates_keys():
+    client = WebSocketClient()
+    payload: dict[str, Any] = {"type": "status"}
+    payload.update({f"key{i}": i for i in range(7)})
+
+    summary = client._summarize_payload(payload)
+
+    assert summary is not None
+    assert summary.startswith("type=status keys=")
+    assert summary.endswith(",…")
+
+
+def test_summarize_payload_for_lists_and_unknown_objects():
+    client = WebSocketClient()
+
+    list_summary = client._summarize_payload([1, 2, 3])
+    assert list_summary is not None
+    assert list_summary == "list(len=3)"
+
+    class Custom:
+        pass
+
+    custom_summary = client._summarize_payload(Custom())
+    assert custom_summary is not None
+    assert custom_summary == "Custom"
+
+
+def test_summarize_payload_without_type():
+    client = WebSocketClient()
+
+    summary = client._summarize_payload({"foo": 1, "bar": 2})
+
+    assert summary is not None
+    assert summary == "keys=bar, foo"
+
+
+@pytest.mark.asyncio
+async def test_connect_logs_error_when_connect_fails(monkeypatch, capsys):
+    async def failing_connect(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    dummy_module = SimpleNamespace(
+        connect=failing_connect,
+        exceptions=SimpleNamespace(ConnectionClosed=Exception),
+    )
+    monkeypatch.setattr("pi_assistant.network.websocket_client.websockets", dummy_module)
+
+    client = WebSocketClient()
+    with pytest.raises(RuntimeError, match="boom"):
+        await client.connect()
+
+    err = capsys.readouterr().err
+    assert "Error connecting to OpenAI" in err
+
+
+@pytest.mark.asyncio
+async def test_wait_for_session_created_logs_full_event(verbose_capture):
+    event = json.dumps({"foo": "bar"})
+    client = WebSocketClient()
+    client.websocket = DummyWebSocket([event])
+
+    with pytest.raises(RuntimeError):
+        await client.wait_for_session_created()
+
+    assert any("Full event" in message for _, message in verbose_capture)
+
+
+@pytest.mark.asyncio
+async def test_wait_for_session_created_limits_decode_errors():
+    client = WebSocketClient()
+    client.websocket = DummyWebSocket(["{invalid json"] * 10)
+
+    with pytest.raises(RuntimeError, match="Too many malformed"):
+        await client.wait_for_session_created()
+
+
+@pytest.mark.asyncio
+async def test_wait_for_session_created_logs_exceptions(monkeypatch, capsys):
+    class ExplodingWebSocket(DummyWebSocket):
+        async def __anext__(self):
+            raise RuntimeError("loop failure")
+
+    client = WebSocketClient()
+    client.websocket = ExplodingWebSocket()
+
+    with pytest.raises(RuntimeError, match="loop failure"):
+        await client.wait_for_session_created()
+
+    err = capsys.readouterr().err
+    assert "Error waiting for session" in err
+
+
+@pytest.mark.asyncio
+async def test_send_session_config_requires_connection(monkeypatch, capsys):
+    client = WebSocketClient()
+
+    with pytest.raises(RuntimeError, match="not connected"):
+        await client.send_session_config()
+
+    err = capsys.readouterr().err
+    assert "Error sending session config" in err
+
+
+@pytest.mark.asyncio
+async def test_receive_events_handles_connection_closed(monkeypatch, capsys):
+    class ConnectionClosed(Exception):
+        pass
+
+    class ClosingWebSocket(DummyWebSocket):
+        async def __anext__(self):
+            raise ConnectionClosed()
+
+    monkeypatch.setattr(
+        "pi_assistant.network.websocket_client.websockets",
+        SimpleNamespace(exceptions=SimpleNamespace(ConnectionClosed=ConnectionClosed)),
+    )
+    client = WebSocketClient()
+    client.websocket = ClosingWebSocket()
+    client.connected = True
+
+    events = []
+    async for event in client.receive_events():
+        events.append(event)
+
+    assert events == []
+    assert client.connected is False
+    out = capsys.readouterr().out
+    assert "WebSocket connection closed by server" in out
+
+
+@pytest.mark.asyncio
+async def test_receive_events_logs_json_errors(monkeypatch, capsys):
+    class DummyConnectionClosed(Exception):
+        pass
+
+    monkeypatch.setattr(
+        "pi_assistant.network.websocket_client.websockets",
+        SimpleNamespace(exceptions=SimpleNamespace(ConnectionClosed=DummyConnectionClosed)),
+    )
+    client = WebSocketClient()
+    client.websocket = DummyWebSocket(["{invalid"])
+    client.connected = True
+
+    with pytest.raises(json.JSONDecodeError):
+        async for _ in client.receive_events():
+            pass
+
+    err = capsys.readouterr().err
+    assert "Error receiving events" in err

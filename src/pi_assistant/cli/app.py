@@ -20,7 +20,8 @@ from pi_assistant.cli.events import handle_transcription_event
 from pi_assistant.cli.logging_utils import (
     ASSISTANT_LOG_LABEL,
     ERROR_LOG_LABEL,
-    console_print,
+    LOGGER,
+    set_chunk_progress_logging,
     set_verbose_logging,
 )
 from pi_assistant.config import (
@@ -78,7 +79,7 @@ async def run_transcription(
     Main integration function - runs real-time transcription
     Combines audio capture and WebSocket streaming
     """
-    print("\n=== Starting Real-Time Transcription ===\n")
+    LOGGER.log("SYSTEM", "Starting real-time transcription")
 
     validator = TranscriptionConfigValidator()
     config = validator.resolve(
@@ -95,12 +96,12 @@ async def run_transcription(
         async with session:
             await session.run()
     except KeyboardInterrupt:
-        print("\n\nShutdown requested...")
+        LOGGER.log("SYSTEM", "Shutdown requested")
     except AssistantRestartRequired as e:
-        print(f"\n{ASSISTANT_LOG_LABEL} {e}", file=sys.stderr)
+        LOGGER.log(ASSISTANT_LOG_LABEL, str(e), error=True)
         raise SystemExit(1) from None
     except Exception as e:
-        print(f"\n{ERROR_LOG_LABEL} Transcription failed: {e}", file=sys.stderr)
+        LOGGER.log(ERROR_LOG_LABEL, f"Transcription failed: {e}", error=True)
         raise
 
 
@@ -122,6 +123,11 @@ def parse_args():
         "--verbose",
         action="store_true",
         help="Show detailed diagnostic logs (wake word, state changes, etc.).",
+    )
+    parser.add_argument(
+        "--log-chunks",
+        action="store_true",
+        help="Emit per-100 chunk counters inside verbose logs (useful for throughput debugging).",
     )
     parser.add_argument(
         "--model",
@@ -198,18 +204,22 @@ def main():
     if getattr(args, "reset", False):
         cleared = sorted(reset_first_launch_choices())
         if cleared:
-            console_print(
-                f"{ASSISTANT_LOG_LABEL} Cleared saved selections: {', '.join(cleared)}. "
-                "They will be requested again on next run."
+            LOGGER.log(
+                ASSISTANT_LOG_LABEL,
+                (
+                    f"Cleared saved selections: {', '.join(cleared)}. "
+                    "They will be requested again on next run."
+                ),
             )
         else:
-            console_print(
-                f"{ASSISTANT_LOG_LABEL} No saved first-launch selections were present. "
-                "Defaults will be used on next run."
+            LOGGER.log(
+                ASSISTANT_LOG_LABEL,
+                "No saved first-launch selections were present. Defaults will be used on next run.",
             )
         return
 
     set_verbose_logging(args.verbose)
+    set_chunk_progress_logging(getattr(args, "log_chunks", False))
     if args.mode == "test-audio":
         run_func = test_audio_capture
     elif args.mode == "test-websocket":
@@ -226,9 +236,9 @@ def main():
     try:
         asyncio.run(run_func())
     except KeyboardInterrupt:
-        print("\nShutdown requested")
+        LOGGER.log("SYSTEM", "Shutdown requested")
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        LOGGER.log(ERROR_LOG_LABEL, f"CLI error: {e}", error=True)
         sys.exit(1)
 
 

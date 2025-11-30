@@ -10,7 +10,7 @@ from typing import Iterator, Literal, Mapping, Optional, Tuple, TypedDict, cast
 from openai import AsyncOpenAI, BadRequestError
 from typing_extensions import Unpack
 
-from pi_assistant.cli.logging_utils import console_print, verbose_print
+from pi_assistant.cli.logging_utils import ASSISTANT_LOG_LABEL, LOGGER
 from pi_assistant.config import (
     ASSISTANT_LANGUAGE,
     ASSISTANT_MODEL,
@@ -125,11 +125,12 @@ class LLMResponder:
             normalized_reasoning if normalized_reasoning in VALID_REASONING_EFFORTS else None
         )
         if self._reasoning_effort == "minimal" and self._enable_web_search:
-            console_print(
+            LOGGER.log(
+                ASSISTANT_LOG_LABEL,
                 (
-                    "[ASSISTANT] Reasoning effort 'minimal' is not supported when web search is "
-                    "enabled; raising to 'low'."
-                )
+                    "Reasoning effort 'minimal' is not supported when web search is enabled; "
+                    "raising to 'low'."
+                ),
             )
             self._reasoning_effort = "low"
 
@@ -189,25 +190,31 @@ class LLMResponder:
             request_kwargs["reasoning"] = {"effort": self._reasoning_effort}
 
         extra_body = self._build_audio_extra_body()
-        console_print("[ASSISTANT] Awaiting OpenAI response...")
+        LOGGER.log(ASSISTANT_LOG_LABEL, "Awaiting OpenAI response...")
         response = await self._send_response_request(request_kwargs, extra_body)
 
         text, audio_bytes, audio_format, sample_rate, chunk_count = self._extract_modalities(
             response, default_sample_rate=self._tts_sample_rate
         )
-        console_print(
-            "[ASSISTANT] Response received "
-            f"(text={'yes' if text else 'no'}, audio_chunks={chunk_count})"
+        LOGGER.log(
+            ASSISTANT_LOG_LABEL,
+            f"Response received (text={'yes' if text else 'no'}, audio_chunks={chunk_count})",
         )
         if self._enable_tts:
             if audio_bytes:
-                verbose_print(
-                    f"[ASSISTANT] Received {chunk_count} audio chunk(s) "
-                    f"({len(audio_bytes)} bytes @ {sample_rate or 'unknown'} Hz, "
-                    f"format={audio_format or 'unknown'})"
+                LOGGER.verbose(
+                    ASSISTANT_LOG_LABEL,
+                    (
+                        f"Received {chunk_count} audio chunk(s) "
+                        f"({len(audio_bytes)} bytes @ {sample_rate or 'unknown'} Hz, "
+                        f"format={audio_format or 'unknown'})"
+                    ),
                 )
             else:
-                console_print("[ASSISTANT] No audio chunks returned; using text-only reply.")
+                LOGGER.log(
+                    ASSISTANT_LOG_LABEL,
+                    "No audio chunks returned; using text-only reply.",
+                )
         if self._enable_tts and audio_bytes is None and text:
             fallback_audio, fallback_rate = await self._synthesize_audio(text)
             if fallback_audio:
@@ -361,9 +368,10 @@ class LLMResponder:
         if self._audio_fallback_logged:
             return
         details = getattr(exc, "message", "") or "audio parameters not accepted"
-        console_print(
-            "[ASSISTANT] Responses API does not accept audio parameters yet; "
-            f"falling back to text-only responses ({details})."
+        LOGGER.log(
+            ASSISTANT_LOG_LABEL,
+            "Responses API does not accept audio parameters yet; "
+            f"falling back to text-only responses ({details}).",
         )
         self._audio_fallback_logged = True
 
@@ -372,9 +380,9 @@ class LLMResponder:
         normalized = (requested or "").strip().lower()
         if normalized in allowed:
             return cast(AudioResponseFormat, normalized)
-        console_print(
-            "[ASSISTANT] Unknown TTS format "
-            f"'{requested or 'N/A'}'; defaulting to 'mp3' for compatibility."
+        LOGGER.log(
+            ASSISTANT_LOG_LABEL,
+            f"Unknown TTS format '{requested or 'N/A'}'; defaulting to 'mp3' for compatibility.",
         )
         return "mp3"
 

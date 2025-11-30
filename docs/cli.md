@@ -13,6 +13,9 @@ uv run pi-assistant
 # Print wake-word scores, state transitions, and other diagnostics to the console
 uv run pi-assistant -v
 
+# Verbose logs plus per-100 chunk counters for throughput debugging
+uv run pi-assistant -v --log-chunks
+
 # Force assistant replies to stream directly from the Responses API
 uv run pi-assistant --audio-mode responses
 
@@ -51,6 +54,7 @@ The legacy script remains available for direct Python use: `uv run python start.
 | Flag | Description |
 | --- | --- |
 | `-v`, `--verbose` | Enables verbose logging (wake-word scores, state transitions, controller state). |
+| `--log-chunks` | Emits per-100 chunk counters (requires `-v` to see them live; still saved to verbose logs). |
 | `--model <preset-or-id>` | Overrides the assistant model for one run. Accepts presets defined in `ASSISTANT_MODEL_REGISTRY` (`nano`, `mini`, `4.1`, `5.1`, etc.) or full model IDs. |
 | `--audio-mode {responses,local-tts}` | Chooses how assistant audio is delivered. Defaults to `responses` if `ASSISTANT_TTS_RESPONSES_ENABLED=1`, otherwise `local-tts`. |
 | `--simulate-query [text]` | Injects a one-off transcript instead of waiting for speech. Pass custom text or omit to use the fallback `"Hey Rhasspy, is it going to rain tomorrow?"`. If unset, the CLI checks `SIMULATED_QUERY_TEXT`. |
@@ -93,6 +97,7 @@ Verbose logs write to `~/.cache/pi-assistant/logs/<iso-timestamp>.log` for every
 
 - `VERBOSE_LOG_CAPTURE_ENABLED=0` to disable file logging.
 - `VERBOSE_LOG_DIRECTORY=/path/to/logs` to redirect the folder.
+- `--log-chunks` (CLI flag) to re-enable the historical per-100 chunk counters for throughput debugging without flooding every verbose run by default.
 
 Each entry mirrors console output without ANSI colors.
 

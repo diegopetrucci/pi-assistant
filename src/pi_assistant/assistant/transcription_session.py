@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from typing import Optional
 
@@ -20,7 +19,7 @@ from pi_assistant.assistant.transcription_task_coordinator import (
     TranscriptionTaskCoordinator,
 )
 from pi_assistant.audio import AudioCapture, SpeechPlayer
-from pi_assistant.cli.logging_utils import ASSISTANT_LOG_LABEL, TURN_LOG_LABEL, console_print
+from pi_assistant.cli.logging_utils import ASSISTANT_LOG_LABEL, LOGGER, TURN_LOG_LABEL
 from pi_assistant.config import (
     ASSISTANT_MODEL,
     ASSISTANT_REASONING_EFFORT,
@@ -156,11 +155,11 @@ class TranscriptionSession:
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
-        print("Cleaning up...")
+        LOGGER.log("SYSTEM", "Cleaning up")
         supervisor = self._supervisor
         if supervisor:
             await supervisor.stop_all()
-        print("✓ Shutdown complete\n")
+        LOGGER.log("SYSTEM", "Shutdown complete")
 
     async def run(self) -> None:
         coordinator = self._task_coordinator_cls(
@@ -202,27 +201,34 @@ async def run_simulated_query_once(
     if not cleaned:
         return
 
-    console_print(f"{TURN_LOG_LABEL} Injecting simulated query: {cleaned}")
+    LOGGER.log(TURN_LOG_LABEL, f"Injecting simulated query: {cleaned}")
     try:
         reply = await assistant.generate_reply(cleaned)
     except Exception as exc:  # pragma: no cover - network failure
-        console_print(f"{ASSISTANT_LOG_LABEL} Simulated query failed: {exc}", file=sys.stderr)
+        LOGGER.log(
+            ASSISTANT_LOG_LABEL,
+            f"Simulated query failed: {exc}",
+            error=True,
+            exc_info=exc,
+        )
         return
 
     if not reply:
-        console_print(f"{ASSISTANT_LOG_LABEL} Simulated query returned no response.")
+        LOGGER.log(ASSISTANT_LOG_LABEL, "Simulated query returned no response.")
         return
 
     if reply.text:
-        console_print(f"{ASSISTANT_LOG_LABEL} {reply.text}")
+        LOGGER.log(ASSISTANT_LOG_LABEL, reply.text)
     else:
-        console_print(f"{ASSISTANT_LOG_LABEL} (no text content)")
+        LOGGER.log(ASSISTANT_LOG_LABEL, "(no text content)")
 
     if reply.audio_bytes:
         try:
             await speech_player.play(reply.audio_bytes, sample_rate=reply.audio_sample_rate)
         except Exception as exc:  # pragma: no cover - host audio failure
-            console_print(
-                f"{ASSISTANT_LOG_LABEL} Error playing simulated reply audio: {exc}",
-                file=sys.stderr,
+            LOGGER.log(
+                ASSISTANT_LOG_LABEL,
+                f"Error playing simulated reply audio: {exc}",
+                error=True,
+                exc_info=exc,
             )

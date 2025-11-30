@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -12,8 +11,8 @@ from pi_assistant.audio import SpeechPlayer
 from pi_assistant.cli.logging_utils import (
     ASSISTANT_LOG_LABEL,
     CONTROL_LOG_LABEL,
+    LOGGER,
     TURN_LOG_LABEL,
-    verbose_print,
 )
 from pi_assistant.config import (
     ASSISTANT_TTS_SAMPLE_RATE,
@@ -80,7 +79,7 @@ async def _request_assistant_reply(
     except asyncio.CancelledError:
         raise
     except Exception as exc:  # pragma: no cover - network failure
-        print(f"{ASSISTANT_LOG_LABEL} Error requesting assistant reply: {exc}", file=sys.stderr)
+        LOGGER.log(ASSISTANT_LOG_LABEL, f"Error requesting assistant reply: {exc}", error=True)
         return None
     finally:
         if reply_started and hooks and hooks.on_reply_complete:
@@ -95,7 +94,7 @@ async def _play_assistant_audio(reply: LLMReply, speech_player: SpeechPlayer) ->
     try:
         await speech_player.play(reply.audio_bytes, sample_rate=reply.audio_sample_rate)
     except Exception as exc:  # pragma: no cover - host audio failure
-        print(f"{ASSISTANT_LOG_LABEL} Error playing audio reply: {exc}", file=sys.stderr)
+        LOGGER.log(ASSISTANT_LOG_LABEL, f"Error playing audio reply: {exc}", error=True)
 
 
 def _maybe_schedule_confirmation_cue(
@@ -120,7 +119,7 @@ def _maybe_schedule_confirmation_cue(
         try:
             fut.result()
         except Exception as exc:  # pragma: no cover - host audio failure
-            verbose_print(f"{CONTROL_LOG_LABEL} Confirmation cue failed: {exc}")
+            LOGGER.verbose(CONTROL_LOG_LABEL, f"Confirmation cue failed: {exc}")
 
     task.add_done_callback(_log_task_error)
 
@@ -140,18 +139,21 @@ async def finalize_turn_and_respond(
 
     _maybe_schedule_confirmation_cue(assistant, speech_player)
 
-    print(f"{TURN_LOG_LABEL} Transcript ready ({len(transcript)} chars); requesting assistant...")
-    verbose_print(f"{TURN_LOG_LABEL} Sending transcript to assistant: {transcript}")
+    LOGGER.log(
+        TURN_LOG_LABEL,
+        f"Transcript ready ({len(transcript)} chars); requesting assistant...",
+    )
+    LOGGER.verbose(TURN_LOG_LABEL, f"Sending transcript to assistant: {transcript}")
 
     reply = await _request_assistant_reply(transcript, assistant, hooks)
     if not reply:
-        print(f"{ASSISTANT_LOG_LABEL} (empty response)")
+        LOGGER.log(ASSISTANT_LOG_LABEL, "(empty response)")
         return
 
     if reply.text:
-        print(f"{ASSISTANT_LOG_LABEL} {reply.text}")
+        LOGGER.log(ASSISTANT_LOG_LABEL, reply.text)
     else:
-        print(f"{ASSISTANT_LOG_LABEL} (no text content)")
+        LOGGER.log(ASSISTANT_LOG_LABEL, "(no text content)")
 
     await _play_assistant_audio(reply, speech_player)
 
@@ -178,9 +180,13 @@ def schedule_turn_response(
         try:
             fut.result()
         except asyncio.CancelledError:
-            verbose_print(f"{TURN_LOG_LABEL} Assistant reply task cancelled.")
+            LOGGER.verbose(TURN_LOG_LABEL, "Assistant reply task cancelled.")
         except Exception as exc:  # pragma: no cover - unexpected
-            print(f"{ASSISTANT_LOG_LABEL} Unexpected assistant error: {exc}", file=sys.stderr)
+            LOGGER.log(
+                ASSISTANT_LOG_LABEL,
+                f"Unexpected assistant error: {exc}",
+                error=True,
+            )
 
     task.add_done_callback(_log_task_error)
     return task

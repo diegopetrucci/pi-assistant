@@ -50,7 +50,7 @@ This document catalogs potential bugs and issues discovered through code analysi
 
 ### 7. Confirmation cue errors not fully logged
 - **Location:** `src/pi_assistant/cli/controller.py:85-91`
-- **Impact:** Exception in confirmation cue playback is caught but only logged via `verbose_print`, which may be disabled. Full exception details and stack traces are lost.
+- **Impact:** Exception in confirmation cue playback is caught but only logged via the verbose logger, which may be disabled. Full exception details and stack traces are lost.
 - **Root Cause:** Line 88: `except Exception as exc` catches broadly but only logs `{exc}` without traceback.
 - **Fix Required:** Use proper exception logging with `logging.exception()` or at minimum log the full traceback.
 
@@ -97,7 +97,7 @@ This document catalogs potential bugs and issues discovered through code analysi
 
 ### Code Quality Improvements
 1. Add comprehensive input validation for all configuration values at startup
-2. Implement proper logging with levels (ERROR, WARNING, INFO, DEBUG) instead of mixing print/verbose_print
+2. Implement proper logging with levels (ERROR, WARNING, INFO, DEBUG) instead of mixing direct `print` calls with the shared logger
 3. Add type hints to all function parameters and return values
 4. Consider adding telemetry/metrics for dropped frames, queue sizes, and error rates
 5. Implement proper resource cleanup patterns (context managers) for audio streams and WebSocket connections

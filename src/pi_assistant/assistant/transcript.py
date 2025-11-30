@@ -6,7 +6,7 @@ import asyncio
 from datetime import datetime
 from typing import Optional
 
-from pi_assistant.cli.logging_utils import verbose_print
+from pi_assistant.cli.logging_utils import LOGGER
 
 TRANSCRIPT_SNIPPET_LIMIT = 80
 
@@ -25,7 +25,7 @@ class TurnTranscriptAggregator:
         self._segments: list[str] = []
         self._seen_items: set[str] = set()
         self._state: str = "idle"
-        self._trace_label = "[TURN-TRACE]"
+        self._trace_label = "TURN-TRACE"
 
     def _timestamp(self) -> str:
         return datetime.now().strftime("%H:%M:%S.%f")[:-3]
@@ -37,7 +37,7 @@ class TurnTranscriptAggregator:
             self._segments.clear()
             self._seen_items.clear()
             self._state = "active"
-            verbose_print(f"{self._trace_label} {self._timestamp()} start turn")
+            LOGGER.verbose(self._trace_label, f"{self._timestamp()} start turn")
 
     async def append_transcript(self, item_id: Optional[str], transcript: str) -> None:
         """Store a completed transcript fragment for the current turn."""
@@ -48,22 +48,24 @@ class TurnTranscriptAggregator:
 
         async with self._lock:
             if self._state == "idle":
-                verbose_print(
-                    f"{self._trace_label} {self._timestamp()} append ignored (idle) item={item_id}"
+                LOGGER.verbose(
+                    self._trace_label,
+                    f"{self._timestamp()} append ignored (idle) item={item_id}",
                 )
                 return
             if item_id and item_id in self._seen_items:
-                verbose_print(
-                    f"{self._trace_label} {self._timestamp()} append ignored (duplicate) "
-                    f"item={item_id}"
+                LOGGER.verbose(
+                    self._trace_label,
+                    f"{self._timestamp()} append ignored (duplicate) item={item_id}",
                 )
                 return
             if item_id:
                 self._seen_items.add(item_id)
             self._segments.append(cleaned)
-            verbose_print(
-                f"{self._trace_label} {self._timestamp()} append stored item={item_id} "
-                f"segments={len(self._segments)} text={cleaned!r}"
+            LOGGER.verbose(
+                self._trace_label,
+                f"{self._timestamp()} append stored item={item_id} "
+                f"segments={len(self._segments)} text={cleaned!r}",
             )
 
     async def finalize_turn(self) -> Optional[str]:
@@ -71,13 +73,13 @@ class TurnTranscriptAggregator:
 
         async with self._lock:
             if self._state == "idle":
-                verbose_print(f"{self._trace_label} {self._timestamp()} finalize skipped (idle)")
+                LOGGER.verbose(self._trace_label, f"{self._timestamp()} finalize skipped (idle)")
                 return None
             self._state = "closing"
             pending_segments = len(self._segments)
-            verbose_print(
-                f"{self._trace_label} {self._timestamp()} finalize start "
-                f"segments={pending_segments}"
+            LOGGER.verbose(
+                self._trace_label,
+                f"{self._timestamp()} finalize start segments={pending_segments}",
             )
 
         wait_interval = self._drain_timeout if self._drain_timeout > 0 else 0.1
@@ -98,10 +100,10 @@ class TurnTranscriptAggregator:
                     if (not transcript and total_wait >= self._max_finalize_wait)
                     else "complete"
                 )
-                verbose_print(
-                    f"{self._trace_label} {self._timestamp()} finalize done "
-                    f"segments_cleared={pending_segments} wait={total_wait:.3f}s "
-                    f"mode={reason} transcript={snippet!r}"
+                LOGGER.verbose(
+                    self._trace_label,
+                    f"{self._timestamp()} finalize done segments_cleared={pending_segments} "
+                    f"wait={total_wait:.3f}s mode={reason} transcript={snippet!r}",
                 )
                 transcript_value = transcript if transcript else None
                 return True, transcript_value
@@ -131,9 +133,9 @@ class TurnTranscriptAggregator:
             self._segments.clear()
             self._seen_items.clear()
             suffix = f" reason={reason}" if reason else ""
-            verbose_print(
-                f"{self._trace_label} {self._timestamp()} clear turn "
-                f"segments_dropped={segment_count}{suffix}"
+            LOGGER.verbose(
+                self._trace_label,
+                f"{self._timestamp()} clear turn segments_dropped={segment_count}{suffix}",
             )
 
 

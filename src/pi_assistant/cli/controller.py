@@ -21,11 +21,10 @@ from pi_assistant.cli.controller_helpers import (
 from pi_assistant.cli.logging_utils import (
     CONTROL_LOG_LABEL,
     ERROR_LOG_LABEL,
+    LOGGER,
     TURN_LOG_LABEL,
     WAKE_LOG_LABEL,
-    console_print,
     log_state_transition,
-    verbose_print,
 )
 from pi_assistant.config import (
     AUTO_STOP_ENABLED,
@@ -91,11 +90,10 @@ __all__ = [
     "WakeWordEngine",
     "PreRollBuffer",
     "_AudioControllerLoop",
-    "console_print",
+    "LOGGER",
     "log_state_transition",
     "run_audio_controller",
     "schedule_turn_response",
     "should_ignore_server_stop_event",
-    "verbose_print",
     "WebSocketClient",
 ]

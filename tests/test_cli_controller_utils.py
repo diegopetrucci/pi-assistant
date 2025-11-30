@@ -352,6 +352,20 @@ async def test_maybe_schedule_confirmation_cue_plays_cached_audio(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_maybe_schedule_confirmation_cue_skips_when_disabled(monkeypatch):
+    assistant = _DummyAssistant()
+    player = _DummySpeechPlayer()
+
+    monkeypatch.setattr(controller_helpers, "CONFIRMATION_CUE_ENABLED", False, raising=False)
+    controller_helpers._maybe_schedule_confirmation_cue(
+        cast(controller.LLMResponder, assistant),
+        cast(controller.SpeechPlayer, player),
+    )
+
+    assert assistant.peek_calls == 0
+
+
+@pytest.mark.asyncio
 async def test_finalize_transcript_notifies_hooks():
     buffer = _DummyTranscriptBuffer(result="hello")
     calls: list[str] = []
@@ -542,6 +556,64 @@ async def test_finalize_turn_and_respond_happy_path(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_finalize_turn_and_respond_logs_empty_response(monkeypatch, capsys):
+    async def fake_finalize(tb, hooks):
+        return "transcript"
+
+    async def fake_request(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(controller_helpers, "_finalize_transcript", fake_finalize)
+    monkeypatch.setattr(
+        controller_helpers, "_maybe_schedule_confirmation_cue", lambda *a, **k: None
+    )
+    monkeypatch.setattr(controller_helpers, "_request_assistant_reply", fake_request)
+
+    async def fake_play(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(controller_helpers, "_play_assistant_audio", fake_play)
+
+    await controller_helpers.finalize_turn_and_respond(
+        transcript_buffer=cast(controller.TurnTranscriptAggregator, _DummyTranscriptBuffer()),
+        assistant=cast(controller.LLMResponder, _DummyAssistant()),
+        speech_player=cast(controller.SpeechPlayer, _DummySpeechPlayer()),
+    )
+
+    captured = capsys.readouterr()
+    assert "(empty response)" in captured.out
+
+
+@pytest.mark.asyncio
+async def test_finalize_turn_and_respond_logs_absent_text(monkeypatch, capsys):
+    async def fake_finalize(tb, hooks):
+        return "transcript"
+
+    async def fake_request(*args, **kwargs):
+        return LLMReply(text=None, audio_bytes=None, audio_sample_rate=None)
+
+    monkeypatch.setattr(controller_helpers, "_finalize_transcript", fake_finalize)
+    monkeypatch.setattr(
+        controller_helpers, "_maybe_schedule_confirmation_cue", lambda *a, **k: None
+    )
+    monkeypatch.setattr(controller_helpers, "_request_assistant_reply", fake_request)
+
+    async def fake_play(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(controller_helpers, "_play_assistant_audio", fake_play)
+
+    await controller_helpers.finalize_turn_and_respond(
+        transcript_buffer=cast(controller.TurnTranscriptAggregator, _DummyTranscriptBuffer()),
+        assistant=cast(controller.LLMResponder, _DummyAssistant()),
+        speech_player=cast(controller.SpeechPlayer, _DummySpeechPlayer()),
+    )
+
+    captured = capsys.readouterr()
+    assert "(no text content)" in captured.out
+
+
+@pytest.mark.asyncio
 async def test_schedule_turn_response_logs_cancellation(monkeypatch):
     event = asyncio.Event()
 
@@ -551,7 +623,11 @@ async def test_schedule_turn_response_logs_cancellation(monkeypatch):
     monkeypatch.setattr(controller_helpers, "finalize_turn_and_respond", pending)
 
     logs: list[str] = []
-    monkeypatch.setattr(controller_helpers, "verbose_print", lambda message: logs.append(message))
+    monkeypatch.setattr(
+        controller_helpers.LOGGER,
+        "verbose",
+        lambda _source, message, **_: logs.append(message),
+    )
 
     task = controller.schedule_turn_response(
         transcript_buffer=cast(controller.TurnTranscriptAggregator, _DummyTranscriptBuffer()),

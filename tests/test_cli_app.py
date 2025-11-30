@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import sys
 import types
@@ -18,6 +19,8 @@ if "audioop" not in sys.modules:
 from pi_assistant.assistant import TranscriptionRunConfig
 from pi_assistant.cli.app import (
     SIMULATED_QUERY_FALLBACK,
+    _assistant_model_label,
+    _parse_assistant_model_arg,
     main,
     parse_args,
     run_transcription,
@@ -337,10 +340,10 @@ def test_main_reset_short_circuits(monkeypatch: pytest.MonkeyPatch) -> None:
 
     logs: list[str] = []
 
-    def fake_console_print(message: str, *unused_args, **unused_kwargs):
+    def fake_log(_source: str, message: str, **_kwargs):
         logs.append(message)
 
-    monkeypatch.setattr("pi_assistant.cli.app.console_print", fake_console_print)
+    monkeypatch.setattr("pi_assistant.cli.app.LOGGER.log", fake_log)
 
     cleared = {"ASSISTANT_MODEL", "LOCATION_NAME"}
     monkeypatch.setattr("pi_assistant.cli.app.reset_first_launch_choices", lambda: cleared)
@@ -356,6 +359,32 @@ def test_main_reset_short_circuits(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert any("Cleared saved selections" in entry for entry in logs)
     assert asyncio_called["value"] is False
+
+
+def test_main_reset_logs_when_no_prior_choices(monkeypatch: pytest.MonkeyPatch) -> None:
+    args = types.SimpleNamespace(
+        mode="run",
+        verbose=False,
+        assistant_audio_mode=None,
+        simulate_query=None,
+        reasoning_effort=None,
+        assistant_model=None,
+        reset=True,
+    )
+    monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
+    monkeypatch.setattr("pi_assistant.cli.app.reset_first_launch_choices", lambda: set())
+    monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
+
+    logs: list[str] = []
+
+    def fake_log(_source: str, message: str, **_kwargs):
+        logs.append(message)
+
+    monkeypatch.setattr("pi_assistant.cli.app.LOGGER.log", fake_log)
+
+    main()
+
+    assert any("No saved first-launch selections" in entry for entry in logs)
 
 
 def test_main_runs_audio_diagnostics(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -408,6 +437,32 @@ def test_main_runs_websocket_diagnostics(monkeypatch: pytest.MonkeyPatch) -> Non
     from pi_assistant.cli import app as cli_app
 
     assert calls["handler"] is cli_app.handle_transcription_event
+
+
+def test_main_handles_keyboard_interrupt(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = types.SimpleNamespace(
+        mode="run",
+        verbose=False,
+        assistant_audio_mode=None,
+        simulate_query=None,
+        reasoning_effort=None,
+        assistant_model=None,
+    )
+    monkeypatch.setattr("pi_assistant.cli.app.parse_args", lambda: args)
+
+    async def raising_run(*args, **kwargs):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr("pi_assistant.cli.app.run_transcription", raising_run)
+    monkeypatch.setattr("pi_assistant.cli.app.set_verbose_logging", lambda verbose: None)
+    monkeypatch.setattr("pi_assistant.cli.app.asyncio.run", _run_coro_sync)
+
+    main()
+
+    captured = capsys.readouterr()
+    assert "Shutdown requested" in captured.out
 
 
 def test_main_exits_on_unhandled_exception(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -590,3 +645,12 @@ def test_main_passes_assistant_model_flag(monkeypatch: pytest.MonkeyPatch) -> No
     main()
 
     assert calls["assistant_model"] == override_model
+
+
+def test_assistant_model_label_falls_back_to_id() -> None:
+    assert _assistant_model_label("unknown-model") == "unknown-model"
+
+
+def test_parse_assistant_model_arg_rejects_unknown_choice() -> None:
+    with pytest.raises(argparse.ArgumentTypeError):
+        _parse_assistant_model_arg("does-not-exist")

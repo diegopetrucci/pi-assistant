@@ -156,6 +156,31 @@ def _make_controller_with_stubbed_wake_engine(monkeypatch):
     return controller._AudioControllerLoop(object(), ws_client, context)
 
 
+def test_log_chunk_progress_respects_flag(monkeypatch):
+    loop = _make_controller_with_stubbed_wake_engine(monkeypatch)
+    messages: list[str] = []
+    monkeypatch.setattr(
+        controller.LOGGER,
+        "verbose",
+        lambda _source, message, **_: messages.append(message),
+    )
+
+    loop._chunk_progress_logging_enabled = True
+    loop._log_chunk_progress(100)
+    loop._log_chunk_progress(150)
+
+    assert messages == [
+        "Processed 100 audio chunks (state=listening)",
+    ]
+
+    loop._chunk_progress_logging_enabled = False
+    loop._log_chunk_progress(200)
+
+    assert messages == [
+        "Processed 100 audio chunks (state=listening)",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_enter_streaming_state_starts_turn_once(monkeypatch):
     loop = _make_controller_with_stubbed_wake_engine(monkeypatch)
@@ -192,9 +217,9 @@ def test_schedule_server_stop_timeout_skips_without_turn(monkeypatch):
     monkeypatch.setattr(controller, "SERVER_STOP_TIMEOUT_SECONDS", 0.5)
     messages: list[str] = []
     monkeypatch.setattr(
-        controller,
-        "verbose_print",
-        lambda *args, **kwargs: messages.append(args[0] if args else ""),
+        controller.LOGGER,
+        "verbose",
+        lambda _source, message, **_: messages.append(message),
     )
 
     loop._active_turn_id = None
@@ -1855,7 +1880,11 @@ async def test_run_audio_controller_stop_signal_during_preroll_flush(monkeypatch
 
 def test_audio_controller_audit_logging_tracks_turns(monkeypatch):
     logs = []
-    monkeypatch.setattr(controller, "console_print", lambda message: logs.append(message))
+    monkeypatch.setattr(
+        controller.LOGGER,
+        "log",
+        lambda _source, message, **_: logs.append(message),
+    )
     loop = _make_controller_with_stubbed_wake_engine(monkeypatch)
 
     class StubStateManager:
@@ -1893,7 +1922,11 @@ def test_audio_controller_audit_logging_tracks_turns(monkeypatch):
 @pytest.mark.asyncio
 async def test_server_stop_timeout_audit_logging(monkeypatch):
     logs = []
-    monkeypatch.setattr(controller, "console_print", lambda message: logs.append(message))
+    monkeypatch.setattr(
+        controller.LOGGER,
+        "log",
+        lambda _source, message, **_: logs.append(message),
+    )
     loop = _make_controller_with_stubbed_wake_engine(monkeypatch)
 
     class TimeoutStateManager:

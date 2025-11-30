@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 import pytest
 
 from pi_assistant.cli import events
+from pi_assistant.cli.logging_utils import strip_ansi_sequences
 
 
 def test_normalize_command_strips_non_alphanum():
@@ -15,34 +16,35 @@ def test_normalize_command_strips_non_alphanum():
 def test_handle_transcription_event_partial_and_vad(monkeypatch):
     calls = []
 
-    def fake_verbose(*args, **kwargs):
-        calls.append((args, kwargs))
+    def fake_verbose(source, message, **kwargs):
+        calls.append((source, message, kwargs))
 
-    monkeypatch.setattr(events, "verbose_print", fake_verbose)
+    monkeypatch.setattr(events.LOGGER, "verbose", fake_verbose)
 
     events.handle_transcription_event(
         {"type": "conversation.item.input_audio_transcription.delta", "delta": "hi"}
     )
     events.handle_transcription_event({"type": "input_audio_buffer.committed", "item_id": "xyz"})
 
-    assert calls[0] == (("[PARTIAL] hi",), {"flush": True})
-    assert calls[1][0][0] == f"{events.VAD_LOG_LABEL} Speech detected (item: xyz)"
+    assert calls[0] == ("PARTIAL", "hi", {"flush": True})
+    assert calls[1][0] == events.VAD_LOG_LABEL
+    assert "Speech detected" in calls[1][1]
 
 
 def test_handle_transcription_event_session_updates(monkeypatch):
     messages = []
 
-    def fake_verbose(message, **kwargs):
+    def fake_verbose(_source, message, **kwargs):
         messages.append(message)
 
-    monkeypatch.setattr(events, "verbose_print", fake_verbose)
+    monkeypatch.setattr(events.LOGGER, "verbose", fake_verbose)
 
     events.handle_transcription_event({"type": "transcription_session.created"})
     events.handle_transcription_event({"type": "transcription_session.updated"})
 
     assert messages == [
-        "[INFO] Transcription session created",
-        "[INFO] Transcription session configuration updated",
+        "Transcription session created",
+        "Transcription session configuration updated",
     ]
 
 
@@ -55,7 +57,8 @@ def test_handle_transcription_event_error_branch(capsys):
     )
 
     captured = capsys.readouterr()
-    assert f"{events.ERROR_LOG_LABEL} fatal (E42): boom" in captured.err
+    clean_err = strip_ansi_sequences(captured.err)
+    assert "[ERROR] fatal (E42): boom" in clean_err
 
 
 @pytest.mark.asyncio
@@ -210,10 +213,10 @@ async def test_receive_events_logs_cancelled_error(monkeypatch):
     speech_stopped_signal = asyncio.Event()
     messages = []
 
-    def fake_verbose(message, **kwargs):
+    def fake_verbose(_source, message, **kwargs):
         messages.append(message)
 
-    monkeypatch.setattr(events, "verbose_print", fake_verbose)
+    monkeypatch.setattr(events.LOGGER, "verbose", fake_verbose)
 
     with pytest.raises(asyncio.CancelledError):
         await events.receive_transcription_events(
@@ -224,8 +227,8 @@ async def test_receive_events_logs_cancelled_error(monkeypatch):
             speech_stopped_signal=speech_stopped_signal,
         )
 
-    assert messages[0] == "[INFO] Starting event receiver..."
-    assert messages[-1].startswith("[INFO] Event receiver stopped")
+    assert messages[0] == "Starting event receiver..."
+    assert messages[-1].startswith("Event receiver stopped")
 
 
 @pytest.mark.asyncio
@@ -236,7 +239,7 @@ async def test_receive_events_logs_generic_exception(monkeypatch, capsys):
     stop_signal = asyncio.Event()
     speech_stopped_signal = asyncio.Event()
 
-    monkeypatch.setattr(events, "verbose_print", lambda *args, **kwargs: None)
+    monkeypatch.setattr(events.LOGGER, "verbose", lambda *args, **kwargs: None)
 
     with pytest.raises(RuntimeError):
         await events.receive_transcription_events(
@@ -248,4 +251,5 @@ async def test_receive_events_logs_generic_exception(monkeypatch, capsys):
         )
 
     stderr = capsys.readouterr().err
-    assert f"{events.ERROR_LOG_LABEL} Event receiver error: boom" in stderr
+    clean_err = strip_ansi_sequences(stderr)
+    assert "[ERROR] Event receiver error: boom" in clean_err

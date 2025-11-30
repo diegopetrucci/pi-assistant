@@ -8,6 +8,7 @@ from pi_assistant.assistant.session_services.assistant_prep_service import (
     AssistantPrepService,
 )
 from pi_assistant.assistant.transcription_session import TranscriptionRunConfig
+from pi_assistant.cli import logging_utils as cli_logging_utils
 
 
 class _AssistantStub:
@@ -52,10 +53,13 @@ async def test_assistant_prep_service_warms_and_announces_responses_audio(
     config = _make_config(use_responses_audio=True, reasoning_effort="medium")
 
     logs: list[str] = []
-    monkeypatch.setattr(
-        "pi_assistant.assistant.session_services.assistant_prep_service.console_print",
-        lambda message: logs.append(message),
-    )
+    original_log = cli_logging_utils.LOGGER.log
+
+    def capture_log(source: str, message: str, **kwargs) -> None:
+        logs.append(message)
+        original_log(source, message, **kwargs)
+
+    monkeypatch.setattr(cli_logging_utils.LOGGER, "log", capture_log)
     monkeypatch.setattr(
         "pi_assistant.assistant.session_services.assistant_prep_service.CONFIRMATION_CUE_ENABLED",
         True,
@@ -136,3 +140,78 @@ async def test_assistant_prep_service_announces_local_tts_mode(
     assert assistant.verify_calls == 0
 
     await service.stop()
+
+
+@pytest.mark.asyncio
+async def test_assistant_prep_service_logs_cue_cleanup_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assistant = _AssistantStub()
+    config = _make_config(use_responses_audio=False)
+    service = AssistantPrepService(cast(LLMResponder, assistant), config)
+
+    async def failing_task():
+        raise RuntimeError("cue boom")
+
+    messages: list[str] = []
+
+    def capture_log(_source: str, message: str, **_kwargs) -> None:
+        messages.append(message)
+
+    monkeypatch.setattr(
+        "pi_assistant.assistant.session_services.assistant_prep_service.LOGGER.log",
+        capture_log,
+    )
+    service._started = True
+    service._cue_task = asyncio.create_task(failing_task())
+    await asyncio.sleep(0)
+
+    await service.stop()
+
+    assert any("Confirmation cue cleanup failed" in entry for entry in messages)
+
+
+@pytest.mark.asyncio
+async def test_warm_confirmation_cue_logs_task_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assistant = _AssistantStub()
+
+    async def failing_warm(_text: str):
+        raise RuntimeError("preheat failed")
+
+    monkeypatch.setattr(
+        assistant,
+        "warm_phrase_audio",
+        failing_warm,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "pi_assistant.assistant.session_services.assistant_prep_service.CONFIRMATION_CUE_ENABLED",
+        True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "pi_assistant.assistant.session_services.assistant_prep_service.CONFIRMATION_CUE_TEXT",
+        "Ready",
+        raising=False,
+    )
+    service = AssistantPrepService(
+        cast(LLMResponder, assistant), _make_config(use_responses_audio=False)
+    )
+
+    messages: list[str] = []
+
+    def capture_log(_source: str, message: str, **_kwargs) -> None:
+        messages.append(message)
+
+    monkeypatch.setattr(
+        "pi_assistant.assistant.session_services.assistant_prep_service.LOGGER.log",
+        capture_log,
+    )
+
+    service._warm_confirmation_cue()
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert any("Failed to warm confirmation cue" in entry for entry in messages)

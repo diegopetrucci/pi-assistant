@@ -10,7 +10,7 @@ from pi_assistant.cli.controller_components import (
     SilenceTracker,
     StreamStateManager,
 )
-from pi_assistant.cli.logging_utils import CONTROL_LOG_LABEL, TURN_LOG_LABEL, WAKE_LOG_LABEL
+from pi_assistant.cli.logging_utils import CONTROL_LOG_LABEL, LOGGER, TURN_LOG_LABEL, WAKE_LOG_LABEL
 from pi_assistant.wake_word import (
     PreRollBuffer,
     StreamState,
@@ -42,7 +42,6 @@ class WakeWordActorDependencies:
     silence_tracker: SilenceTracker
     pre_roll: PreRollBuffer
     run_wake_word_detection: Callable[[bytes], WakeWordDetection]
-    verbose_print: Callable[[str], None]
     wake_engine: Optional[WakeWordEngine] = None
 
 
@@ -55,7 +54,6 @@ class WakeWordActor:
         self.silence_tracker = deps.silence_tracker
         self.pre_roll = deps.pre_roll
         self._run_wake_word_detection = deps.run_wake_word_detection
-        self._verbose_print = deps.verbose_print
         self.wake_engine = deps.wake_engine
         self._last_listening_chunk: tuple[int, bytes] | None = None
         bus.subscribe(AudioChunkEvent, self._on_audio_chunk)
@@ -99,7 +97,7 @@ class WakeWordActor:
                     )
                 )
             else:
-                self._verbose_print(f"{WAKE_LOG_LABEL} Triggered -> streaming (no buffered audio)")
+                LOGGER.verbose(WAKE_LOG_LABEL, "Triggered -> streaming (no buffered audio)")
             if self._last_listening_chunk:
                 self.silence_tracker.observe(self._last_listening_chunk[1])
             self._last_listening_chunk = None
@@ -202,7 +200,6 @@ class SpeechGateActorDependencies:
     reset_stream_resources: Callable[[], None]
     clear_server_stop_timeout: Callable[[str], None]
     schedule_server_stop_timeout: Callable[[], None]
-    verbose_print: Callable[[str], None]
 
 
 @dataclass(slots=True)
@@ -233,7 +230,6 @@ class SpeechGateActor:
         self._reset_stream_resources = deps.reset_stream_resources
         self._clear_server_stop_timeout = deps.clear_server_stop_timeout
         self._schedule_server_stop_timeout = deps.schedule_server_stop_timeout
-        self._verbose_print = deps.verbose_print
         self._auto_stop_enabled = config.auto_stop_enabled
         self._server_stop_min_silence_seconds = config.server_stop_min_silence_seconds
         bus.subscribe(WakeWordTriggeredEvent, self._on_wake_word)
@@ -244,24 +240,26 @@ class SpeechGateActor:
     async def _on_wake_word(self, event: WakeWordTriggeredEvent) -> None:
         state = event.state_at_detection
         if self.state_manager.awaiting_server_stop:
-            self._verbose_print(
-                f"{WAKE_LOG_LABEL} Wake phrase ignored while awaiting server stop confirmation."
+            LOGGER.verbose(
+                WAKE_LOG_LABEL,
+                "Wake phrase ignored while awaiting server stop confirmation.",
             )
             return
         if state != StreamState.LISTENING:
             retrigger_count = self.state_manager.increment_retrigger_budget()
-            self._verbose_print(
-                f"{WAKE_LOG_LABEL} Wake word retrigger detected during streaming "
-                f"(count={retrigger_count})"
+            LOGGER.verbose(
+                WAKE_LOG_LABEL,
+                f"Wake word retrigger detected during streaming (count={retrigger_count})",
             )
             return
         if self.state_manager.finalizing_turn:
-            self._verbose_print(
-                f"{WAKE_LOG_LABEL} Wake phrase ignored while finalizing previous turn."
+            LOGGER.verbose(
+                WAKE_LOG_LABEL,
+                "Wake phrase ignored while finalizing previous turn.",
             )
             return
         if self.state_manager.awaiting_assistant_reply:
-            self._verbose_print(f"{TURN_LOG_LABEL} Wake phrase overriding assistant reply.")
+            LOGGER.verbose(TURN_LOG_LABEL, "Wake phrase overriding assistant reply.")
             self.state_manager.clear_awaiting_assistant_reply()
             self.response_tasks.cancel("wake phrase override")
         transitioned = await self._enter_streaming_state(
@@ -284,7 +282,7 @@ class SpeechGateActor:
     async def _on_manual_stop(self, event: ManualStopEvent) -> None:
         if self.state_manager.state != StreamState.STREAMING:
             return
-        self._verbose_print(f"{CONTROL_LOG_LABEL} Stop command received; returning to listening.")
+        LOGGER.verbose(CONTROL_LOG_LABEL, "Stop command received; returning to listening.")
         previous_state = self.state_manager.transition_to_listening(event.reason)
         if previous_state:
             self._log_state_transition(previous_state, self.state_manager.state, event.reason)
@@ -304,8 +302,9 @@ class SpeechGateActor:
 
     async def _on_server_stop(self, event: ServerStopEvent) -> None:
         if self.state_manager.consume_suppressed_stop_event():
-            self._verbose_print(
-                f"{TURN_LOG_LABEL} Ignoring stale server speech stop acknowledgement."
+            LOGGER.verbose(
+                TURN_LOG_LABEL,
+                "Ignoring stale server speech stop acknowledgement.",
             )
             return
         ignore_reason = should_ignore_server_stop_event(
@@ -314,7 +313,7 @@ class SpeechGateActor:
             self._server_stop_min_silence_seconds,
         )
         if ignore_reason:
-            self._verbose_print(f"{TURN_LOG_LABEL} Server speech stop ignored: {ignore_reason}")
+            LOGGER.verbose(TURN_LOG_LABEL, f"Server speech stop ignored: {ignore_reason}")
             return
         self._clear_server_stop_timeout("server_ack")
         if self.state_manager.awaiting_server_stop:
@@ -348,9 +347,12 @@ class SpeechGateActor:
             return
         if self.state_manager.retrigger_budget == 0:
             if self.state_manager.awaiting_server_stop:
-                self._verbose_print(
-                    f"{TURN_LOG_LABEL} Silence timer fired but awaiting server stop; "
-                    "skipping duplicate close request."
+                LOGGER.verbose(
+                    TURN_LOG_LABEL,
+                    (
+                        "Silence timer fired but awaiting server stop; skipping "
+                        "duplicate close request."
+                    ),
                 )
                 return
             previous_state = self.state_manager.transition_to_listening(
@@ -372,17 +374,17 @@ class SpeechGateActor:
                     ),
                 )
                 self._reset_stream_resources()
-                self._verbose_print(
-                    f"{TURN_LOG_LABEL} Awaiting server confirmation before finalizing turn."
+                LOGGER.verbose(
+                    TURN_LOG_LABEL,
+                    "Awaiting server confirmation before finalizing turn.",
                 )
                 self._schedule_server_stop_timeout()
             return
         retrigger_count = self.state_manager.retrigger_budget
         retrigger_log = (
-            f"{TURN_LOG_LABEL} Silence detected but "
-            f"{retrigger_count} retrigger(s) observed; keeping stream open"
+            f"Silence detected but {retrigger_count} retrigger(s) observed; keeping stream open"
         )
-        self._verbose_print(retrigger_log)
+        LOGGER.verbose(TURN_LOG_LABEL, retrigger_log)
         self.state_manager.reset_retrigger_budget()
         self.silence_tracker.clear_silence()
 
